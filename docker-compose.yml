@@ -1,0 +1,56 @@
+name: group-launchpad
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: launchpad
+      POSTGRES_PASSWORD: launchpad
+      POSTGRES_DB: launchpad
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U launchpad -d launchpad"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.api
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgres://launchpad:launchpad@postgres:5432/launchpad?sslmode=disable
+      PORT: "8080"
+      LOG_LEVEL: info
+      MIGRATE_ON_BOOT: "true"
+      # Google OAuth — values interpolated from the project-root .env at
+      # compose time. Empty defaults keep the API booting with the Google
+      # integration safely disabled (503 NOT_READY) instead of warning.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgres://launchpad:launchpad@postgres:5432/launchpad?sslmode=disable
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

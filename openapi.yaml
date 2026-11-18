@@ -1,0 +1,321 @@
+openapi: 3.0.3
+info:
+  title: Group Launchpad API
+  version: 0.1.0
+  description: >
+    Automation platform for launching student groups across Slack, Google
+    Classroom, Google Drive, and Google Forms. This contract is the single
+    source of truth for both sides: the Go server (oapi-codegen) and the web
+    dashboard (openapi-typescript) generate their types from this file via
+    `make gen`.
+servers:
+  - url: http://localhost:8080
+    description: local development
+tags:
+  - name: system
+  - name: groups
+  - name: integrations
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Liveness probe
+      responses:
+        "200":
+          description: service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /readyz:
+    get:
+      tags: [system]
+      operationId: getReadiness
+      summary: Readiness probe — verifies PostgreSQL connectivity
+      responses:
+        "200":
+          description: ready to serve
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: dependency unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/groups:
+    get:
+      tags: [groups]
+      operationId: listGroups
+      summary: List groups (newest first)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: a page of groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupsPage"
+    post:
+      tags: [groups]
+      operationId: createGroup
+      summary: Create a group (starts in draft; launch is a separate operation)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupCreate"
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "409":
+          description: a group with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/groups/{groupId}:
+    get:
+      tags: [groups]
+      operationId: getGroup
+      summary: Get one group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: the group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "404":
+          description: unknown group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/integrations/google/connect:
+    get:
+      tags: [integrations]
+      operationId: googleConnect
+      summary: Start the Google OAuth flow (redirects the browser to Google consent)
+      responses:
+        "302":
+          description: redirect to the Google consent screen
+        "503":
+          description: Google OAuth is not configured on the server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/integrations/google/callback:
+    get:
+      tags: [integrations]
+      operationId: googleCallback
+      summary: Google OAuth callback (Google redirects the browser here after consent)
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+          description: authorization code (absent when the user denied consent)
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+          description: provider error code (e.g. access_denied) when consent failed
+      responses:
+        "200":
+          description: connected (JSON shown to the browser)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleStatus"
+        "422":
+          description: consent denied, or state invalid/expired/reused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: token exchange with Google failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/integrations/google/status:
+    get:
+      tags: [integrations]
+      operationId: googleStatus
+      summary: Google connection status (never includes tokens)
+      responses:
+        "200":
+          description: current connection state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleStatus"
+        "503":
+          description: Google OAuth is not configured on the server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: page size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      description: page offset
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Date:
+      type: string
+      format: date
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+      x-go-type: string
+      description: ISO 8601 calendar date (YYYY-MM-DD)
+    GroupStatus:
+      type: string
+      description: group lifecycle state
+      enum: [draft, launching, launched, partially_failed, failed, archived]
+    Group:
+      type: object
+      required: [id, name, courseName, startDate, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        courseName:
+          type: string
+        startDate:
+          $ref: "#/components/schemas/Date"
+        status:
+          $ref: "#/components/schemas/GroupStatus"
+        createdAt:
+          type: string
+          format: date-time
+    GroupCreate:
+      type: object
+      required: [name, courseName, startDate]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        courseName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        startDate:
+          $ref: "#/components/schemas/Date"
+    Page:
+      type: object
+      required: [limit, offset, total]
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+    GroupsPage:
+      type: object
+      required: [data, page]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+        page:
+          $ref: "#/components/schemas/Page"
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    GoogleStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: connection lifecycle state
+          enum: [connected, disconnected, error]
+        accountEmail:
+          type: string
+          description: connected Google account (empty when disconnected)
+        scopes:
+          type: array
+          items:
+            type: string
+          description: OAuth scopes granted by the connection
+        connectedAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: stable machine-readable code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: human-readable explanation
+            fieldErrors:
+              type: object
+              additionalProperties:
+                type: string
+              description: per-field validation messages, when applicable

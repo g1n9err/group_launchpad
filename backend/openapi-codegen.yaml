@@ -1,0 +1,11 @@
+# oapi-codegen configuration — generates internal/transport/gen from ../openapi.yaml
+# Run via `make gen` (go:generate directive in internal/transport/gen.go).
+#
+# Note: oapi-codegen >= v2.8 dropped build-time validator tags (and other
+# output-options) in favor of runtime spec validation middleware. Input
+# validation for now lives in core/groups — single tested source of truth.
+package: gen
+generate:
+  echo-server: true
+  models: true
+output: internal/transport/gen/server.gen.go
