@@ -13,33 +13,6 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// Defines values for AnnouncementScheduleType.
-const (
-	General    AnnouncementScheduleType = "general"
-	Reminder   AnnouncementScheduleType = "reminder"
-	Rules      AnnouncementScheduleType = "rules"
-	StaffIntro AnnouncementScheduleType = "staff_intro"
-	Welcome    AnnouncementScheduleType = "welcome"
-)
-
-// Valid indicates whether the value is a known member of the AnnouncementScheduleType enum.
-func (e AnnouncementScheduleType) Valid() bool {
-	switch e {
-	case General:
-		return true
-	case Reminder:
-		return true
-	case Rules:
-		return true
-	case StaffIntro:
-		return true
-	case Welcome:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for AuditNotificationEmailStatus.
 const (
 	AuditNotificationEmailStatusDisabled AuditNotificationEmailStatus = "disabled"
@@ -250,36 +223,6 @@ func (e IntakeFormQuestionType) Valid() bool {
 	}
 }
 
-// Defines values for ScheduledAnnouncementStatus.
-const (
-	ScheduledAnnouncementStatusCancelled  ScheduledAnnouncementStatus = "cancelled"
-	ScheduledAnnouncementStatusFailed     ScheduledAnnouncementStatus = "failed"
-	ScheduledAnnouncementStatusPublished  ScheduledAnnouncementStatus = "published"
-	ScheduledAnnouncementStatusPublishing ScheduledAnnouncementStatus = "publishing"
-	ScheduledAnnouncementStatusScheduled  ScheduledAnnouncementStatus = "scheduled"
-	ScheduledAnnouncementStatusUnknown    ScheduledAnnouncementStatus = "unknown"
-)
-
-// Valid indicates whether the value is a known member of the ScheduledAnnouncementStatus enum.
-func (e ScheduledAnnouncementStatus) Valid() bool {
-	switch e {
-	case ScheduledAnnouncementStatusCancelled:
-		return true
-	case ScheduledAnnouncementStatusFailed:
-		return true
-	case ScheduledAnnouncementStatusPublished:
-		return true
-	case ScheduledAnnouncementStatusPublishing:
-		return true
-	case ScheduledAnnouncementStatusScheduled:
-		return true
-	case ScheduledAnnouncementStatusUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for SlackChannelResultStatus.
 const (
 	SlackChannelResultStatusCreated SlackChannelResultStatus = "created"
@@ -420,20 +363,6 @@ func (e SlackWelcomeResultStatus) Valid() bool {
 		return false
 	}
 }
-
-// AnnouncementSchedule defines model for AnnouncementSchedule.
-type AnnouncementSchedule struct {
-	ChannelName string `json:"channelName"`
-	Message     string `json:"message"`
-
-	// RequestId Reuse the same request ID when retrying the same announcement.
-	RequestId   openapi_types.UUID       `json:"requestId"`
-	ScheduledAt time.Time                `json:"scheduledAt"`
-	Type        AnnouncementScheduleType `json:"type"`
-}
-
-// AnnouncementScheduleType defines model for AnnouncementSchedule.Type.
-type AnnouncementScheduleType string
 
 // AuditChange defines model for AuditChange.
 type AuditChange struct {
@@ -678,20 +607,6 @@ type PublishedIntakeForm struct {
 	ResponderUrl string `json:"responderUrl"`
 }
 
-// ScheduledAnnouncement defines model for ScheduledAnnouncement.
-type ScheduledAnnouncement struct {
-	Error          *string                     `json:"error,omitempty"`
-	GroupId        openapi_types.UUID          `json:"groupId"`
-	Id             openapi_types.UUID          `json:"id"`
-	PublishedAt    *time.Time                  `json:"publishedAt,omitempty"`
-	Schedule       AnnouncementSchedule        `json:"schedule"`
-	SlackMessageId *string                     `json:"slackMessageId,omitempty"`
-	Status         ScheduledAnnouncementStatus `json:"status"`
-}
-
-// ScheduledAnnouncementStatus defines model for ScheduledAnnouncement.Status.
-type ScheduledAnnouncementStatus string
-
 // SlackChannelResult defines model for SlackChannelResult.
 type SlackChannelResult struct {
 	ChannelId *string                  `json:"channelId,omitempty"`
@@ -817,9 +732,6 @@ type SlackEventsJSONBody = map[string]interface{}
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = GroupCreate
 
-// ScheduleGroupAnnouncementJSONRequestBody defines body for ScheduleGroupAnnouncement for application/json ContentType.
-type ScheduleGroupAnnouncementJSONRequestBody = AnnouncementSchedule
-
 // ProvisionGroupFormJSONRequestBody defines body for ProvisionGroupForm for application/json ContentType.
 type ProvisionGroupFormJSONRequestBody = IntakeFormRequest
 
@@ -843,12 +755,6 @@ type ServerInterface interface {
 	// GetGroup Get one group
 	// (GET /api/groups/{groupId})
 	GetGroup(ctx echo.Context, groupId GroupId) error
-	// ListGroupAnnouncements List up to 100 scheduled Slack announcements and their results
-	// (GET /api/groups/{groupId}/announcements)
-	ListGroupAnnouncements(ctx echo.Context, groupId GroupId) error
-	// ScheduleGroupAnnouncement Schedule a Slack announcement in a channel linked to the group
-	// (POST /api/groups/{groupId}/announcements)
-	ScheduleGroupAnnouncement(ctx echo.Context, groupId GroupId) error
 	// ListGroupAudits List the most recent group resource audits
 	// (GET /api/groups/{groupId}/audits)
 	ListGroupAudits(ctx echo.Context, groupId GroupId) error
@@ -972,38 +878,6 @@ func (w *ServerInterfaceWrapper) GetGroup(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GetGroup(ctx, groupId)
-	return err
-}
-
-// ListGroupAnnouncements converts echo context to params.
-func (w *ServerInterfaceWrapper) ListGroupAnnouncements(ctx echo.Context) error {
-	var err error
-	// ------------- Path parameter "groupId" -------------
-	var groupId GroupId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
-	}
-
-	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.ListGroupAnnouncements(ctx, groupId)
-	return err
-}
-
-// ScheduleGroupAnnouncement converts echo context to params.
-func (w *ServerInterfaceWrapper) ScheduleGroupAnnouncement(ctx echo.Context) error {
-	var err error
-	// ------------- Path parameter "groupId" -------------
-	var groupId GroupId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
-	}
-
-	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.ScheduleGroupAnnouncement(ctx, groupId)
 	return err
 }
 
@@ -1362,8 +1236,6 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/distribute", wrapper.DistributeGroupForm, options.OperationMiddlewares["distributeGroupForm"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/forms/deliveries", wrapper.GetGroupFormDeliveries, options.OperationMiddlewares["getGroupFormDeliveries"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/responses/import", wrapper.ImportGroupFormResponses, options.OperationMiddlewares["importGroupFormResponses"]...)
-	router.GET(options.BaseURL+"/api/groups/:groupId/announcements", wrapper.ListGroupAnnouncements, options.OperationMiddlewares["listGroupAnnouncements"]...)
-	router.POST(options.BaseURL+"/api/groups/:groupId/announcements", wrapper.ScheduleGroupAnnouncement, options.OperationMiddlewares["scheduleGroupAnnouncement"]...)
 	router.GET(options.BaseURL+"/api/audit-notifications", wrapper.GetAuditNotifications, options.OperationMiddlewares["getAuditNotifications"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/audits", wrapper.ListGroupAudits, options.OperationMiddlewares["listGroupAudits"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/audits", wrapper.QueueGroupAudit, options.OperationMiddlewares["queueGroupAudit"]...)
