@@ -141,6 +141,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups/{groupId}/forms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a group's saved intake form and questions */
+        get: operations["getGroupIntakeForm"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/groups/{groupId}/forms/provision": {
         parameters: {
             query?: never;
@@ -405,6 +422,13 @@ export interface components {
         IntakeFormRequest: {
             /** @description Ordered draft questions. If omitted, defaults to full name and email. */
             questions?: components["schemas"]["IntakeFormQuestion"][];
+        };
+        IntakeFormState: {
+            questions: components["schemas"]["IntakeFormQuestion"][];
+            editUrl?: string;
+            responderUrl?: string;
+            status: string;
+            verifiedEmail: boolean;
         };
         IntakeFormDraft: {
             formId: string;
@@ -1029,6 +1053,49 @@ export interface operations {
                 content?: never;
             };
             /** @description Coordinator access or Google OAuth is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getGroupIntakeForm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Intake form state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeFormState"];
+                };
+            };
+            /** @description Coordinator credentials required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No intake form saved for this group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Form access is unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

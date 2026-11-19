@@ -55,6 +55,10 @@ type FormsService struct {
 	Operations ExternalOperationRecorder
 }
 
+func (s *FormsService) State(ctx context.Context, groupID uuid.UUID) (IntakeForm, error) {
+	return s.Store.GetIntakeForm(ctx, groupID)
+}
+
 func (s *FormsService) Provision(ctx context.Context, groupID uuid.UUID, name string, input []IntakeQuestion) (string, error) {
 	questions, err := normalizeIntakeQuestions(input)
 	if err != nil {
