@@ -144,7 +144,7 @@ WHERE group_id = $1 AND user_id = $2
 LIMIT 1;
 
 -- name: MarkGroupMemberJoinedSlack :exec
--- Guarded transition: only pending/invited members move to joined_slack.
+-- Guarded transition: join updates pending/invited members and completes a submitted form.
 UPDATE group_members
-SET onboarding_status = 'joined_slack'
-WHERE id = $1 AND onboarding_status IN ('pending', 'invited');
+SET onboarding_status = CASE WHEN onboarding_status = 'form_submitted' THEN 'complete' ELSE 'joined_slack' END
+WHERE id = $1 AND onboarding_status IN ('pending', 'invited', 'form_submitted');

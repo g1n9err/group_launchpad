@@ -146,8 +146,8 @@ func TestOnboardingPostJoinStatusesCountAsJoined(t *testing.T) {
 
 	_, body := doJSON(t, srv, http.MethodGet, "/api/groups/"+id+"/onboarding", "")
 	sum := body["summary"].(map[string]any)
-	if sum["joinedCount"] != float64(3) { // joined_slack + form_submitted + complete
-		t.Errorf("joinedCount = %v, want 3", sum["joinedCount"])
+	if sum["joinedCount"] != float64(2) { // joined_slack + complete
+		t.Errorf("joinedCount = %v, want 2", sum["joinedCount"])
 	}
 }
 

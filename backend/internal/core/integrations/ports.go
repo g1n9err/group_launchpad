@@ -175,7 +175,7 @@ type SlackEventRepository interface {
 	FindUserIDBySlack(ctx context.Context, slackUserID string) (uuid.UUID, bool, error)
 	// FindGroupMember returns the member row id and onboarding status.
 	FindGroupMember(ctx context.Context, groupID, userID uuid.UUID) (memberID uuid.UUID, onboardingStatus string, found bool, err error)
-	// MarkGroupMemberJoinedSlack moves a pending/invited member to joined_slack.
+	// MarkGroupMemberJoinedSlack records the Slack join and completes onboarding if the form exists.
 	MarkGroupMemberJoinedSlack(ctx context.Context, memberID uuid.UUID) error
 }
 

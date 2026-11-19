@@ -342,14 +342,42 @@ paths:
           description: The group has no intake form
         "503":
           description: Coordinator access or delivery status is unavailable
+  /api/groups/{groupId}/forms/responses/import:
+    post:
+      tags: [groups]
+      operationId: importGroupFormResponses
+      security:
+        - CoordinatorBasic: []
+      summary: Import verified intake responses for the group's students
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeResponseSummary"
+        "401":
+          description: Coordinator credentials are missing or invalid
+        "403":
+          description: The request origin is not allowed
+        "404":
+          description: The group has no intake form
+        "409":
+          description: The form is not published with verified email collection
+        "502":
+          description: Google Forms response import failed
+        "503":
+          description: Coordinator access or Google OAuth is unavailable
   /api/groups/{groupId}/onboarding:
     get:
       tags: [groups]
       operationId: getGroupOnboarding
       summary: Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
       description: >
-        Read-only. "Joined" = onboarding status joined_slack, form_submitted,
-        or complete (Stage 3A/3B conventions). joinedAt is not tracked yet
+        Read-only. "Joined" counts joined_slack and complete. A form submission
+        by itself does not count as a Slack join. joinedAt is not tracked yet
         and is deliberately omitted rather than fabricated. Exposes student
         emails — requires coordinator authentication before production
         exposure (not yet implemented).
@@ -647,6 +675,16 @@ components:
           type: integer
         error:
           type: string
+    IntakeResponseSummary:
+      type: object
+      required: [saved, unchanged, ignored]
+      properties:
+        saved:
+          type: integer
+        unchanged:
+          type: integer
+        ignored:
+          type: integer
     PublishedIntakeForm:
       type: object
       required: [formId, responderUrl]

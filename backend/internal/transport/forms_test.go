@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"launchpad/internal/core/integrations"
 	"launchpad/internal/store"
@@ -17,9 +18,16 @@ type fakeForms struct {
 	creates   atomic.Int32
 	updates   atomic.Int32
 	publishes atomic.Int32
+	responses []integrations.IntakeResponse
 }
 
 func (*fakeForms) AccessToken(context.Context) (string, error) { return "test-token", nil }
+
+func (*fakeForms) EnableVerifiedEmail(context.Context, string, string) error   { return nil }
+func (*fakeForms) VerifiedEmail(context.Context, string, string) (bool, error) { return true, nil }
+func (f *fakeForms) ListResponses(context.Context, string, string, time.Time, string) ([]integrations.IntakeResponse, string, error) {
+	return f.responses, "", nil
+}
 
 const testResponderURL = "https://docs.google.com/forms/d/e/test-form/viewform"
 
@@ -105,5 +113,63 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	}
 	if rows := countRowsSimple(t, pool, "SELECT count(*) FROM intake_forms WHERE external_form_id='recovered-form-id' AND status='created' AND jsonb_array_length(questions)=2"); rows != 1 {
 		t.Fatalf("saved %d intake forms, want 1", rows)
+	}
+}
+
+func TestImportFormsResponsesMatchesVerifiedRosterOnce(t *testing.T) {
+	pool := newTestPool(t)
+	truncate(t, pool, "groups", "users")
+	repo := store.New(pool)
+	created := time.Date(2026, 6, 1, 13, 0, 0, 0, time.UTC)
+	response := func(id, email string, instant time.Time) integrations.IntakeResponse {
+		return integrations.IntakeResponse{ID: id, Email: email, CreatedAt: instant, SubmittedAt: instant, Answers: []byte(`{"q":{"textAnswers":{"answers":[{"value":"test"}]}}}`)}
+	}
+	gateway := &fakeForms{responses: []integrations.IntakeResponse{
+		response("pending-form", " FIRST@EXAMPLE.TEST ", created),
+		response("joined-form", "second@example.test", created),
+		response("outside", "outsider@example.test", created),
+		response("old", "third@example.test", created.Add(-365*24*time.Hour)),
+		response("none", "", created),
+	}}
+	service := &integrations.FormsService{Tokens: gateway, Gateway: gateway, Store: repo, Operations: repo}
+	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		transport.GroupProvisioning{Forms: service})
+	srv := httptestNew(app, t)
+	id := createGroupWithRoster(t, srv, "Forms Response Roster", []string{"first@example.test", "second@example.test", "third@example.test"})
+	if _, err := pool.Exec(t.Context(), `INSERT INTO intake_forms (group_id,external_form_id,form_url,status,verified_responses_since)
+		VALUES ($1,'test-form',$2,'created','2026-01-01 UTC')`, id, testResponderURL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE group_members SET onboarding_status='joined_slack'
+		WHERE group_id=$1 AND user_id=(SELECT id FROM users WHERE email='second@example.test')`, id); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "/api/groups/" + id + "/forms/responses/import"
+	for attempt := range 2 {
+		code, result := doJSON(t, srv, http.MethodPost, endpoint, "")
+		if code != http.StatusOK || result["saved"] != float64(2-2*attempt) ||
+			result["unchanged"] != float64(2*attempt) || result["ignored"] != float64(3) {
+			t.Fatalf("import %d: %d %v", attempt, code, result)
+		}
+	}
+	var memberID string
+	var status string
+	if err := pool.QueryRow(t.Context(), `SELECT gm.id::text, gm.onboarding_status FROM group_members gm JOIN users u ON u.id=gm.user_id
+		WHERE gm.group_id=$1 AND u.email='first@example.test'`, id).Scan(&memberID, &status); err != nil || status != "form_submitted" {
+		t.Fatalf("form-only student: status=%q err=%v", status, err)
+	}
+	code, report := doJSON(t, srv, http.MethodGet, "/api/groups/"+id+"/onboarding", "")
+	if code != http.StatusOK || report["summary"].(map[string]any)["joinedCount"] != float64(1) {
+		t.Fatalf("form submission must not count as Slack join: %d %v", code, report)
+	}
+	if err := repo.MarkGroupMemberJoinedSlack(t.Context(), mustUUID(t, memberID)); err != nil {
+		t.Fatal(err)
+	}
+	if count := countRowsSimple(t, pool, "SELECT count(*) FROM group_members WHERE onboarding_status='complete'"); count != 2 {
+		t.Fatalf("completed %d students, want 2", count)
+	}
+	if count := countRowsSimple(t, pool, "SELECT count(*) FROM intake_form_responses"); count != 2 {
+		t.Fatalf("saved %d responses, want 2", count)
 	}
 }

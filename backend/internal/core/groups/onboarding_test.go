@@ -33,11 +33,11 @@ func TestSummarizeRosterClassification(t *testing.T) {
 	if s.ExpectedCount != 5 {
 		t.Errorf("expected = %d", s.ExpectedCount)
 	}
-	if s.JoinedCount != 3 { // joined_slack + form_submitted + complete
-		t.Errorf("joined = %d, want 3", s.JoinedCount)
+	if s.JoinedCount != 2 { // joined_slack + complete
+		t.Errorf("joined = %d, want 2", s.JoinedCount)
 	}
-	if s.PendingCount != 2 { // pending + invited
-		t.Errorf("pending = %d, want 2", s.PendingCount)
+	if s.PendingCount != 3 { // pending + invited + form submitted only
+		t.Errorf("pending = %d, want 3", s.PendingCount)
 	}
 }
 
