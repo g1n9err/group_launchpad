@@ -11,12 +11,10 @@ import (
 )
 
 // JoinedOnboardingStatuses are the member states that count as "joined
-// Slack" (Stage 3A/3B conventions): the transition moment and everything
-// after it. pending/invited have not joined.
+// Slack": the Slack join or completion of both onboarding steps.
 var JoinedOnboardingStatuses = map[string]bool{
-	"joined_slack":   true,
-	"form_submitted": true,
-	"complete":       true,
+	"joined_slack": true,
+	"complete":     true,
 }
 
 // Student is one roster entry with its onboarding state.

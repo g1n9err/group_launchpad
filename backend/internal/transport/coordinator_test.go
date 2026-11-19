@@ -22,6 +22,7 @@ func TestCoordinatorRoutesRejectUnauthorizedRequests(t *testing.T) {
 		{http.MethodPost, group + "/drive/provision"},
 		{http.MethodPost, group + "/forms/provision"},
 		{http.MethodPost, group + "/forms/publish"},
+		{http.MethodPost, group + "/forms/responses/import"},
 		{http.MethodPost, group + "/forms/distribute"},
 		{http.MethodGet, group + "/forms/deliveries"},
 		{http.MethodGet, "/api/integrations/google/connect"},

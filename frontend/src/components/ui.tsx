@@ -36,7 +36,7 @@ export function StatusBadge({ status, t }: { status: string; t: TFunc }) {
 }
 
 export function OnboardingBadge({ status, t }: { status: string; t: TFunc }) {
-  const joined = status === "joined_slack" || status === "form_submitted" || status === "complete";
+  const joined = status === "joined_slack" || status === "complete";
   const tone: Tone = joined ? "success" : "warn";
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${toneClasses[tone]}`}>

@@ -437,6 +437,13 @@ type IntakeFormRequest struct {
 	Questions *[]IntakeFormQuestion `json:"questions,omitempty"`
 }
 
+// IntakeResponseSummary defines model for IntakeResponseSummary.
+type IntakeResponseSummary struct {
+	Ignored   int `json:"ignored"`
+	Saved     int `json:"saved"`
+	Unchanged int `json:"unchanged"`
+}
+
 // Page defines model for Page.
 type Page struct {
 	Limit  int `json:"limit"`
@@ -613,6 +620,9 @@ type ServerInterface interface {
 	// PublishGroupForm Publish a completed intake draft and return its responder link
 	// (POST /api/groups/{groupId}/forms/publish)
 	PublishGroupForm(ctx echo.Context, groupId GroupId) error
+	// ImportGroupFormResponses Import verified intake responses for the group's students
+	// (POST /api/groups/{groupId}/forms/responses/import)
+	ImportGroupFormResponses(ctx echo.Context, groupId GroupId) error
 	// LaunchGroup Queue the Slack stage of a group launch
 	// (POST /api/groups/{groupId}/launch)
 	LaunchGroup(ctx echo.Context, groupId GroupId) error
@@ -796,6 +806,22 @@ func (w *ServerInterfaceWrapper) PublishGroupForm(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.PublishGroupForm(ctx, groupId)
+	return err
+}
+
+// ImportGroupFormResponses converts echo context to params.
+func (w *ServerInterfaceWrapper) ImportGroupFormResponses(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ImportGroupFormResponses(ctx, groupId)
 	return err
 }
 
@@ -1009,6 +1035,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/publish", wrapper.PublishGroupForm, options.OperationMiddlewares["publishGroupForm"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/distribute", wrapper.DistributeGroupForm, options.OperationMiddlewares["distributeGroupForm"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/forms/deliveries", wrapper.GetGroupFormDeliveries, options.OperationMiddlewares["getGroupFormDeliveries"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/forms/responses/import", wrapper.ImportGroupFormResponses, options.OperationMiddlewares["importGroupFormResponses"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)

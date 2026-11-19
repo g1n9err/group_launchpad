@@ -221,3 +221,51 @@ func (g *FormsGateway) request(ctx context.Context, token, method, endpoint stri
 	}
 	return resp.StatusCode, nil
 }
+
+func (g *FormsGateway) VerifiedEmail(ctx context.Context, token, id string) (bool, error) {
+	var form struct {
+		Settings struct {
+			EmailCollectionType string `json:"emailCollectionType"`
+		} `json:"settings"`
+	}
+	endpoint := g.formsURL + "/" + url.PathEscape(id) + "?fields=settings"
+	_, err := g.request(ctx, token, http.MethodGet, endpoint, nil, &form)
+	return form.Settings.EmailCollectionType == "VERIFIED", err
+}
+
+func (g *FormsGateway) EnableVerifiedEmail(ctx context.Context, token, id string) error {
+	endpoint := g.formsURL + "/" + url.PathEscape(id) + ":batchUpdate"
+	body := map[string]any{"requests": []any{map[string]any{"updateSettings": map[string]any{
+		"settings":   map[string]string{"emailCollectionType": "VERIFIED"},
+		"updateMask": "emailCollectionType",
+	}}}}
+	var result map[string]any
+	if _, err := g.request(ctx, token, http.MethodPost, endpoint, body, &result); err != nil {
+		return err
+	}
+	verified, err := g.VerifiedEmail(ctx, token, id)
+	if err != nil {
+		return err
+	}
+	if !verified {
+		return errors.New("Google Forms did not enable verified email collection")
+	}
+	return nil
+}
+
+func (g *FormsGateway) ListResponses(ctx context.Context, token, id string, since time.Time, pageToken string) ([]integrations.IntakeResponse, string, error) {
+	endpoint := g.formsURL + "/" + url.PathEscape(id) + "/responses"
+	query := url.Values{
+		"pageSize": {"50"},
+		"filter":   {"timestamp >= " + since.UTC().Format(time.RFC3339Nano)},
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	var page struct {
+		Responses []integrations.IntakeResponse `json:"responses"`
+		NextToken string                        `json:"nextPageToken"`
+	}
+	_, err := g.request(ctx, token, http.MethodGet, endpoint+"?"+query.Encode(), nil, &page)
+	return page.Responses, page.NextToken, err
+}

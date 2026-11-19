@@ -24,9 +24,13 @@ type IntakeQuestion struct {
 type IntakeForm struct {
 	ID, Status, ResponderURL string
 	Questions                []IntakeQuestion
+	VerifiedSince            *time.Time
 }
 
 type FormsGateway interface {
+	EnableVerifiedEmail(context.Context, string, string) error
+	VerifiedEmail(context.Context, string, string) (bool, error)
+	ListResponses(context.Context, string, string, time.Time, string) ([]IntakeResponse, string, error)
 	Publish(ctx context.Context, token, id string) (string, error)
 	CreateDraft(ctx context.Context, token, title, documentTitle string) (id string, rejected bool, err error)
 	FindDraft(ctx context.Context, token, documentTitle string) (id string, err error)
@@ -34,6 +38,8 @@ type FormsGateway interface {
 }
 
 type IntakeFormStore interface {
+	MarkIntakeVerified(context.Context, uuid.UUID, string) error
+	SaveIntakeResponse(context.Context, uuid.UUID, string, IntakeResponse) (bool, bool, error)
 	GetIntakeForm(context.Context, uuid.UUID) (IntakeForm, error)
 	SaveIntakeResponderURL(context.Context, uuid.UUID, string, string) (string, error)
 	ClaimIntakeForm(context.Context, uuid.UUID, []IntakeQuestion) (IntakeForm, bool, error)
@@ -117,13 +123,23 @@ func (s *FormsService) Publish(ctx context.Context, groupID uuid.UUID) (IntakeFo
 	if form.ID == "" || (form.Status != "created" && form.Status != "distributed") {
 		return IntakeForm{}, &core.AppError{Code: core.CodeConflict, Message: "intake form must be a completed draft before it can be published"}
 	}
-	if form.ResponderURL != "" {
+	if form.ResponderURL != "" && form.VerifiedSince != nil {
 		return form, nil
 	}
 
 	token, err := s.Tokens.AccessToken(ctx)
 	if err != nil {
 		return IntakeForm{}, err
+	}
+	if form.VerifiedSince == nil {
+		started := time.Now()
+		err := s.Gateway.EnableVerifiedEmail(ctx, token, form.ID)
+		if err := s.record(ctx, groupID, "forms.enable_verified_email", started, err); err != nil {
+			return IntakeForm{}, err
+		}
+		if err := s.Store.MarkIntakeVerified(ctx, groupID, form.ID); err != nil {
+			return IntakeForm{}, err
+		}
 	}
 	started := time.Now()
 	link, err := s.Gateway.Publish(ctx, token, form.ID)

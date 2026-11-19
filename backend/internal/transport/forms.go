@@ -60,3 +60,17 @@ func (h *Handlers) PublishGroupForm(c echo.Context, groupID gen.GroupId) error {
 	}
 	return c.JSON(http.StatusOK, gen.PublishedIntakeForm{FormId: form.ID, ResponderUrl: form.ResponderURL})
 }
+
+func (h *Handlers) ImportGroupFormResponses(c echo.Context, groupID gen.GroupId) error {
+	if err := h.coordinator.authorize(c); err != nil {
+		return err
+	}
+	if h.forms == nil {
+		return errNotReady("Google Forms is unavailable")
+	}
+	summary, err := h.forms.ImportResponses(c.Request().Context(), groupID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, gen.IntakeResponseSummary{Saved: summary.Saved, Unchanged: summary.Unchanged, Ignored: summary.Ignored})
+}

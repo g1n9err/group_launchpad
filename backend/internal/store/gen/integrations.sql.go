@@ -417,11 +417,11 @@ func (q *Queries) MarkGoogleIntegrationError(ctx context.Context) error {
 
 const markGroupMemberJoinedSlack = `-- name: MarkGroupMemberJoinedSlack :exec
 UPDATE group_members
-SET onboarding_status = 'joined_slack'
-WHERE id = $1 AND onboarding_status IN ('pending', 'invited')
+SET onboarding_status = CASE WHEN onboarding_status = 'form_submitted' THEN 'complete' ELSE 'joined_slack' END
+WHERE id = $1 AND onboarding_status IN ('pending', 'invited', 'form_submitted')
 `
 
-// Guarded transition: only pending/invited members move to joined_slack.
+// Guarded transition: join updates pending/invited members and completes a submitted form.
 func (q *Queries) MarkGroupMemberJoinedSlack(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markGroupMemberJoinedSlack, id)
 	return err
