@@ -230,6 +230,28 @@ paths:
           description: Google Drive provisioning failed and can be retried
         "503":
           description: Coordinator access or Google OAuth is unavailable
+  /api/groups/{groupId}/forms:
+    get:
+      tags: [groups]
+      operationId: getGroupIntakeForm
+      summary: Read a group's saved intake form and questions
+      security:
+        - CoordinatorBasic: []
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: Intake form state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeFormState"
+        "401":
+          description: Coordinator credentials required
+        "404":
+          description: No intake form saved for this group
+        "503":
+          description: Form access is unavailable
   /api/groups/{groupId}/forms/provision:
     post:
       tags: [groups]
@@ -706,6 +728,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/IntakeFormQuestion"
+    IntakeFormState:
+      type: object
+      required: [questions, status, verifiedEmail]
+      properties:
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntakeFormQuestion"
+        editUrl:
+          type: string
+        responderUrl:
+          type: string
+        status:
+          type: string
+        verifiedEmail:
+          type: boolean
     IntakeFormDraft:
       type: object
       required: [formId, editUrl]

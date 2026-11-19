@@ -10,6 +10,38 @@ import (
 	gen "launchpad/internal/transport/gen"
 )
 
+func (h *Handlers) GetGroupIntakeForm(c echo.Context, groupID gen.GroupId) error {
+	if err := h.coordinator.authorize(c); err != nil {
+		return err
+	}
+	if h.forms == nil {
+		return errNotReady("Google Forms is unavailable")
+	}
+	form, err := h.forms.State(c.Request().Context(), groupID)
+	if err != nil {
+		return err
+	}
+	result := gen.IntakeFormState{
+		Status: form.Status, VerifiedEmail: form.VerifiedSince != nil,
+		Questions: make([]gen.IntakeFormQuestion, 0, len(form.Questions)),
+	}
+	if form.ID != "" {
+		editURL := "https://docs.google.com/forms/d/" + url.PathEscape(form.ID) + "/edit"
+		result.EditUrl = &editURL
+	}
+	if form.ResponderURL != "" {
+		result.ResponderUrl = &form.ResponderURL
+	}
+	for _, q := range form.Questions {
+		question := gen.IntakeFormQuestion{Title: q.Title, Type: gen.IntakeFormQuestionType(q.Type), Required: q.Required}
+		if len(q.Options) > 0 {
+			question.Options = &q.Options
+		}
+		result.Questions = append(result.Questions, question)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
 func (h *Handlers) ProvisionGroupForm(c echo.Context, groupID gen.GroupId) error {
 	if err := h.coordinator.authorize(c); err != nil {
 		return err

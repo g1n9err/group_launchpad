@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, apiUrl, type GroupCreate } from "./api";
+import { api, apiUrl, type GroupCreate, type Group } from "./api";
 
 // Data hooks: the typed openapi-fetch client enforces the API contract at
 // compile time — if openapi.yaml changes, `npm run gen` regenerates schema.d.ts
@@ -14,6 +14,27 @@ export function useGroups() {
       });
       if (error) throw error;
       return data;
+    },
+  });
+}
+
+export function useIntakeGroups(enabled: boolean) {
+  return useQuery({
+    queryKey: ["groups", "intake"],
+    enabled,
+    queryFn: async ({ signal }) => {
+      const items: Group[] = [];
+      let offset = 0;
+      for (;;) {
+        const { data, error } = await api.GET("/api/groups", {
+          params: { query: { limit: 100, offset } },
+          signal,
+        });
+        if (!data) throw error ?? new Error("Could not load groups");
+        items.push(...data.data.filter((group) => group.status !== "archived"));
+        offset += data.data.length;
+        if (!data.data.length || offset >= data.page.total) return items;
+      }
     },
   });
 }

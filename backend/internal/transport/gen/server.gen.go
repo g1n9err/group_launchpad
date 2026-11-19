@@ -579,6 +579,15 @@ type IntakeFormRequest struct {
 	Questions *[]IntakeFormQuestion `json:"questions,omitempty"`
 }
 
+// IntakeFormState defines model for IntakeFormState.
+type IntakeFormState struct {
+	EditUrl       *string              `json:"editUrl,omitempty"`
+	Questions     []IntakeFormQuestion `json:"questions"`
+	ResponderUrl  *string              `json:"responderUrl,omitempty"`
+	Status        string               `json:"status"`
+	VerifiedEmail bool                 `json:"verifiedEmail"`
+}
+
 // IntakeResponseSummary defines model for IntakeResponseSummary.
 type IntakeResponseSummary struct {
 	Ignored   int `json:"ignored"`
@@ -767,6 +776,9 @@ type ServerInterface interface {
 	// ProvisionGroupDrive Create or reuse the group's Google Drive folder tree
 	// (POST /api/groups/{groupId}/drive/provision)
 	ProvisionGroupDrive(ctx echo.Context, groupId GroupId) error
+	// GetGroupIntakeForm Read a group's saved intake form and questions
+	// (GET /api/groups/{groupId}/forms)
+	GetGroupIntakeForm(ctx echo.Context, groupId GroupId) error
 	// GetGroupFormDeliveries Read recipient-level intake delivery results
 	// (GET /api/groups/{groupId}/forms/deliveries)
 	GetGroupFormDeliveries(ctx echo.Context, groupId GroupId) error
@@ -942,6 +954,22 @@ func (w *ServerInterfaceWrapper) ProvisionGroupDrive(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ProvisionGroupDrive(ctx, groupId)
+	return err
+}
+
+// GetGroupIntakeForm converts echo context to params.
+func (w *ServerInterfaceWrapper) GetGroupIntakeForm(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetGroupIntakeForm(ctx, groupId)
 	return err
 }
 
@@ -1231,6 +1259,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/api/groups/:groupId/status", wrapper.GetGroupLaunchStatus, options.OperationMiddlewares["getGroupLaunchStatus"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/classroom/provision", wrapper.ProvisionGroupClassroom, options.OperationMiddlewares["provisionGroupClassroom"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/drive/provision", wrapper.ProvisionGroupDrive, options.OperationMiddlewares["provisionGroupDrive"]...)
+	router.GET(options.BaseURL+"/api/groups/:groupId/forms", wrapper.GetGroupIntakeForm, options.OperationMiddlewares["getGroupIntakeForm"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/provision", wrapper.ProvisionGroupForm, options.OperationMiddlewares["provisionGroupForm"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/publish", wrapper.PublishGroupForm, options.OperationMiddlewares["publishGroupForm"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/distribute", wrapper.DistributeGroupForm, options.OperationMiddlewares["distributeGroupForm"]...)

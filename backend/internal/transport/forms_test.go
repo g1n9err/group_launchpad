@@ -73,6 +73,9 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	formsPath := "/api/groups/" + group["id"].(string) + "/forms"
 	path := formsPath + "/provision"
 	publishPath := formsPath + "/publish"
+	if code, _ := doJSON(t, srv, http.MethodGet, formsPath, ""); code != http.StatusNotFound {
+		t.Fatalf("form state before provisioning: %d, want 404", code)
+	}
 	if code, _ := doJSON(t, srv, http.MethodPost, publishPath, ""); code != http.StatusNotFound {
 		t.Fatalf("publish before provisioning: %d, want 404", code)
 	}
@@ -101,6 +104,11 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 		if code != http.StatusOK || result["formId"] != "recovered-form-id" || result["responderUrl"] != testResponderURL {
 			t.Fatalf("publish: %d %v", code, result)
 		}
+	}
+	code, state := doJSON(t, srv, http.MethodGet, formsPath, "")
+	if code != http.StatusOK || state["status"] != "created" || state["verifiedEmail"] != true ||
+		state["responderUrl"] != testResponderURL || state["editUrl"] == nil || len(state["questions"].([]any)) != 2 {
+		t.Fatalf("saved intake form state: %d %v", code, state)
 	}
 	if gateway.publishes.Load() != 1 {
 		t.Fatalf("publish calls=%d, want one", gateway.publishes.Load())
