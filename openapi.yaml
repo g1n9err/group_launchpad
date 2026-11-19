@@ -110,6 +110,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/groups/{groupId}/launch:
+    post:
+      tags: [groups]
+      operationId: launchGroup
+      security:
+        - CoordinatorBasic: []
+      summary: Queue the Slack stage of a group launch
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "401":
+          description: Coordinator credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The request origin is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "202":
+          description: The existing or newly queued Slack execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlackLaunch"
+        "404":
+          description: Unknown group
+        "422":
+          description: The group name cannot be used for Slack channels
+        "503":
+          description: Slack launch is unavailable
+  /api/groups/{groupId}/status:
+    get:
+      tags: [groups]
+      operationId: getGroupLaunchStatus
+      security:
+        - CoordinatorBasic: []
+      summary: Read the Slack stage of a group launch
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "401":
+          description: Coordinator credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "200":
+          description: Slack launch execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlackLaunch"
+        "404":
+          description: Slack launch has not been queued for this group
+        "503":
+          description: Launch status is unavailable
+  /api/groups/{groupId}/classroom/provision:
+    post:
+      tags: [groups]
+      operationId: provisionGroupClassroom
+      security:
+        - CoordinatorBasic: []
+      summary: Create or reuse the Google Classroom course for a group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "401":
+          description: Coordinator credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The request origin is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "200":
+          description: Linked Google Classroom course
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassroomCourse"
+        "404":
+          description: Unknown group
+        "502":
+          description: Google Classroom rejected the request
+        "503":
+          description: Google OAuth is unavailable
   /api/groups/{groupId}/onboarding:
     get:
       tags: [groups]
@@ -140,8 +234,16 @@ paths:
     get:
       tags: [integrations]
       operationId: googleConnect
+      security:
+        - CoordinatorBasic: []
       summary: Start the Google OAuth flow (redirects the browser to Google consent)
       responses:
+        "401":
+          description: Coordinator credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "302":
           description: redirect to the Google consent screen
         "503":
@@ -273,6 +375,8 @@ paths:
     post:
       tags: [integrations]
       operationId: provisionGroupSlack
+      security:
+        - CoordinatorBasic: []
       summary: Idempotently provision the group's Slack channels, invitations, and welcome messages
       description: >
         Safe to retry — existing channels are reused, welcome messages are
@@ -287,6 +391,18 @@ paths:
             schema:
               $ref: "#/components/schemas/SlackProvisionRequest"
       responses:
+        "401":
+          description: Coordinator credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The request origin is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "200":
           description: provisioning outcome (per-item statuses)
           content:
@@ -306,6 +422,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 components:
+  securitySchemes:
+    CoordinatorBasic:
+      type: http
+      scheme: basic
+      description: Use the coordinator username and the server-configured password over HTTPS outside local development.
+
   parameters:
     Limit:
       name: limit
@@ -332,6 +454,37 @@ components:
         type: string
         format: uuid
   schemas:
+    ClassroomCourse:
+      type: object
+      required: [courseId]
+      properties:
+        courseId:
+          type: string
+    SlackLaunch:
+      type: object
+      required: [id, groupId, status, attempts, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed, partially_failed]
+        attempts:
+          type: integer
+          minimum: 0
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
     Date:
       type: string
       format: date

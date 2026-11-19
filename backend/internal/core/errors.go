@@ -8,8 +8,10 @@ const (
 	CodeDuplicate     = "DUPLICATE_GROUP"
 	CodeNotFound      = "NOT_FOUND"
 	CodeNotReady      = "NOT_READY"
+	CodeUpstream      = "UPSTREAM_ERROR"
 	CodeOAuthExchange = "OAUTH_EXCHANGE_FAILED"
 	CodeUnauthorized  = "UNAUTHORIZED"
+	CodeForbidden     = "FORBIDDEN"
 	CodeInternal      = "INTERNAL"
 )
 

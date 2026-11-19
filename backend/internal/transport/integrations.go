@@ -17,6 +17,9 @@ import (
 
 // GoogleConnect GET /api/integrations/google/connect — 302 to Google consent.
 func (h *Handlers) GoogleConnect(c echo.Context) error {
+	if err := h.coordinator.authorize(c); err != nil {
+		return err
+	}
 	if !h.google.Configured() {
 		return errNotConfigured("google oauth")
 	}
@@ -84,6 +87,9 @@ func (h *Handlers) SlackStatus(c echo.Context) error {
 // database; invite emails come from the (optional) request body — staff data
 // is never hardcoded.
 func (h *Handlers) ProvisionGroupSlack(c echo.Context, groupId gen.GroupId) error {
+	if err := h.coordinator.authorize(c); err != nil {
+		return err
+	}
 	if !h.slackChannels.Configured() {
 		return errNotConfigured("slack")
 	}

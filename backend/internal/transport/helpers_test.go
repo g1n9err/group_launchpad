@@ -38,12 +38,15 @@ func truncate(t *testing.T, pool *pgxpool.Pool, tables ...string) {
 	}
 }
 
+const testCoordinatorPassword = "coordinator-test-password-at-least-32-bytes"
+
 func testConfig() config.Config {
 	return config.Config{
-		DatabaseURL:        testURL,
-		Port:               "0",
-		LogLevel:           "error",
-		CORSAllowedOrigins: []string{"http://localhost:5173"},
+		DatabaseURL:         testURL,
+		CoordinatorPassword: testCoordinatorPassword,
+		Port:                "0",
+		LogLevel:            "error",
+		CORSAllowedOrigins:  []string{"http://localhost:5173"},
 	}
 }
 
@@ -78,7 +81,12 @@ func rawGet(t *testing.T, srv *httptest.Server, path string) *http.Response {
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	resp, err := client.Get(srv.URL + path) //nolint:bodyclose — closed by the caller
+	req, err := http.NewRequest(http.MethodGet, srv.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.SetBasicAuth("coordinator", testCoordinatorPassword)
+	resp, err := client.Do(req) //nolint:bodyclose — closed by the caller
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}
