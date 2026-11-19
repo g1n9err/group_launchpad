@@ -22,17 +22,20 @@ type IntakeQuestion struct {
 }
 
 type IntakeForm struct {
-	ID, Status string
-	Questions  []IntakeQuestion
+	ID, Status, ResponderURL string
+	Questions                []IntakeQuestion
 }
 
 type FormsGateway interface {
+	Publish(ctx context.Context, token, id string) (string, error)
 	CreateDraft(ctx context.Context, token, title, documentTitle string) (id string, rejected bool, err error)
 	FindDraft(ctx context.Context, token, documentTitle string) (id string, err error)
 	EnsureQuestions(ctx context.Context, token, id string, questions []IntakeQuestion) error
 }
 
 type IntakeFormStore interface {
+	GetIntakeForm(context.Context, uuid.UUID) (IntakeForm, error)
+	SaveIntakeResponderURL(context.Context, uuid.UUID, string, string) (string, error)
 	ClaimIntakeForm(context.Context, uuid.UUID, []IntakeQuestion) (IntakeForm, bool, error)
 	ReleaseIntakeForm(context.Context, uuid.UUID) error
 	SaveIntakeFormID(context.Context, uuid.UUID, string) error
@@ -103,6 +106,32 @@ func (s *FormsService) Provision(ctx context.Context, groupID uuid.UUID, name st
 		return "", err
 	}
 	return id, nil
+}
+
+// Publish opens a completed draft for responses and saves the responder link.
+func (s *FormsService) Publish(ctx context.Context, groupID uuid.UUID) (IntakeForm, error) {
+	form, err := s.Store.GetIntakeForm(ctx, groupID)
+	if err != nil {
+		return IntakeForm{}, err
+	}
+	if form.ID == "" || (form.Status != "created" && form.Status != "distributed") {
+		return IntakeForm{}, &core.AppError{Code: core.CodeConflict, Message: "intake form must be a completed draft before it can be published"}
+	}
+	if form.ResponderURL != "" {
+		return form, nil
+	}
+
+	token, err := s.Tokens.AccessToken(ctx)
+	if err != nil {
+		return IntakeForm{}, err
+	}
+	started := time.Now()
+	link, err := s.Gateway.Publish(ctx, token, form.ID)
+	if err := s.record(ctx, groupID, "forms.publish", started, err); err != nil {
+		return IntakeForm{}, err
+	}
+	form.ResponderURL, err = s.Store.SaveIntakeResponderURL(ctx, groupID, form.ID, link)
+	return form, err
 }
 
 func (s *FormsService) record(ctx context.Context, groupID uuid.UUID, operation string, started time.Time, err error) error {

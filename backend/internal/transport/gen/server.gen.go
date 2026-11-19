@@ -400,6 +400,12 @@ type Page struct {
 	Total  int `json:"total"`
 }
 
+// PublishedIntakeForm defines model for PublishedIntakeForm.
+type PublishedIntakeForm struct {
+	FormId       string `json:"formId"`
+	ResponderUrl string `json:"responderUrl"`
+}
+
 // SlackChannelResult defines model for SlackChannelResult.
 type SlackChannelResult struct {
 	ChannelId *string                  `json:"channelId,omitempty"`
@@ -554,6 +560,9 @@ type ServerInterface interface {
 	// ProvisionGroupForm Create or reuse an unpublished student intake form
 	// (POST /api/groups/{groupId}/forms/provision)
 	ProvisionGroupForm(ctx echo.Context, groupId GroupId) error
+	// PublishGroupForm Publish a completed intake draft and return its responder link
+	// (POST /api/groups/{groupId}/forms/publish)
+	PublishGroupForm(ctx echo.Context, groupId GroupId) error
 	// LaunchGroup Queue the Slack stage of a group launch
 	// (POST /api/groups/{groupId}/launch)
 	LaunchGroup(ctx echo.Context, groupId GroupId) error
@@ -689,6 +698,22 @@ func (w *ServerInterfaceWrapper) ProvisionGroupForm(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ProvisionGroupForm(ctx, groupId)
+	return err
+}
+
+// PublishGroupForm converts echo context to params.
+func (w *ServerInterfaceWrapper) PublishGroupForm(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.PublishGroupForm(ctx, groupId)
 	return err
 }
 
@@ -899,6 +924,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/api/groups/:groupId/classroom/provision", wrapper.ProvisionGroupClassroom, options.OperationMiddlewares["provisionGroupClassroom"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/drive/provision", wrapper.ProvisionGroupDrive, options.OperationMiddlewares["provisionGroupDrive"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/provision", wrapper.ProvisionGroupForm, options.OperationMiddlewares["provisionGroupForm"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/forms/publish", wrapper.PublishGroupForm, options.OperationMiddlewares["publishGroupForm"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)

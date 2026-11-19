@@ -62,3 +62,39 @@ func TestGoogleFormsCreatesUnpublishedDraftAndResumesQuestions(t *testing.T) {
 		}
 	}
 }
+
+func TestGoogleFormsPublishReturnsVerifiedResponderLink(t *testing.T) {
+	const link = "https://docs.google.com/forms/d/e/test-form/viewform"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Error("missing bearer token")
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/forms/test-form:setPublishSettings":
+			var body struct {
+				UpdateMask      string
+				PublishSettings struct {
+					PublishState map[string]bool
+				}
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+				body.UpdateMask != "publishState" ||
+				!body.PublishSettings.PublishState["isPublished"] ||
+				!body.PublishSettings.PublishState["isAcceptingResponses"] {
+				t.Errorf("invalid publish request: %+v (%v)", body, err)
+			}
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/forms/test-form":
+			_, _ = w.Write([]byte(`{"formId":"test-form","responderUri":"` + link + `","publishSettings":{"publishState":{"isPublished":true,"isAcceptingResponses":true}}}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	gateway := &FormsGateway{formsURL: server.URL + "/forms", client: server.Client()}
+	got, err := gateway.Publish(t.Context(), "test-token", "test-form")
+	if err != nil || got != link {
+		t.Fatalf("publish: %q %v", got, err)
+	}
+}

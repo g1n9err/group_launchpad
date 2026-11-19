@@ -157,6 +157,40 @@ func (g *FormsGateway) EnsureQuestions(ctx context.Context, token, id string, qu
 	return err
 }
 
+// Publish sets an idempotent Google publish state and reads the responder URL.
+func (g *FormsGateway) Publish(ctx context.Context, token, id string) (string, error) {
+	endpoint := g.formsURL + "/" + url.PathEscape(id)
+	body := map[string]any{
+		"publishSettings": map[string]any{"publishState": map[string]bool{"isPublished": true, "isAcceptingResponses": true}},
+		"updateMask":      "publishState",
+	}
+	var updated map[string]any
+	if _, err := g.request(ctx, token, http.MethodPost, endpoint+":setPublishSettings", body, &updated); err != nil {
+		return "", err
+	}
+	var form struct {
+		ID              string `json:"formId"`
+		ResponderURI    string `json:"responderUri"`
+		PublishSettings struct {
+			PublishState struct {
+				Published bool `json:"isPublished"`
+				Accepting bool `json:"isAcceptingResponses"`
+			} `json:"publishState"`
+		} `json:"publishSettings"`
+	}
+	if _, err := g.request(ctx, token, http.MethodGet, endpoint+"?fields=formId,responderUri,publishSettings", nil, &form); err != nil {
+		return "", err
+	}
+	state := form.PublishSettings.PublishState
+	link, err := url.Parse(form.ResponderURI)
+	if form.ID != id || !state.Published || !state.Accepting || err != nil ||
+		link.Scheme != "https" || link.Host != "docs.google.com" || link.User != nil ||
+		!strings.HasPrefix(link.Path, "/forms/") || !strings.HasSuffix(link.Path, "/viewform") {
+		return "", errors.New("Google Forms did not return a published responder link")
+	}
+	return form.ResponderURI, nil
+}
+
 func (g *FormsGateway) request(ctx context.Context, token, method, endpoint string, body, output any) (int, error) {
 	var payload io.Reader
 	if body != nil {

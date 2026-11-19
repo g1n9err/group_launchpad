@@ -266,6 +266,34 @@ paths:
           description: The Google Forms request failed
         "503":
           description: Coordinator access or Google OAuth is unavailable
+  /api/groups/{groupId}/forms/publish:
+    post:
+      tags: [groups]
+      operationId: publishGroupForm
+      security:
+        - CoordinatorBasic: []
+      summary: Publish a completed intake draft and return its responder link
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: Published intake form
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedIntakeForm"
+        "401":
+          description: Coordinator credentials are missing or invalid
+        "403":
+          description: The request origin is not allowed
+        "404":
+          description: The group has no intake form
+        "409":
+          description: The intake form is not ready to publish
+        "502":
+          description: Google Forms publication failed
+        "503":
+          description: Coordinator access or Google OAuth is unavailable
   /api/groups/{groupId}/onboarding:
     get:
       tags: [groups]
@@ -546,6 +574,14 @@ components:
         formId:
           type: string
         editUrl:
+          type: string
+    PublishedIntakeForm:
+      type: object
+      required: [formId, responderUrl]
+      properties:
+        formId:
+          type: string
+        responderUrl:
           type: string
     DriveFolder:
       type: object
