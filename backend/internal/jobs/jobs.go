@@ -23,9 +23,10 @@ type Config struct {
 	// WorkerID identifies this worker process in job logs (optional).
 	WorkerID string
 	// MaxWorkers is the concurrent job workers for the default queue.
-	MaxWorkers         int
-	IntakeEmailWorkers int
-	AuditEmailEnabled  bool
+	MaxWorkers                int
+	IntakeEmailWorkers        int
+	AuditEmailEnabled         bool
+	SlackAnnouncementsEnabled bool
 }
 
 // DefaultMaxWorkers is the number of concurrent workers for the default queue.
@@ -53,6 +54,10 @@ func NewClient(pool *pgxpool.Pool, workers *river.Workers, cfg Config) (*river.C
 
 	if cfg.AuditEmailEnabled {
 		queues[AuditEmailQueue] = river.QueueConfig{MaxWorkers: 1}
+	}
+
+	if cfg.SlackAnnouncementsEnabled {
+		queues[SlackAnnouncementsQueue] = river.QueueConfig{MaxWorkers: 1}
 	}
 
 	client, err := river.NewClient(

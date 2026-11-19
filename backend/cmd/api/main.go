@@ -72,13 +72,14 @@ func run() error {
 	classroom := &integrations.ClassroomService{Tokens: googleSvc, Gateway: google.NewClassroomGateway(), Store: repo, Operations: repo}
 	drive := &integrations.DriveService{Tokens: googleSvc, Gateway: google.NewDriveGateway(), Store: repo, Operations: repo}
 	forms := &integrations.FormsService{Tokens: googleSvc, Gateway: google.NewFormsGateway(), Store: repo, Operations: repo}
+	announcements := &jobs.AnnouncementService{Store: repo, River: queue}
 	audit := &jobs.AuditService{Store: repo, River: queue}
 	delivery := &jobs.IntakeDeliveryService{Queue: repo, River: queue}
 	if cfg.GmailEnabled {
 		delivery.CheckReady = googleSvc.CheckGmailPermission
 	}
 	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping,
-		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, Audit: audit, AuditNotifications: repo, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
+		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, Audit: audit, AuditNotifications: repo, Announcements: announcements, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
 
 	// 5. Serve with graceful shutdown.
 	servers := []*http.Server{{
