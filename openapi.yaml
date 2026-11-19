@@ -230,6 +230,42 @@ paths:
           description: Google Drive provisioning failed and can be retried
         "503":
           description: Coordinator access or Google OAuth is unavailable
+  /api/groups/{groupId}/forms/provision:
+    post:
+      tags: [groups]
+      operationId: provisionGroupForm
+      security:
+        - CoordinatorBasic: []
+      summary: Create or reuse an unpublished student intake form
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeFormRequest"
+      responses:
+        "200":
+          description: Linked Google Forms draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeFormDraft"
+        "401":
+          description: Coordinator credentials are missing or invalid
+        "403":
+          description: The request origin is not allowed
+        "404":
+          description: Unknown group
+        "409":
+          description: The questions differ from the saved form or creation is pending
+        "422":
+          description: Invalid questions
+        "502":
+          description: The Google Forms request failed
+        "503":
+          description: Coordinator access or Google OAuth is unavailable
   /api/groups/{groupId}/onboarding:
     get:
       tags: [groups]
@@ -480,6 +516,37 @@ components:
         type: string
         format: uuid
   schemas:
+    IntakeFormQuestion:
+      type: object
+      required: [title, type, required]
+      properties:
+        title:
+          type: string
+        type:
+          type: string
+          enum: [text, paragraph, single_choice]
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+    IntakeFormRequest:
+      type: object
+      properties:
+        questions:
+          description: Ordered draft questions. If omitted, defaults to full name and email.
+          type: array
+          items:
+            $ref: "#/components/schemas/IntakeFormQuestion"
+    IntakeFormDraft:
+      type: object
+      required: [formId, editUrl]
+      properties:
+        formId:
+          type: string
+        editUrl:
+          type: string
     DriveFolder:
       type: object
       required: [id, name]
