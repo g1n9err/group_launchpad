@@ -240,6 +240,18 @@ type ClassroomCourse struct {
 // Date ISO 8601 calendar date (YYYY-MM-DD)
 type Date = string
 
+// DriveFolder defines model for DriveFolder.
+type DriveFolder struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// DriveFolders defines model for DriveFolders.
+type DriveFolders struct {
+	Root       DriveFolder   `json:"root"`
+	Subfolders []DriveFolder `json:"subfolders"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error struct {
@@ -489,6 +501,9 @@ type ServerInterface interface {
 	// ProvisionGroupClassroom Create or reuse the Google Classroom course for a group
 	// (POST /api/groups/{groupId}/classroom/provision)
 	ProvisionGroupClassroom(ctx echo.Context, groupId GroupId) error
+	// ProvisionGroupDrive Create or reuse the group's Google Drive folder tree
+	// (POST /api/groups/{groupId}/drive/provision)
+	ProvisionGroupDrive(ctx echo.Context, groupId GroupId) error
 	// LaunchGroup Queue the Slack stage of a group launch
 	// (POST /api/groups/{groupId}/launch)
 	LaunchGroup(ctx echo.Context, groupId GroupId) error
@@ -592,6 +607,22 @@ func (w *ServerInterfaceWrapper) ProvisionGroupClassroom(ctx echo.Context) error
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ProvisionGroupClassroom(ctx, groupId)
+	return err
+}
+
+// ProvisionGroupDrive converts echo context to params.
+func (w *ServerInterfaceWrapper) ProvisionGroupDrive(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ProvisionGroupDrive(ctx, groupId)
 	return err
 }
 
@@ -800,6 +831,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/api/groups/:groupId/launch", wrapper.LaunchGroup, options.OperationMiddlewares["launchGroup"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/status", wrapper.GetGroupLaunchStatus, options.OperationMiddlewares["getGroupLaunchStatus"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/classroom/provision", wrapper.ProvisionGroupClassroom, options.OperationMiddlewares["provisionGroupClassroom"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/drive/provision", wrapper.ProvisionGroupDrive, options.OperationMiddlewares["provisionGroupDrive"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)

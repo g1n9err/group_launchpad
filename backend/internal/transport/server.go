@@ -32,15 +32,17 @@ type Handlers struct {
 	slackEvents   *integrations.SlackEventsService
 	launch        SlackLaunchService
 	classroom     *integrations.ClassroomService
+	drive         *integrations.DriveService
 	coordinator   coordinatorAuth
 	ping          PingFunc
 	logger        *slog.Logger
 }
 
-// GroupProvisioning wires the group launch and Classroom use cases.
+// GroupProvisioning wires the group launch and Google provisioning use cases.
 type GroupProvisioning struct {
 	Launch    SlackLaunchService
 	Classroom *integrations.ClassroomService
+	Drive     *integrations.DriveService
 }
 
 // New builds the HTTP application and optionally enables group provisioning.
@@ -50,6 +52,7 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 	if len(provisioning) > 0 {
 		h.launch = provisioning[0].Launch
 		h.classroom = provisioning[0].Classroom
+		h.drive = provisioning[0].Drive
 	}
 
 	e := echo.New()

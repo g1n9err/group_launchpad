@@ -71,8 +71,9 @@ func run() error {
 	}
 	launch := &jobs.SlackLaunchService{Queue: repo, River: queue}
 	classroom := &integrations.ClassroomService{Tokens: googleSvc, Gateway: google.NewClassroomGateway(), Store: repo, Operations: repo}
+	drive := &integrations.DriveService{Tokens: googleSvc, Gateway: google.NewDriveGateway(), Store: repo, Operations: repo}
 	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping,
-		transport.GroupProvisioning{Launch: launch, Classroom: classroom})
+		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive})
 
 	// 5. Serve with graceful shutdown.
 	servers := []*http.Server{{

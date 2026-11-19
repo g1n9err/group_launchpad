@@ -378,3 +378,16 @@ func (r *Repo) SaveClassroomCourse(ctx context.Context, groupID uuid.UUID, res c
 	`, groupID, res.Provider, res.Type, res.ExternalID, res.Name, res.Status)
 	return err
 }
+
+// ReserveDriveFolder returns the single Drive-generated ID all callers must use.
+func (r *Repo) ReserveDriveFolder(ctx context.Context, groupID uuid.UUID, res coreintegrations.GroupResource) (coreintegrations.GroupResource, error) {
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO group_resources AS existing
+		    (group_id, provider, resource_type, resource_name, external_resource_id, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT ON CONSTRAINT uq_group_resources_per_group DO UPDATE
+		SET external_resource_id = existing.external_resource_id
+		RETURNING external_resource_id, status
+	`, groupID, res.Provider, res.Type, res.Name, res.ExternalID, res.Status).Scan(&res.ExternalID, &res.Status)
+	return res, err
+}
