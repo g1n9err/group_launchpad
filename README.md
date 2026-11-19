@@ -1,119 +1,194 @@
 # Group Launchpad
 
-Centralized automation platform for launching student groups across **Slack**,
-**Google Classroom**, **Google Drive**, and **Google Forms** — one form, one
-launch action, every platform synchronized. See `Group_Launchpad_PRD.md` for
-the full product requirements.
+A multi-platform automation system that launches student groups across Slack, Google Classroom, Google Drive, and Google Forms — one form, one launch action, every platform synchronized. Built with Go (API + background worker), React (dashboard), and PostgreSQL.
 
-## Stack
+## Requirements
 
-| Plane     | Technology                                                                 |
-| --------- | -------------------------------------------------------------------------- |
-| Frontend  | React 19 + Vite + Tailwind v4, TanStack Query — deployed to Vercel (static) |
-| Backend   | Go (echo), two services: `api` (REST) + `worker` (background jobs)          |
-| Data      | PostgreSQL 17, sqlc (type-safe SQL), golang-migrate (versioned migrations)  |
-| Jobs      | River (Postgres-backed queue) — wired on Day 2                              |
-| Contract  | `openapi.yaml` — both sides generate types from it (`make gen`)             |
+| Tool | Version | Notes |
+|---|---|---|
+| **Go** | 1.27+ | Pinned in `backend/go.mod` (`go 1.27.4`) |
+| **Node.js** | 20+ | Tested with v26.13.1; any modern LTS works |
+| **npm** | 10+ | Ships with Node |
+| **Docker** | recent | For PostgreSQL and prod-parity containers |
+| **Docker Compose** | v2+ | Plugin form (`docker compose`, not `docker-compose`) |
 
-## Architecture
+PostgreSQL runs in Docker (`postgres:17-alpine`) — no separate install needed.
 
-```
-Browser ── Vercel (static SPA)  ──►  Go API container  ──►  PostgreSQL
-   dev: Vite :5173 ──proxy /api──►   :8080 (compose or `make api`)   ▲
-                                                                     │
-                                              Go worker container ──┘
-                                              (River queue + cron, Day 2)
-```
+## Setup
 
-```
-backend/
-├── cmd/{api,worker,migrate}     # entrypoints; cmd/api is the composition root
-├── internal/
-│   ├── core/                    # pure business logic — no HTTP, no SQL, no SDKs
-│   │   └── groups/              # domain service + Repository port
-│   ├── store/                   # sqlc-generated queries implementing core ports
-│   ├── transport/               # echo handlers + generated types (oapi-codegen)
-│   ├── integrations/            # Day 2: slack/, google/ — the ONLY external IO
-│   ├── dbmigrate/               # embedded migration runner
-│   └── config/                  # env configuration, fail-fast
-└── migrations/                  # SQL migrations (embedded into every binary)
-```
-
-**Dependency rule** (enforced by `internal/` package visibility):
-`transport → core ← store/integrations`; `core` imports nothing internal.
-All wiring happens in `cmd/api/main.go`.
-
-## Quickstart (local)
-
-Prerequisites: Docker, Go 1.27+, Node (any recent LTS via fnm/nvm).
+### 1. Clone and configure
 
 ```bash
+git clone <repository-url>
+cd launchpad
 cp .env.example .env
-make dev-up        # Postgres 17 in Docker (localhost:5432)
-make api           # API on :8080 (migrates on boot)
-make fe            # dashboard on :5173 (proxies /api → :8080)
 ```
 
-Open http://localhost:5173 — create a group; it persists in Postgres and
-appears in the list (Day 1 definition of done).
+Edit `.env` — the minimum for the dashboard to boot:
 
-Full prod-parity stack in containers: `make full-up` (api + worker + Postgres).
-
-## API
-
-Interactive contract: see `openapi.yaml` (single source of truth).
-Implemented endpoints:
-
-| Method | Path                                   | Purpose                                |
-| ------ | -------------------------------------- | -------------------------------------- |
-| GET    | `/health`                              | liveness                               |
-| GET    | `/readyz`                              | readiness (pings PostgreSQL)           |
-| POST   | `/api/groups`                          | create group (→ 201/409/422)           |
-| GET    | `/api/groups`                          | list groups (`limit`/`offset`)         |
-| GET    | `/api/groups/{id}`                     | get one group (→ 200/404)              |
-| GET    | `/api/integrations/google/connect`     | start Google OAuth (302 → consent)     |
-| GET    | `/api/integrations/google/callback`    | OAuth callback (Google redirects here) |
-| GET    | `/api/integrations/google/status`      | Google connection status (no tokens)   |
-
-Error envelope (every error, every status):
-
-```json
-{ "error": { "code": "VALIDATION_ERROR", "message": "…", "fieldErrors": { "name": "is required" } } }
+```env
+DATABASE_URL=postgres://launchpad:launchpad@localhost:5432/launchpad?sslmode=disable
 ```
 
-## Database
+Optional integrations (leave empty to disable — the API boots safely without them):
 
-- Migrations live in `backend/migrations/` (golang-migrate layout, embedded in
-  binaries). Schema covers the full PRD §7.2 entity set plus the idempotency
-  registry (`group_resources`), `automation_jobs.idempotency_key`, and
-  `external_operation_logs` — the foundation for safe re-execution (PRD §8).
-- Apply manually: `make migrate-up` · roll back: `make migrate-down` ·
-  version: `make migrate-version`. The API also migrates on boot when
-  `MIGRATE_ON_BOOT=true` (dev default).
-- Tests run against an isolated `launchpad_test` database (created
-  automatically when the compose Postgres is up).
+```env
+SLACK_BOT_TOKEN=          # Bot token from your Slack App
+SLACK_SIGNING_SECRET=     # Signing secret for Events API verification
+GOOGLE_CLIENT_ID=         # OAuth 2.0 Client ID from Google Cloud Console
+GOOGLE_CLIENT_SECRET=     # OAuth 2.0 Client Secret
+GOOGLE_REDIRECT_URL=      # Must match the registered redirect URI exactly
+TOKEN_ENCRYPTION_KEY=     # openssl rand -base64 32
+```
 
-## Development workflow
+**Never commit `.env`** — it is git-ignored.
+
+### 2. Start PostgreSQL
 
 ```bash
-make gen       # after editing openapi.yaml — regenerates Go + TS types
-make test      # backend (go test -race, real Postgres) + frontend build
-make psql      # quick database shell
+make dev-up
 ```
 
-Env vars: see `.env.example` (backend config, CORS allowlist, Day-2
-integration placeholders — empty ⇒ adapter disabled; nothing is simulated).
+### 3. Run database migrations
 
-## Status / roadmap
+Migrations apply automatically when the API boots (`MIGRATE_ON_BOOT=true`, the default). To apply or inspect them manually:
 
-- **Day 1 (done):** foundation — schema, groups API, dashboard, tests,
-  contract-first codegen, docker compose.
-- **Day 2:** Slack/Google integrations behind core ports, launch workflow
-  state machine, River jobs, idempotency keys.
-- **Day 3:** daily sync audit (cron), announcements, notifications, CI/CD,
-  production deployment.
+```bash
+make migrate-up       # apply pending migrations
+make migrate-version  # show current schema version
+```
 
-Integration prerequisites (user-owned, needed before Day 2 live testing):
-Slack workspace + app (bot token with `channels:write`, `chat:write`,
-`users:read`, `conversations:*` scopes) and a Google Cloud project with
-Classroom/Drive/Forms APIs enabled + OAuth credentials.
+### 4. Start the backend
+
+```bash
+make api
+```
+
+The API listens on `http://localhost:8080`. Migrations run on boot. The dedicated Slack Events listener starts on `http://127.0.0.1:8081` (loopback only) when `SLACK_SIGNING_SECRET` is configured.
+
+### 5. Start the frontend
+
+```bash
+make fe
+```
+
+Open `http://localhost:5173` — the Vite dev server proxies `/api` to `:8080`.
+
+### Full stack in Docker (prod-parity)
+
+```bash
+make full-up    # PostgreSQL + API container + worker container
+```
+
+## Tests
+
+### Backend (Go)
+
+```bash
+make test-backend           # all packages, -race enabled
+cd backend && go test ./... # without race detector
+```
+
+Tests run against an isolated `launchpad_test` database (created automatically when the Docker PostgreSQL is running). Integration tests use real PostgreSQL — start it with `make dev-up` first if it isn't running.
+
+### Frontend
+
+```bash
+cd frontend && npm run build   # TypeScript type-check + Vite production build
+```
+
+### Both
+
+```bash
+make test
+```
+
+## Project structure
+
+```
+launchpad/
+├── backend/
+│   ├── cmd/
+│   │   ├── api/          # API server (composition root — wires all layers)
+│   │   ├── migrate/      # standalone migration command
+│   │   └── worker/       # background worker (heartbeat placeholder)
+│   ├── internal/
+│   │   ├── core/         # pure business logic — no HTTP, no SQL, no SDKs
+│   │   │   ├── groups/       # group CRUD, student ingestion, onboarding
+│   │   │   └── integrations/ # Slack/Google ports, identity linker, events
+│   │   ├── integrations/ # adapters: the ONLY code talking to Slack/Google
+│   │   │   ├── google/       # OAuth flow, token exchange
+│   │   │   └── slack/        # channels, invites, events, HMAC verification
+│   │   ├── store/        # sqlc-generated queries implementing core ports
+│   │   ├── transport/    # echo HTTP handlers (thin: parse → call → map)
+│   │   ├── secrets/      # AES-256-GCM encryption for stored tokens
+│   │   ├── config/       # env configuration, fail-fast
+│   │   └── dbmigrate/    # embedded migration runner
+│   └── migrations/       # SQL migrations (golang-migrate format, embedded)
+├── frontend/
+│   └── src/
+│       ├── components/   # layout (sidebar/header), shared UI, icons
+│       ├── i18n/         # translations: hy (default), en, ru
+│       ├── lib/          # typed API client, TanStack Query hooks, router
+│       └── pages/        # Overview, Groups, Students, Integrations, etc.
+├── docker-compose.yml    # PostgreSQL (always) + API/worker (profile: full)
+├── openapi.yaml          # API contract — both sides generate types from it
+├── Group_Launchpad_PRD.md # Product Requirements Document
+├── SYSTEMPROMPT.md        # Project instructions for the coding agent
+├── .env.example           # Environment variable template (placeholders only)
+└── Makefile              # dev commands: dev-up, api, fe, test, gen, migrate-*
+```
+
+**Architecture rule:** `transport → core ← store/integrations`. Core declares
+interfaces (ports); store and integrations implement them; `cmd/api` wires
+everything. Core never imports HTTP frameworks, SQL drivers, or external SDKs.
+
+## Troubleshooting
+
+### Docker permission denied
+
+```text
+permission denied while trying to connect to the Docker API
+```
+
+Your user isn't in the `docker` group in this shell. Fix: `sudo usermod -aG docker $USER`, then log out/in. Workaround for the current session: `newgrp docker`.
+
+### Port 8080 already in use
+
+```text
+failed to bind host port 0.0.0.0:8080/tcp: address already in use
+```
+
+Another API instance is running. Stop it first (`Ctrl+C` in the terminal running `make api`, or `docker compose --profile full stop api`). The Makefile's `full-up` target pre-checks this and errors with a clear message.
+
+### Database connection refused
+
+```text
+postgres unreachable after retries
+```
+
+PostgreSQL isn't running. Start it: `make dev-up`. If the volume is corrupt, reset everything: `docker compose down -v` (⚠️ deletes data), then `make dev-up`.
+
+### Missing environment variables
+
+The API fail-fasts on boot with `fatal: config: DATABASE_URL is required`. Integration warnings (`slack integration disabled`, `google oauth disabled`) are non-fatal — the API runs without them, but integration endpoints return `503 NOT_READY`.
+
+### Google OAuth redirect mismatch
+
+The `GOOGLE_REDIRECT_URL` must match the **Authorized redirect URI** in Google Cloud Console byte-for-byte (scheme, host, port, path). For local development:
+`http://localhost:8080/api/integrations/google/callback`
+
+### Slack Events not arriving
+
+1. **Check the tunnel is alive** — quick tunnels (`cloudflared tunnel --url`) die silently after network changes. Restart it.
+2. **Check Socket Mode is OFF** in your Slack App settings — it silently redirects all events to a WebSocket instead of your HTTP endpoint.
+3. **Check the signing secret** — the events listener won't start without it.
+4. **Check the bot is a member** of the channel — Slack only delivers `member_joined_channel` for channels the bot is in.
+
+### Regenerating API types after contract changes
+
+After editing `openapi.yaml`, regenerate types on both sides:
+
+```bash
+make gen
+```
