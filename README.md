@@ -118,6 +118,14 @@ The coordinator can queue a published form with
 configured mail provider accepted the message. Repeating distribution retries confirmed
 failures. Check the relay's records before handling an `unknown` outcome.
 
+### Audit notifications
+
+Open **Automation** and enter the coordinator password to view recent audit
+changes and current issues. To enable email summaries, configure Gmail or SMTP
+delivery and set `AUDIT_NOTIFICATION_EMAIL` in the worker environment.
+Unchanged audits don't create new messages. An email status of `sent` means the
+provider accepted it.
+
 ### Frontend
 
 ```bash

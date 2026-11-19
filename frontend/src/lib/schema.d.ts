@@ -226,6 +226,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit-notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List current issues and recent audit changes for the coordinator */
+        get: operations["getAuditNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/groups/{groupId}/audits": {
         parameters: {
             query?: never;
@@ -404,6 +421,38 @@ export interface components {
             status: "pending" | "sending" | "sent" | "failed" | "unknown";
             attempts: number;
             error?: string;
+        };
+        AuditNotifications: {
+            openIssues: components["schemas"]["OpenAuditIssues"][];
+            notifications: components["schemas"]["AuditNotification"][];
+        };
+        OpenAuditIssues: {
+            /** Format: uuid */
+            groupId: string;
+            groupName: string;
+            /** Format: date-time */
+            checkedAt: string;
+            issues: components["schemas"]["GroupAuditResource"][];
+        };
+        AuditNotification: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            groupId: string;
+            groupName: string;
+            /** Format: date-time */
+            checkedAt: string;
+            /** @enum {string} */
+            emailStatus: "disabled" | "pending" | "sending" | "sent" | "failed" | "unknown";
+            emailError?: string;
+            changes: components["schemas"]["AuditChange"][];
+        };
+        AuditChange: {
+            provider: string;
+            kind: string;
+            key: string;
+            before: string;
+            after: string;
         };
         GroupAuditQueued: {
             /** Format: int64 */
@@ -1283,6 +1332,40 @@ export interface operations {
                 content?: never;
             };
             /** @description Coordinator access or Google OAuth is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getAuditNotifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current issues and recent notifications, up to 50 of each */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditNotifications"];
+                };
+            };
+            /** @description Coordinator credentials required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Audit notifications are unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

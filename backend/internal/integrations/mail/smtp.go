@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"mime"
 	"mime/quotedprintable"
 	"net"
 	stdmail "net/mail"
@@ -37,10 +38,14 @@ func validAddress(value string) bool {
 }
 
 func (r *Relay) Send(ctx context.Context, email integrations.IntakeEmail) (bool, error) {
-	if !validAddress(email.Recipient) {
-		return false, errors.New("student email address is invalid")
+	return r.SendMessage(ctx, email.Recipient, intakeSubject, intakeBody(email))
+}
+
+func (r *Relay) SendMessage(ctx context.Context, recipient, subject, body string) (bool, error) {
+	if !validAddress(recipient) {
+		return false, errors.New("email recipient address is invalid")
 	}
-	message := intakeMessage(r.from, email)
+	message := formattedMessage(r.from, recipient, subject, body)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", r.address)
@@ -67,7 +72,7 @@ func (r *Relay) Send(ctx context.Context, email integrations.IntakeEmail) (bool,
 	if err := client.Mail(r.from); err != nil {
 		return false, errors.New("SMTP relay rejected the sender")
 	}
-	if err := client.Rcpt(email.Recipient); err != nil {
+	if err := client.Rcpt(recipient); err != nil {
 		return false, errors.New("SMTP relay rejected the recipient")
 	}
 	writer, err := client.Data()
@@ -87,13 +92,19 @@ func (r *Relay) Send(ctx context.Context, email integrations.IntakeEmail) (bool,
 	return false, nil
 }
 
-func intakeMessage(from string, email integrations.IntakeEmail) []byte {
+const intakeSubject = "Group Launchpad student intake"
+
+func intakeBody(email integrations.IntakeEmail) string {
+	return fmt.Sprintf("Hello,\n\nPlease complete the intake form for %s:\n\n%s\n", email.GroupName, email.ResponderURL)
+}
+
+func formattedMessage(from, recipient, subject, body string) []byte {
 	var message bytes.Buffer
-	fmt.Fprintf(&message, "From: %s\r\nTo: %s\r\n", from, email.Recipient)
-	fmt.Fprintf(&message, "Date: %s\r\nSubject: Group Launchpad student intake\r\n", time.Now().Format(time.RFC1123Z))
+	fmt.Fprintf(&message, "From: %s\r\nTo: %s\r\n", from, recipient)
+	fmt.Fprintf(&message, "Date: %s\r\nSubject: %s\r\n", time.Now().Format(time.RFC1123Z), mime.QEncoding.Encode("UTF-8", subject))
 	fmt.Fprint(&message, "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
 	writer := quotedprintable.NewWriter(&message)
-	fmt.Fprintf(writer, "Hello,\n\nPlease complete the intake form for %s:\n\n%s\n", email.GroupName, email.ResponderURL)
+	_, _ = writer.Write([]byte(body))
 	_ = writer.Close()
 	return message.Bytes()
 }

@@ -1,11 +1,8 @@
-// Automation page: UI scaffolding for PRD §4.7/§8 capabilities. All backend
-// functionality is pending — honest Coming Soon states, no fake actions.
-
 import { useSettings } from "../i18n";
+import { AuditNotifications } from "../components/AuditNotifications";
 import { Card, Chip, PageTitle } from "../components/ui";
 
 const FEATURES = [
-  { titleKey: "automation.dailySync", descKey: "automation.dailySyncDesc" },
   { titleKey: "automation.onboardingChecks", descKey: "automation.onboardingChecksDesc" },
   { titleKey: "automation.retries", descKey: "automation.retriesDesc" },
   { titleKey: "automation.jobs", descKey: "automation.jobsDesc" },
@@ -16,6 +13,7 @@ export function AutomationPage() {
   return (
     <div className="space-y-6">
       <PageTitle title={t("automation.title")} />
+      <AuditNotifications />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {FEATURES.map((f) => (
           <Card key={f.titleKey} className="border-dashed p-5">

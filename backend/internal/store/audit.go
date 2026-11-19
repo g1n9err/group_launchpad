@@ -2,11 +2,13 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"launchpad/internal/core"
 	"launchpad/internal/core/audit"
 )
 
@@ -67,16 +69,66 @@ func (r *Repo) AuditableGroupIDs(ctx context.Context) ([]uuid.UUID, error) {
 	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 }
 
-func (r *Repo) SaveAudit(ctx context.Context, jobID int64, snapshot audit.Snapshot, expected []audit.Resource) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO audit_logs (river_job_id, group_id, audit_type, expected_state, actual_state, differences)
-		VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb)
-		ON CONFLICT (river_job_id) DO NOTHING
-	`, jobID, snapshot.GroupID, snapshot.Type, expected, snapshot.Results, snapshot.Issues)
+func (r *Repo) SaveAudit(ctx context.Context, jobID int64, snapshot audit.Snapshot, expected []audit.Resource, emailEnabled bool) (uuid.UUID, error) {
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("save group audit: %w", err)
+		return uuid.Nil, err
 	}
-	return nil
+	defer tx.Rollback(ctx)
+	// Serialize snapshots for a group so simultaneous runs compare and
+	// notify against the immediately preceding committed result.
+	var locked uuid.UUID
+	if err := tx.QueryRow(ctx, "SELECT id FROM groups WHERE id=$1 FOR UPDATE", snapshot.GroupID).Scan(&locked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, core.NotFound("group", snapshot.GroupID.String())
+		}
+		return uuid.Nil, err
+	}
+	var previous []audit.Result
+	err = tx.QueryRow(ctx, `
+		SELECT actual_state FROM audit_logs WHERE group_id=$1 AND river_job_id IS NOT NULL
+		ORDER BY created_at DESC,id DESC LIMIT 1
+	`, snapshot.GroupID).Scan(&previous)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, err
+	}
+
+	var auditID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		INSERT INTO audit_logs (river_job_id, group_id, audit_type, expected_state, actual_state, differences, created_at)
+		VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,clock_timestamp())
+		ON CONFLICT (river_job_id) DO NOTHING RETURNING id
+	`, jobID, snapshot.GroupID, snapshot.Type, expected, snapshot.Results, snapshot.Issues).Scan(&auditID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var pending uuid.UUID
+		err := tx.QueryRow(ctx, `SELECT n.id FROM audit_notifications n JOIN audit_logs a ON a.id=n.audit_id
+		    WHERE a.river_job_id=$1 AND n.email_status='pending'`, jobID).Scan(&pending)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, nil
+		}
+		return pending, err
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("save group audit: %w", err)
+	}
+	changes := audit.Changes(previous, snapshot.Results)
+	if len(changes) == 0 {
+		return uuid.Nil, tx.Commit(ctx)
+	}
+	status := "disabled"
+	if emailEnabled {
+		status = "pending"
+	}
+	var notificationID uuid.UUID
+	err = tx.QueryRow(ctx, `INSERT INTO audit_notifications (audit_id, changes, email_status)
+		VALUES ($1,$2::jsonb,$3) RETURNING id`, auditID, changes, status).Scan(&notificationID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !emailEnabled {
+		notificationID = uuid.Nil
+	}
+	return notificationID, tx.Commit(ctx)
 }
 
 func (r *Repo) RecentAudits(ctx context.Context, groupID uuid.UUID) ([]audit.Snapshot, error) {

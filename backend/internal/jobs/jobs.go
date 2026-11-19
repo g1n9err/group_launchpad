@@ -25,6 +25,7 @@ type Config struct {
 	// MaxWorkers is the concurrent job workers for the default queue.
 	MaxWorkers         int
 	IntakeEmailWorkers int
+	AuditEmailEnabled  bool
 }
 
 // DefaultMaxWorkers is the number of concurrent workers for the default queue.
@@ -48,6 +49,10 @@ func NewClient(pool *pgxpool.Pool, workers *river.Workers, cfg Config) (*river.C
 	queues := map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.MaxWorkers}}
 	if cfg.IntakeEmailWorkers > 0 {
 		queues[IntakeEmailQueue] = river.QueueConfig{MaxWorkers: cfg.IntakeEmailWorkers}
+	}
+
+	if cfg.AuditEmailEnabled {
+		queues[AuditEmailQueue] = river.QueueConfig{MaxWorkers: 1}
 	}
 
 	client, err := river.NewClient(

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,15 @@ func (f fixtureAuditChecker) CheckResource(_ context.Context, resource audit.Res
 	return "unavailable"
 }
 
+type fixtureAuditMailer struct {
+	messages chan string
+}
+
+func (f fixtureAuditMailer) SendMessage(_ context.Context, recipient, subject, body string) (bool, error) {
+	f.messages <- recipient + "\n" + subject + "\n" + body
+	return false, nil
+}
+
 func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 	pool := newTestPool(t)
 	truncate(t, pool, "groups", "river_job")
@@ -40,7 +50,7 @@ func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 	audits := &jobs.AuditService{Store: repo, River: producer}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
-		transport.GroupProvisioning{Audit: audits})
+		transport.GroupProvisioning{Audit: audits, AuditNotifications: repo})
 	srv := httptestNew(app, t)
 	code, group := doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Audit Test","courseName":"Go","startDate":"2026-12-01"}`)
 	if code != http.StatusCreated {
@@ -78,9 +88,11 @@ func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo,
 		Slack:  fixtureAuditChecker{"archived-channel": "archived"},
-		Google: fixtureAuditChecker{"classroom-course": "inactive", "root-folder": "ok", "child": "ok"}}})
+		Google: fixtureAuditChecker{"classroom-course": "inactive", "root-folder": "ok", "child": "ok"}}, EmailEnabled: true})
 	river.AddWorker(workers, &jobs.DailyAuditWorker{Groups: repo})
-	worker, err := jobs.NewClient(pool, workers, jobs.Config{})
+	mailer := fixtureAuditMailer{messages: make(chan string, 2)}
+	river.AddWorker(workers, &jobs.AuditEmailWorker{Store: repo, Mailer: mailer, Recipient: "coordinator@example.test"})
+	worker, err := jobs.NewClient(pool, workers, jobs.Config{AuditEmailEnabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,10 +157,69 @@ func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	select {
+	case message := <-mailer.messages:
+		if !strings.HasPrefix(message, "coordinator@example.test\nGroup Launchpad resource audit\n") ||
+			!strings.Contains(message, "slack / audit-test-general: archived") {
+			t.Fatalf("unexpected audit email: %q", message)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("audit email did not run")
+	}
+	for {
+		code, result := doJSON(t, srv, http.MethodGet, "/api/audit-notifications", "")
+		if code != http.StatusOK || len(result["openIssues"].([]any)) != 1 || len(result["notifications"].([]any)) != 1 {
+			t.Fatalf("audit notifications: %d %v", code, result)
+		}
+		if result["notifications"].([]any)[0].(map[string]any)["emailStatus"] == "sent" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("audit email outcome was not saved")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	if count := countRowsSimple(t, pool, "SELECT count(*) FROM audit_logs"); count != 2 {
 		t.Fatalf("checked %d snapshots; the unused draft should be skipped", count)
 	}
 	if count := countRowsSimple(t, pool, "SELECT count(*) FROM group_resources"); count != 4 {
 		t.Fatalf("audit changed the resource registry: got %d records", count)
+	}
+}
+
+func TestAuditNotificationsTrackChangesAndResolutions(t *testing.T) {
+	pool := newTestPool(t)
+	truncate(t, pool, "groups", "audit_logs")
+	repo := store.New(pool)
+	group, err := repo.Create(t.Context(), groupsCreateParams("Audit delta", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := audit.Resource{Provider: "slack", Kind: "channel", Key: "general"}
+	for i, status := range []string{"ok", "unavailable", "unavailable", "archived", "ok"} {
+		item := audit.Result{Resource: resource, Status: status}
+		run := audit.Snapshot{GroupID: group.ID, Type: "manual", Results: []audit.Result{item}, Issues: []audit.Result{}}
+		if status != "ok" {
+			run.Issues = append(run.Issues, item)
+		}
+		for range 2 {
+			if _, err := repo.SaveAudit(t.Context(), int64(i+1), run, []audit.Resource{resource}, false); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	open, err := repo.CurrentAuditIssues(t.Context())
+	if err != nil || len(open) != 0 {
+		t.Fatalf("open issues=%v err=%v", open, err)
+	}
+	rows, err := repo.AuditNotifications(t.Context())
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("notifications=%v err=%v; want new, changed, resolved", rows, err)
+	}
+	for i, expected := range [][2]string{{"archived", "ok"}, {"unavailable", "archived"}, {"ok", "unavailable"}} {
+		if len(rows[i].Changes) != 1 || rows[i].Changes[0].Before != expected[0] || rows[i].Changes[0].After != expected[1] ||
+			rows[i].EmailStatus != "disabled" {
+			t.Fatalf("unexpected notification: %+v", rows[i])
+		}
 	}
 }
