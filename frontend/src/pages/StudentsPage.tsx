@@ -2,10 +2,9 @@
 // onboarding endpoints (no backend changes); client-side search/filter.
 
 import { useMemo, useState } from "react";
-import { useGroups } from "../lib/queries";
+import { groupOnboardingOptions, useGroups } from "../lib/queries";
 import { useSettings } from "../i18n";
 import { useQueries } from "@tanstack/react-query";
-import { api } from "../lib/api";
 import { Card, OnboardingBadge, PageTitle } from "../components/ui";
 
 interface StudentRow {
@@ -20,17 +19,7 @@ function useAllStudents(): { rows: StudentRow[]; loading: boolean } {
   const groups = useGroups();
   const ids = groups.data?.data.map((g) => ({ id: g.id, name: g.name })) ?? [];
   const reports = useQueries({
-    queries: ids.map((g) => ({
-      queryKey: ["onboarding", g.id],
-      queryFn: async () => {
-        const { data, error } = await api.GET("/api/groups/{groupId}/onboarding", {
-          params: { path: { groupId: g.id } },
-        });
-        if (error) throw error;
-        return data;
-      },
-      staleTime: 30_000,
-    })),
+    queries: ids.map((group) => groupOnboardingOptions(group.id)),
   });
   const loading = groups.isPending || reports.some((r) => r.isPending);
   const rows: StudentRow[] = [];

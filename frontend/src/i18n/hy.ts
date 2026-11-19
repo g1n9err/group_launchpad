@@ -100,6 +100,11 @@ const hy: Dictionary = {
   "overview.onboardingProgress": "Slack միացում",
   "overview.integrationStatus": "Ինտեգրումների վիճակը",
   "overview.recentActivity": "Վերջին գործողությունները",
+  "overview.launchStatus": "Խմբերի գործարկման կարգավիճակը",
+  "overview.failedAnnouncements": "Ձախողված հայտարարություններ",
+  "overview.noUpcoming": "Առաջիկա հայտարարություններ չկան։",
+  "overview.noFailedAnnouncements": "Ձախողված հայտարարություններ չկան։",
+  "overview.incompleteAnnouncements": "Որոշ խմբերի հայտարարությունները չհաջողվեց բեռնել։",
   "overview.upcomingAnnouncements": "Առջև եկող հայտարարություններ",
   "overview.joinedOf": "միացել է {joined}-ը {total}-ից",
 

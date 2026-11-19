@@ -1,49 +1,47 @@
-// Overview page: real data only (groups, students, onboarding progress,
-// integration statuses); activity and announcements are honest placeholders.
-
-import { useGroups, useGoogleStatus, useGroupOnboarding, useSlackStatus } from "../lib/queries";
+import { groupOnboardingOptions, useAllGroups, useGoogleStatus, useSlackStatus } from "../lib/queries";
 import { useSettings } from "../i18n";
-import { useQueryClient } from "@tanstack/react-query";
-import { Card, ComingSoon, PageTitle, StatCard, StatusBadge } from "../components/ui";
+import { useQueries } from "@tanstack/react-query";
+import { Card, PageTitle, StatCard, StatusBadge } from "../components/ui";
+
+import { AuditNotifications } from "../components/AuditNotifications";
+import { DashboardAnnouncements } from "../components/DashboardAnnouncements";
 
 export function OverviewPage() {
   const { t, formatNumber } = useSettings();
-  const groups = useGroups();
+  const groups = useAllGroups();
   const google = useGoogleStatus();
   const slack = useSlackStatus();
-  const queryClient = useQueryClient();
-
-  // Aggregate per-group onboarding reports (existing endpoints only).
-  const onboardingReports = (groups.data?.data ?? []).map((g) => ({
-    id: g.id,
-    report: queryClient.getQueryData(["onboarding", g.id]) as
-      | { summary: { expectedCount: number; joinedCount: number } }
-      | undefined,
-  }));
-
-  const totalStudents = onboardingReports.reduce((acc, r) => acc + (r.report?.summary.expectedCount ?? 0), 0);
-  const joinedStudents = onboardingReports.reduce((acc, r) => acc + (r.report?.summary.joinedCount ?? 0), 0);
-  const activeGroups = (groups.data?.data ?? []).filter(
-    (g) => g.status === "launched" || g.status === "launching",
-  ).length;
+  const onboarding = useQueries({
+    queries: (groups.data ?? []).map((group) => groupOnboardingOptions(group.id)),
+  });
+  const onboardingFailed = groups.isError || onboarding.some((report) => report.isError);
+  const onboardingPending = groups.isPending || onboarding.some((report) => report.isPending);
+  const totalStudents = onboarding.reduce((total, report) => total + (report.data?.summary.expectedCount ?? 0), 0);
+  const joinedStudents = onboarding.reduce((total, report) => total + (report.data?.summary.joinedCount ?? 0), 0);
+  const activeGroups = groups.data?.filter((group) => group.status === "launched" || group.status === "launching");
+  const recentGroups = groups.data?.filter((group) => group.status !== "archived").sort((a, b) => {
+    const failed = (status: string) => status === "failed" || status === "partially_failed";
+    return Number(failed(b.status)) - Number(failed(a.status)) || Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  }).slice(0, 5);
   const percent = totalStudents > 0 ? Math.round((joinedStudents / totalStudents) * 1000) / 10 : 0;
+  const rosterReady = !onboardingPending && !onboardingFailed;
 
   return (
     <div className="space-y-6">
       <PageTitle title={t("overview.title")} sub={t("app.tagline")} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label={t("overview.totalGroups")} value={formatNumber(groups.data?.page.total ?? 0)} />
-        <StatCard label={t("overview.totalStudents")} value={formatNumber(totalStudents)} />
-        <StatCard label={t("overview.activeGroups")} value={formatNumber(activeGroups)} />
+        <StatCard label={t("overview.totalGroups")} value={groups.data ? formatNumber(groups.data.length) : "—"} />
+        <StatCard label={t("overview.totalStudents")} value={rosterReady ? formatNumber(totalStudents) : "—"} />
+        <StatCard label={t("overview.activeGroups")} value={activeGroups ? formatNumber(activeGroups.length) : "—"} />
         <StatCard
           label={t("overview.onboardingProgress")}
-          value={`${formatNumber(percent)}%`}
-          sub={t("overview.joinedOf", { joined: joinedStudents, total: totalStudents })}
+          value={rosterReady ? `${formatNumber(percent)}%` : "—"}
+          sub={rosterReady ? t("overview.joinedOf", { joined: joinedStudents, total: totalStudents }) : t(onboardingFailed ? "onboarding.error" : "onboarding.loading")}
         >
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-muted">
+          {rosterReady && <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-muted">
             <div className="h-full rounded-full bg-success-text transition-all" style={{ width: `${Math.min(percent, 100)}%` }} />
-          </div>
+          </div>}
         </StatCard>
       </div>
 
@@ -74,13 +72,28 @@ export function OverviewPage() {
           </div>
         </Card>
 
-        <ComingSoon title={t("overview.recentActivity")} />
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-text">{t("overview.launchStatus")}</h2>
+          {groups.isPending && <p role="status" className="mt-3 text-sm text-muted">{t("list.loading")}</p>}
+          {groups.isError && <p role="alert" className="mt-3 text-sm text-danger-text">{t("list.error")}</p>}
+          {recentGroups?.length === 0 && <p className="mt-3 text-sm text-muted">{t("list.empty")}</p>}
+          <ul className="mt-2 divide-y divide-border">
+            {recentGroups?.map((group) => (
+              <li key={group.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <a className="font-medium text-primary underline" href={`#/group-details/${group.id}`}>{group.name}</a>
+                <StatusBadge status={group.status} t={t} />
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
 
-      <ComingSoon title={t("overview.upcomingAnnouncements")} />
+      <AuditNotifications>
+        {(authorization, onUnauthorized, reload) => groups.data && (
+          <DashboardAnnouncements groups={groups.data} authorization={authorization}
+            onUnauthorized={onUnauthorized} reload={reload} />
+        )}
+      </AuditNotifications>
     </div>
   );
 }
-
-// Re-export to keep the onboarding query warm on this page.
-export { useGroupOnboarding };

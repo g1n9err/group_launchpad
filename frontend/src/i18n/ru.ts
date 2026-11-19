@@ -100,6 +100,11 @@ const ru: Dictionary = {
   "overview.onboardingProgress": "Онбординг в Slack",
   "overview.integrationStatus": "Статус интеграций",
   "overview.recentActivity": "Последние события",
+  "overview.launchStatus": "Статус запуска групп",
+  "overview.failedAnnouncements": "Неотправленные объявления",
+  "overview.noUpcoming": "Нет предстоящих объявлений.",
+  "overview.noFailedAnnouncements": "Нет неотправленных объявлений.",
+  "overview.incompleteAnnouncements": "Не удалось загрузить объявления некоторых групп.",
   "overview.upcomingAnnouncements": "Предстоящие объявления",
   "overview.joinedOf": "присоединились {joined} из {total}",
 
