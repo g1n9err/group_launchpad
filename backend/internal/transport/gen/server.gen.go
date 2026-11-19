@@ -91,6 +91,27 @@ func (e GroupStatus) Valid() bool {
 	}
 }
 
+// Defines values for IntakeFormQuestionType.
+const (
+	Paragraph    IntakeFormQuestionType = "paragraph"
+	SingleChoice IntakeFormQuestionType = "single_choice"
+	Text         IntakeFormQuestionType = "text"
+)
+
+// Valid indicates whether the value is a known member of the IntakeFormQuestionType enum.
+func (e IntakeFormQuestionType) Valid() bool {
+	switch e {
+	case Paragraph:
+		return true
+	case SingleChoice:
+		return true
+	case Text:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SlackChannelResultStatus.
 const (
 	SlackChannelResultStatusCreated SlackChannelResultStatus = "created"
@@ -349,6 +370,29 @@ type Health struct {
 	Status string `json:"status"`
 }
 
+// IntakeFormDraft defines model for IntakeFormDraft.
+type IntakeFormDraft struct {
+	EditUrl string `json:"editUrl"`
+	FormId  string `json:"formId"`
+}
+
+// IntakeFormQuestion defines model for IntakeFormQuestion.
+type IntakeFormQuestion struct {
+	Options  *[]string              `json:"options,omitempty"`
+	Required bool                   `json:"required"`
+	Title    string                 `json:"title"`
+	Type     IntakeFormQuestionType `json:"type"`
+}
+
+// IntakeFormQuestionType defines model for IntakeFormQuestion.Type.
+type IntakeFormQuestionType string
+
+// IntakeFormRequest defines model for IntakeFormRequest.
+type IntakeFormRequest struct {
+	// Questions Ordered draft questions. If omitted, defaults to full name and email.
+	Questions *[]IntakeFormQuestion `json:"questions,omitempty"`
+}
+
 // Page defines model for Page.
 type Page struct {
 	Limit  int `json:"limit"`
@@ -481,6 +525,9 @@ type SlackEventsJSONBody = map[string]interface{}
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = GroupCreate
 
+// ProvisionGroupFormJSONRequestBody defines body for ProvisionGroupForm for application/json ContentType.
+type ProvisionGroupFormJSONRequestBody = IntakeFormRequest
+
 // ProvisionGroupSlackJSONRequestBody defines body for ProvisionGroupSlack for application/json ContentType.
 type ProvisionGroupSlackJSONRequestBody = SlackProvisionRequest
 
@@ -504,6 +551,9 @@ type ServerInterface interface {
 	// ProvisionGroupDrive Create or reuse the group's Google Drive folder tree
 	// (POST /api/groups/{groupId}/drive/provision)
 	ProvisionGroupDrive(ctx echo.Context, groupId GroupId) error
+	// ProvisionGroupForm Create or reuse an unpublished student intake form
+	// (POST /api/groups/{groupId}/forms/provision)
+	ProvisionGroupForm(ctx echo.Context, groupId GroupId) error
 	// LaunchGroup Queue the Slack stage of a group launch
 	// (POST /api/groups/{groupId}/launch)
 	LaunchGroup(ctx echo.Context, groupId GroupId) error
@@ -623,6 +673,22 @@ func (w *ServerInterfaceWrapper) ProvisionGroupDrive(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ProvisionGroupDrive(ctx, groupId)
+	return err
+}
+
+// ProvisionGroupForm converts echo context to params.
+func (w *ServerInterfaceWrapper) ProvisionGroupForm(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ProvisionGroupForm(ctx, groupId)
 	return err
 }
 
@@ -832,6 +898,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/api/groups/:groupId/status", wrapper.GetGroupLaunchStatus, options.OperationMiddlewares["getGroupLaunchStatus"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/classroom/provision", wrapper.ProvisionGroupClassroom, options.OperationMiddlewares["provisionGroupClassroom"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/drive/provision", wrapper.ProvisionGroupDrive, options.OperationMiddlewares["provisionGroupDrive"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/forms/provision", wrapper.ProvisionGroupForm, options.OperationMiddlewares["provisionGroupForm"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)

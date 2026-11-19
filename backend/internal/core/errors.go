@@ -6,6 +6,7 @@ package core
 const (
 	CodeValidation    = "VALIDATION_ERROR"
 	CodeDuplicate     = "DUPLICATE_GROUP"
+	CodeConflict      = "CONFLICT"
 	CodeNotFound      = "NOT_FOUND"
 	CodeNotReady      = "NOT_READY"
 	CodeUpstream      = "UPSTREAM_ERROR"

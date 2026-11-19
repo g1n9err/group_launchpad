@@ -33,6 +33,7 @@ type Handlers struct {
 	launch        SlackLaunchService
 	classroom     *integrations.ClassroomService
 	drive         *integrations.DriveService
+	forms         *integrations.FormsService
 	coordinator   coordinatorAuth
 	ping          PingFunc
 	logger        *slog.Logger
@@ -43,6 +44,7 @@ type GroupProvisioning struct {
 	Launch    SlackLaunchService
 	Classroom *integrations.ClassroomService
 	Drive     *integrations.DriveService
+	Forms     *integrations.FormsService
 }
 
 // New builds the HTTP application and optionally enables group provisioning.
@@ -53,6 +55,7 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 		h.launch = provisioning[0].Launch
 		h.classroom = provisioning[0].Classroom
 		h.drive = provisioning[0].Drive
+		h.forms = provisioning[0].Forms
 	}
 
 	e := echo.New()
@@ -148,7 +151,7 @@ func appStatus(code string) int {
 	switch code {
 	case core.CodeValidation:
 		return http.StatusUnprocessableEntity // 422
-	case core.CodeDuplicate:
+	case core.CodeDuplicate, core.CodeConflict:
 		return http.StatusConflict // 409
 	case core.CodeNotFound:
 		return http.StatusNotFound // 404
