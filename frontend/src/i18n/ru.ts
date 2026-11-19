@@ -2,6 +2,7 @@ import type { Dictionary } from "./en";
 
 // Russian.
 const ru: Dictionary = {
+  "overview.summary": "Следите за запуском групп, подключением студентов и интеграциями.",
   "app.tagline": "Одна форма. Одно действие. Все платформы синхронизированы.",
 
   "nav.language": "Язык",
@@ -11,6 +12,9 @@ const ru: Dictionary = {
 
   "integrations.title": "Интеграции",
   "integrations.checking": "проверка…",
+  "integrations.loadError": "Не удалось проверить интеграцию. Проверьте соединение с API и повторите попытку.",
+  "integrations.usesGoogle": "Использует подключённый аккаунт Google.",
+  "students.loadError": "Не удалось загрузить некоторые данные студентов.",
   "integrations.notConfigured": "Не настроено на сервере.",
   "integrations.google": "Google",
   "integrations.googleDesc": "Classroom, Drive, Forms",
@@ -20,7 +24,7 @@ const ru: Dictionary = {
   "integrations.workspace": "Рабочее пространство · {name}",
 
   "form.title": "Новая группа",
-  "form.subtitle": "Группы начинаются как черновик — Slack, Classroom и Drive подключатся одним нажатием позже.",
+  "form.subtitle": "Создайте черновик группы, затем настройте Slack, Classroom и Drive на странице запуска.",
   "form.name": "Название группы",
   "form.course": "Название курса",
   "form.startDate": "Дата начала",
@@ -64,6 +68,9 @@ const ru: Dictionary = {
   "status.launched": "запущена",
   "status.partially_failed": "частично не удалась",
   "status.failed": "не удалась",
+  "status.connected": "Подключено",
+  "status.disconnected": "Отключено",
+  "status.error": "Ошибка",
   "status.archived": "в архиве",
 
   "onboard.pending": "ожидает",
@@ -81,12 +88,14 @@ const ru: Dictionary = {
   "error.INTERNAL": "Что-то пошло не так. Попробуйте снова.",
   "error.default": "Что-то пошло не так. Попробуйте снова.",
 
+  "nav.primary": "Основная навигация",
   "nav.overview": "Обзор",
   "nav.groups": "Группы",
   "nav.integrations": "Интеграции",
   "nav.settings": "Настройки",
   "nav.students": "Студенты",
   "nav.automation": "Автоматизация",
+  "nav.notifications": "Уведомления",
   "nav.announcements": "Объявления",
   "header.menu": "Меню",
 
@@ -100,6 +109,8 @@ const ru: Dictionary = {
   "overview.onboardingProgress": "Онбординг в Slack",
   "overview.integrationStatus": "Статус интеграций",
   "overview.recentActivity": "Последние события",
+  "overview.needsAttention": "Требует внимания",
+  "overview.attentionCount": "Группы, требующие внимания: {count}",
   "overview.launchStatus": "Статус запуска групп",
   "overview.failedAnnouncements": "Неотправленные объявления",
   "overview.noUpcoming": "Нет предстоящих объявлений.",
@@ -198,6 +209,16 @@ const ru: Dictionary = {
   "audit.emailSent": "Письмо отправлено",
   "audit.emailFailed": "Ошибка отправки",
   "audit.emailUnknown": "Результат отправки неизвестен",
+  "automation.summary": "Просматривайте результаты проверок и проверяйте связанные ресурсы группы.",
+  "automation.groupAudit": "Проверка ресурсов",
+  "automation.runAudit": "Запустить проверку",
+  "automation.refreshHistory": "Обновить результаты",
+  "automation.auditQueued": "Проверка в очереди. Обновите результаты после её завершения.",
+  "automation.auditQueueFailed": "Не удалось поставить проверку в очередь.",
+  "automation.auditHistoryFailed": "Не удалось загрузить результаты проверок группы.",
+  "automation.noAudits": "Завершённых проверок группы пока нет.",
+  "automation.manualAudit": "Ручная проверка",
+  "automation.auditIssues": "Проблемы: {count}",
   "automation.title": "Автоматизация",
   "automation.dailySync": "Ежедневная синхронизация",
   "automation.dailySyncDesc": "Автоматическая ежедневная проверка каналов, участников и ресурсов (PRD §4.7).",

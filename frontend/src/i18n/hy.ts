@@ -2,6 +2,7 @@ import type { Dictionary } from "./en";
 
 // Armenian (default language).
 const hy: Dictionary = {
+  "overview.summary": "Հետևեք խմբերի գործարկմանը, ուսանողների ներգրավմանը և ինտեգրացիաներին։",
   "app.tagline": "Մեկ ձևաթուղթ։ Մեկ գործողություն։ Բոլոր պլատֆորմները համաժամանակեցված։",
 
   "nav.language": "Լեզու",
@@ -11,6 +12,9 @@ const hy: Dictionary = {
 
   "integrations.title": "Ինտեգրումներ",
   "integrations.checking": "ստուգվում է…",
+  "integrations.loadError": "Չհաջողվեց ստուգել ինտեգրացիան։ Ստուգեք API կապը և կրկին փորձեք։",
+  "integrations.usesGoogle": "Օգտագործում է կապակցված Google հաշիվը։",
+  "students.loadError": "Որոշ ուսանողների տվյալներ չհաջողվեց բեռնել։",
   "integrations.notConfigured": "Կազմաձևված չէ սերվերում։",
   "integrations.google": "Google",
   "integrations.googleDesc": "Classroom, Drive, Forms",
@@ -20,7 +24,7 @@ const hy: Dictionary = {
   "integrations.workspace": "Աշխատանքային տարածք · {name}",
 
   "form.title": "Նոր խումբ",
-  "form.subtitle": "Խմբերը սկսվում են սևագրից՝ Slack-ը, Classroom-ը և Drive-ը կմիանան մեկ սեղմումով ավելի ուշ։",
+  "form.subtitle": "Ստեղծեք խմբի սևագիրը, ապա գործարկման բաժնից կարգավորեք Slack-ը, Classroom-ը և Drive-ը։",
   "form.name": "Խմբի անվանում",
   "form.course": "Դասընթացի անվանում",
   "form.startDate": "Մեկնարկի ամսաթիվ",
@@ -64,6 +68,9 @@ const hy: Dictionary = {
   "status.launched": "մեկնարկված",
   "status.partially_failed": "մասամբ ձախողված",
   "status.failed": "ձախողված",
+  "status.connected": "Միացված է",
+  "status.disconnected": "Անջատված է",
+  "status.error": "Սխալ",
   "status.archived": "արխիվացված",
 
   "onboard.pending": "սպասում է",
@@ -81,12 +88,14 @@ const hy: Dictionary = {
   "error.INTERNAL": "Ինչ-որ բան սխալ գնաց։ Փորձեք կրկին։",
   "error.default": "Ինչ-որ բան սխալ գնաց։ Փորձեք կրկին։",
 
+  "nav.primary": "Հիմնական նավիգացիա",
   "nav.overview": "Ակնարկ",
   "nav.groups": "Խմբեր",
   "nav.integrations": "Ինտեգրումներ",
   "nav.settings": "Կարգավորումներ",
   "nav.students": "Ուսանողներ",
   "nav.automation": "Ավտոմատացում",
+  "nav.notifications": "Ծանուցումներ",
   "nav.announcements": "Հայտարարություններ",
   "header.menu": "Մենյու",
 
@@ -100,6 +109,8 @@ const hy: Dictionary = {
   "overview.onboardingProgress": "Slack միացում",
   "overview.integrationStatus": "Ինտեգրումների վիճակը",
   "overview.recentActivity": "Վերջին գործողությունները",
+  "overview.needsAttention": "Ուշադրություն է պահանջում",
+  "overview.attentionCount": "Ուշադրություն պահանջող խմբեր՝ {count}",
   "overview.launchStatus": "Խմբերի գործարկման կարգավիճակը",
   "overview.failedAnnouncements": "Ձախողված հայտարարություններ",
   "overview.noUpcoming": "Առաջիկա հայտարարություններ չկան։",
@@ -198,6 +209,16 @@ const hy: Dictionary = {
   "audit.emailSent": "Նամակն ուղարկված է",
   "audit.emailFailed": "Ուղարկումը ձախողվել է",
   "audit.emailUnknown": "Ուղարկման արդյունքն անհայտ է",
+  "automation.summary": "Դիտեք աուդիտների արդյունքները և ստուգեք խմբի կապակցված ռեսուրսները։",
+  "automation.groupAudit": "Ռեսուրսների աուդիտ",
+  "automation.runAudit": "Գործարկել աուդիտը",
+  "automation.refreshHistory": "Թարմացնել արդյունքները",
+  "automation.auditQueued": "Աուդիտը հերթագրված է։ Ավարտից հետո թարմացրեք արդյունքները։",
+  "automation.auditQueueFailed": "Չհաջողվեց հերթագրել աուդիտը։",
+  "automation.auditHistoryFailed": "Չհաջողվեց բեռնել այս խմբի աուդիտի արդյունքները։",
+  "automation.noAudits": "Խումբը դեռ ավարտված աուդիտ չունի։",
+  "automation.manualAudit": "Ձեռքով գործարկված աուդիտ",
+  "automation.auditIssues": "Խնդիրներ՝ {count}",
   "automation.title": "Ավտոմատացում",
   "automation.dailySync": "Ամենօրյա համաժամանակեցում",
   "automation.dailySyncDesc": "Ուղիների, անդամների և ռեսուրսների ավտոմատ ամենօրյա ստուգում (PRD §4.7)։",
