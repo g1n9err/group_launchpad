@@ -26,6 +26,8 @@ func TestCoordinatorRoutesRejectUnauthorizedRequests(t *testing.T) {
 		{http.MethodPost, group + "/audits"},
 		{http.MethodGet, group + "/audits"},
 		{http.MethodGet, "/api/audit-notifications"},
+		{http.MethodGet, group + "/announcements"},
+		{http.MethodPost, group + "/announcements"},
 		{http.MethodPost, group + "/forms/responses/import"},
 		{http.MethodPost, group + "/forms/distribute"},
 		{http.MethodGet, group + "/forms/deliveries"},

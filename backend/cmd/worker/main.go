@@ -69,11 +69,12 @@ func run() error {
 		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
 		slack = integrations.NewSlackChannelsService(slackGateway, repo, repo, true)
 		slackChecker = slackGateway
+		river.AddWorker(workers, &jobs.AnnouncementWorker{Store: repo, Slack: slackGateway})
 	}
 	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
 	auth := google.NewAuthService(cfg, repo, logger)
 	river.AddWorker(workers, &jobs.DailyAuditWorker{Groups: repo})
-	jobConfig := jobs.Config{WorkerID: cfg.WorkerID()}
+	jobConfig := jobs.Config{WorkerID: cfg.WorkerID(), SlackAnnouncementsEnabled: cfg.SlackConfigured()}
 	var mailer interface {
 		integrations.IntakeMailer
 		jobs.AuditMailer
