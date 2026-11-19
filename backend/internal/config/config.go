@@ -76,6 +76,11 @@ func (c Config) SlackEventsListenerEnabled() bool {
 	return c.SlackEventsConfigured() && c.SlackEventsAddr != ""
 }
 
+// WorkerID returns an optional override for River's generated client ID.
+func (c Config) WorkerID() string {
+	return strings.TrimSpace(os.Getenv("WORKER_ID"))
+}
+
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
 	cfg := Config{
