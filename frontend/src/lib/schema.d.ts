@@ -226,6 +226,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups/{groupId}/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        /** List up to 100 scheduled Slack announcements and their results */
+        get: operations["listGroupAnnouncements"];
+        put?: never;
+        /** Schedule a Slack announcement in a channel linked to the group */
+        post: operations["scheduleGroupAnnouncement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit-notifications": {
         parameters: {
             query?: never;
@@ -420,6 +440,32 @@ export interface components {
             /** @enum {string} */
             status: "pending" | "sending" | "sent" | "failed" | "unknown";
             attempts: number;
+            error?: string;
+        };
+        AnnouncementSchedule: {
+            /**
+             * Format: uuid
+             * @description Reuse the same request ID when retrying the same announcement.
+             */
+            requestId: string;
+            channelName: string;
+            /** @enum {string} */
+            type: "welcome" | "staff_intro" | "rules" | "reminder" | "general";
+            message: string;
+            /** Format: date-time */
+            scheduledAt: string;
+        };
+        ScheduledAnnouncement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            groupId: string;
+            schedule: components["schemas"]["AnnouncementSchedule"];
+            /** @enum {string} */
+            status: "scheduled" | "publishing" | "published" | "failed" | "cancelled" | "unknown";
+            /** Format: date-time */
+            publishedAt?: string;
+            slackMessageId?: string;
             error?: string;
         };
         AuditNotifications: {
@@ -1332,6 +1378,117 @@ export interface operations {
                 content?: never;
             };
             /** @description Coordinator access or Google OAuth is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listGroupAnnouncements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The group's announcements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAnnouncement"][];
+                };
+            };
+            /** @description Coordinator credentials required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Announcement access is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    scheduleGroupAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnouncementSchedule"];
+            };
+        };
+        responses: {
+            /** @description New or existing scheduled announcement */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAnnouncement"];
+                };
+            };
+            /** @description Coordinator credentials required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request origin is not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request ID conflict or channel unavailable for this group */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid announcement */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Slack or announcement access is unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

@@ -370,6 +370,61 @@ paths:
           description: Google Forms response import failed
         "503":
           description: Coordinator access or Google OAuth is unavailable
+  /api/groups/{groupId}/announcements:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    get:
+      tags: [groups]
+      operationId: listGroupAnnouncements
+      summary: List up to 100 scheduled Slack announcements and their results
+      security:
+        - CoordinatorBasic: []
+      responses:
+        "200":
+          description: The group's announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledAnnouncement"
+        "401":
+          description: Coordinator credentials required
+        "404":
+          description: Unknown group
+        "503":
+          description: Announcement access is unavailable
+    post:
+      tags: [groups]
+      operationId: scheduleGroupAnnouncement
+      summary: Schedule a Slack announcement in a channel linked to the group
+      security:
+        - CoordinatorBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementSchedule"
+      responses:
+        "202":
+          description: New or existing scheduled announcement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledAnnouncement"
+        "401":
+          description: Coordinator credentials required
+        "403":
+          description: The request origin is not allowed
+        "404":
+          description: Unknown group
+        "409":
+          description: Request ID conflict or channel unavailable for this group
+        "422":
+          description: Invalid announcement
+        "503":
+          description: Slack or announcement access is unavailable
   /api/audit-notifications:
     get:
       tags: [groups]
@@ -736,6 +791,46 @@ components:
           enum: [pending, sending, sent, failed, unknown]
         attempts:
           type: integer
+        error:
+          type: string
+    AnnouncementSchedule:
+      type: object
+      required: [requestId, channelName, type, message, scheduledAt]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Reuse the same request ID when retrying the same announcement.
+        channelName:
+          type: string
+        type:
+          type: string
+          enum: [welcome, staff_intro, rules, reminder, general]
+        message:
+          type: string
+        scheduledAt:
+          type: string
+          format: date-time
+    ScheduledAnnouncement:
+      type: object
+      required: [id, groupId, schedule, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        schedule:
+          $ref: "#/components/schemas/AnnouncementSchedule"
+        status:
+          type: string
+          enum: [scheduled, publishing, published, failed, cancelled, unknown]
+        publishedAt:
+          type: string
+          format: date-time
+        slackMessageId:
+          type: string
         error:
           type: string
     AuditNotifications:
