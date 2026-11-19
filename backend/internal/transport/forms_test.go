@@ -14,11 +14,19 @@ import (
 )
 
 type fakeForms struct {
-	creates atomic.Int32
-	updates atomic.Int32
+	creates   atomic.Int32
+	updates   atomic.Int32
+	publishes atomic.Int32
 }
 
 func (*fakeForms) AccessToken(context.Context) (string, error) { return "test-token", nil }
+
+const testResponderURL = "https://docs.google.com/forms/d/e/test-form/viewform"
+
+func (f *fakeForms) Publish(context.Context, string, string) (string, error) {
+	f.publishes.Add(1)
+	return testResponderURL, nil
+}
 
 func (f *fakeForms) CreateDraft(context.Context, string, string, string) (string, bool, error) {
 	f.creates.Add(1)
@@ -54,7 +62,12 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("create group: %d %v", code, group)
 	}
-	path := "/api/groups/" + group["id"].(string) + "/forms/provision"
+	formsPath := "/api/groups/" + group["id"].(string) + "/forms"
+	path := formsPath + "/provision"
+	publishPath := formsPath + "/publish"
+	if code, _ := doJSON(t, srv, http.MethodPost, publishPath, ""); code != http.StatusNotFound {
+		t.Fatalf("publish before provisioning: %d, want 404", code)
+	}
 	if code, _ := doJSON(t, srv, http.MethodPost, path, `{"questions":[]}`); code != http.StatusUnprocessableEntity {
 		t.Fatalf("empty question list: %d, want 422", code)
 	}
@@ -62,6 +75,9 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 		{"title":"Time","type":"single_choice","options":["Morning"," Evening "]}]}`
 	if code, _ := doJSON(t, srv, http.MethodPost, path, questions); code != http.StatusBadGateway {
 		t.Fatalf("interrupted create: %d, want 502", code)
+	}
+	if code, _ := doJSON(t, srv, http.MethodPost, publishPath, ""); code != http.StatusConflict {
+		t.Fatalf("publish before draft completion: %d, want 409", code)
 	}
 	for range 2 {
 		code, result := doJSON(t, srv, http.MethodPost, path, questions)
@@ -71,6 +87,18 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	}
 	if code, _ := doJSON(t, srv, http.MethodPost, path, `{"questions":[{"title":"Different","type":"paragraph"}]}`); code != http.StatusConflict {
 		t.Fatalf("changing saved questions: %d, want 409", code)
+	}
+	for range 2 {
+		code, result := doJSON(t, srv, http.MethodPost, publishPath, "")
+		if code != http.StatusOK || result["formId"] != "recovered-form-id" || result["responderUrl"] != testResponderURL {
+			t.Fatalf("publish: %d %v", code, result)
+		}
+	}
+	if gateway.publishes.Load() != 1 {
+		t.Fatalf("publish calls=%d, want one", gateway.publishes.Load())
+	}
+	if rows := countRowsSimple(t, pool, "SELECT count(*) FROM intake_forms WHERE form_url='https://docs.google.com/forms/d/e/test-form/viewform'"); rows != 1 {
+		t.Fatalf("saved %d published URLs, want 1", rows)
 	}
 	if gateway.creates.Load() != 1 || gateway.updates.Load() != 1 {
 		t.Fatalf("create calls=%d update calls=%d, want one each", gateway.creates.Load(), gateway.updates.Load())
