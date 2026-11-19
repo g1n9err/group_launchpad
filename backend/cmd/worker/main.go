@@ -20,6 +20,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"launchpad/internal/config"
+	"launchpad/internal/core/audit"
 	"launchpad/internal/core/integrations"
 	"launchpad/internal/dbmigrate"
 	"launchpad/internal/integrations/google"
@@ -62,10 +63,16 @@ func run() error {
 	workers := jobs.NewWorkers(logger)
 	repo := store.New(pool)
 	slack := integrations.NewSlackChannelsService(nil, repo, repo, false)
+	var slackChecker audit.Checker
 	if cfg.SlackConfigured() {
-		slack = integrations.NewSlackChannelsService(slackgw.NewGateway(cfg.SlackBotToken), repo, repo, true)
+		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
+		slack = integrations.NewSlackChannelsService(slackGateway, repo, repo, true)
+		slackChecker = slackGateway
 	}
 	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
+	auth := google.NewAuthService(cfg, repo, logger)
+	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, Slack: slackChecker, Google: google.NewAuditChecker(auth)}})
+	river.AddWorker(workers, &jobs.DailyAuditWorker{Groups: repo})
 	jobConfig := jobs.Config{WorkerID: cfg.WorkerID()}
 	if cfg.SMTPEnabled {
 		mailer, err := mailgw.NewRelay(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
@@ -77,7 +84,6 @@ func run() error {
 	}
 
 	if cfg.GmailEnabled {
-		auth := google.NewAuthService(cfg, repo, logger)
 		if !auth.Configured() {
 			return fmt.Errorf("GMAIL_ENABLED requires valid Google OAuth configuration")
 		}
@@ -90,6 +96,9 @@ func run() error {
 		return err
 	}
 
+	if _, err := client.PeriodicJobs().AddSafely(jobs.DailyAuditSchedule()); err != nil {
+		return fmt.Errorf("register daily audit: %w", err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

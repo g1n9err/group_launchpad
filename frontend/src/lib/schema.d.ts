@@ -226,6 +226,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups/{groupId}/audits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        /** List the most recent group resource audits */
+        get: operations["listGroupAudits"];
+        put?: never;
+        /** Queue a read-only audit of a group's external resources */
+        post: operations["queueGroupAudit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/groups/{groupId}/onboarding": {
         parameters: {
             query?: never;
@@ -384,6 +404,29 @@ export interface components {
             status: "pending" | "sending" | "sent" | "failed" | "unknown";
             attempts: number;
             error?: string;
+        };
+        GroupAuditQueued: {
+            /** Format: int64 */
+            jobId: number;
+        };
+        GroupAudit: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            groupId: string;
+            /** @enum {string} */
+            type: "manual" | "daily_sync";
+            /** Format: date-time */
+            checkedAt: string;
+            results: components["schemas"]["GroupAuditResource"][];
+            issues: components["schemas"]["GroupAuditResource"][];
+        };
+        GroupAuditResource: {
+            provider: string;
+            kind: string;
+            key: string;
+            /** @enum {string} */
+            status: "ok" | "unlinked" | "missing_or_inaccessible" | "unavailable" | "archived" | "inactive" | "trashed" | "misconfigured";
         };
         IntakeResponseSummary: {
             saved: number;
@@ -1240,6 +1283,99 @@ export interface operations {
                 content?: never;
             };
             /** @description Coordinator access or Google OAuth is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listGroupAudits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 20 snapshots, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupAudit"][];
+                };
+            };
+            /** @description Coordinator credentials required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Audit access is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    queueGroupAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit job accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupAuditQueued"];
+                };
+            };
+            /** @description Coordinator credentials required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request origin is not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Audit access is unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

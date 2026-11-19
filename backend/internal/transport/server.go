@@ -37,6 +37,7 @@ type Handlers struct {
 	delivery        IntakeDeliveryService
 	deliveryEnabled bool
 	coordinator     coordinatorAuth
+	audit           GroupAuditService
 	ping            PingFunc
 	logger          *slog.Logger
 }
@@ -49,6 +50,7 @@ type GroupProvisioning struct {
 	Forms           *integrations.FormsService
 	Delivery        IntakeDeliveryService
 	DeliveryEnabled bool
+	Audit           GroupAuditService
 }
 
 // New builds the HTTP application and optionally enables group provisioning.
@@ -62,6 +64,7 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 		h.forms = provisioning[0].Forms
 		h.delivery = provisioning[0].Delivery
 		h.deliveryEnabled = provisioning[0].DeliveryEnabled
+		h.audit = provisioning[0].Audit
 	}
 
 	e := echo.New()
