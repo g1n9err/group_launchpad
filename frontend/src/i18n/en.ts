@@ -1,6 +1,7 @@
 // English dictionary — the translation contract. Every other language must
 // implement exactly this shape (enforced at compile time).
 const en = {
+  "overview.summary": "Track group launches, student onboarding, and connected services.",
   "app.tagline": "One form. One launch action. Every platform synchronized.",
 
   "nav.language": "Language",
@@ -10,6 +11,9 @@ const en = {
 
   "integrations.title": "Integrations",
   "integrations.checking": "checking…",
+  "integrations.loadError": "Could not check the integration. Check the API connection and try again.",
+  "integrations.usesGoogle": "Uses the linked Google account.",
+  "students.loadError": "Some student records could not be loaded.",
   "integrations.notConfigured": "Not configured on the server.",
   "integrations.google": "Google",
   "integrations.googleDesc": "Classroom, Drive, Forms",
@@ -19,7 +23,7 @@ const en = {
   "integrations.workspace": "Workspace · {name}",
 
   "form.title": "New group",
-  "form.subtitle": "Groups start as draft — Slack, Classroom, and Drive launch in one click later.",
+  "form.subtitle": "Create a draft group, then configure Slack, Classroom, and Drive from its launch checklist.",
   "form.name": "Group name",
   "form.course": "Course name",
   "form.startDate": "Start date",
@@ -63,6 +67,9 @@ const en = {
   "status.launched": "launched",
   "status.partially_failed": "partially failed",
   "status.failed": "failed",
+  "status.connected": "Connected",
+  "status.disconnected": "Disconnected",
+  "status.error": "Error",
   "status.archived": "archived",
 
   "onboard.pending": "pending",
@@ -80,12 +87,14 @@ const en = {
   "error.INTERNAL": "Something went wrong. Please try again.",
   "error.default": "Something went wrong. Please try again.",
 
+  "nav.primary": "Main navigation",
   "nav.overview": "Overview",
   "nav.groups": "Groups",
   "nav.integrations": "Integrations",
   "nav.settings": "Settings",
   "nav.students": "Students",
   "nav.automation": "Automation",
+  "nav.notifications": "Notifications",
   "nav.announcements": "Announcements",
   "header.menu": "Menu",
 
@@ -99,6 +108,8 @@ const en = {
   "overview.onboardingProgress": "Slack onboarding",
   "overview.integrationStatus": "Integration status",
   "overview.recentActivity": "Recent activity",
+  "overview.needsAttention": "Needs attention",
+  "overview.attentionCount": "Groups requiring attention: {count}",
   "overview.launchStatus": "Group launch status",
   "overview.failedAnnouncements": "Failed announcements",
   "overview.noUpcoming": "No upcoming announcements.",
@@ -197,6 +208,16 @@ const en = {
   "audit.emailSent": "Email sent",
   "audit.emailFailed": "Email failed",
   "audit.emailUnknown": "Email outcome unknown",
+  "automation.summary": "Review background audit results and check a group’s linked resources.",
+  "automation.groupAudit": "Resource audit",
+  "automation.runAudit": "Run resource audit",
+  "automation.refreshHistory": "Refresh results",
+  "automation.auditQueued": "Audit queued. Refresh results when the worker finishes.",
+  "automation.auditQueueFailed": "Could not queue the audit.",
+  "automation.auditHistoryFailed": "Could not load audit results for this group.",
+  "automation.noAudits": "This group has no completed audits yet.",
+  "automation.manualAudit": "Manual audit",
+  "automation.auditIssues": "Issues: {count}",
   "automation.title": "Automation",
   "automation.dailySync": "Daily synchronization",
   "automation.dailySyncDesc": "Automated daily audit of channels, members, and resources (PRD §4.7).",

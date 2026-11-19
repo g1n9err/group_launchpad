@@ -1,9 +1,6 @@
-// Integrations page: REAL status for Slack + Google (existing endpoints);
-// Classroom/Drive/Forms are honest not-implemented placeholders.
-
 import { googleConnectUrl, useGoogleStatus, useSlackStatus } from "../lib/queries";
 import { useSettings } from "../i18n";
-import { Card, Chip, PageTitle, StatusBadge } from "../components/ui";
+import { Card, PageTitle, StatusBadge } from "../components/ui";
 
 function IntegrationCard({
   name,
@@ -12,7 +9,7 @@ function IntegrationCard({
   statusT,
   pending,
   error,
-  notConfigured,
+  errorMessage,
   action,
 }: {
   name: string;
@@ -21,7 +18,7 @@ function IntegrationCard({
   statusT: ReturnType<typeof useSettings>["t"];
   pending?: boolean;
   error?: boolean;
-  notConfigured?: string;
+  errorMessage?: string;
   action?: React.ReactNode;
 }) {
   const { t } = useSettings();
@@ -38,7 +35,7 @@ function IntegrationCard({
           <StatusBadge status={status} t={statusT} />
         ) : null}
       </div>
-      {error && <p className="mt-3 text-xs text-muted">{notConfigured}</p>}
+      {error && <p className="mt-3 text-xs text-muted">{errorMessage}</p>}
       {action && <div className="mt-4">{action}</div>}
     </Card>
   );
@@ -48,12 +45,16 @@ export function IntegrationsPage() {
   const { t } = useSettings();
   const google = useGoogleStatus();
   const slack = useSlackStatus();
+  const loadError = (error: unknown) =>
+    (error as { error?: { code?: string } } | null)?.error?.code === "NOT_READY"
+      ? t("integrations.notConfigured")
+      : t("integrations.loadError");
 
   return (
     <div className="space-y-6">
       <PageTitle title={t("integrations.title")} />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <IntegrationCard
           name={t("integrations.slack")}
           desc={slack.data?.teamName ? t("integrations.workspace", { name: slack.data.teamName }) : t("integrations.slackDesc")}
@@ -61,7 +62,7 @@ export function IntegrationsPage() {
           statusT={t}
           pending={slack.isPending}
           error={slack.isError}
-          notConfigured={t("integrations.notConfigured")}
+          errorMessage={loadError(slack.error)}
         />
 
         <IntegrationCard
@@ -71,7 +72,7 @@ export function IntegrationsPage() {
           statusT={t}
           pending={google.isPending}
           error={google.isError}
-          notConfigured={t("integrations.notConfigured")}
+          errorMessage={loadError(google.error)}
           action={
             google.data?.status !== "connected" && !google.isError && !google.isPending ? (
               <a
@@ -84,34 +85,24 @@ export function IntegrationsPage() {
           }
         />
 
-        <Card className="border-dashed p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-text">{t("integrations.classroom")}</h3>
-              <p className="mt-1 text-xs text-muted">{t("integrations.googleDesc")}</p>
-            </div>
-            <Chip tone="muted">{t("integrations.notImplemented")}</Chip>
-          </div>
-        </Card>
-
-        <Card className="border-dashed p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-text">{t("integrations.drive")}</h3>
-            </div>
-            <Chip tone="muted">{t("integrations.notImplemented")}</Chip>
-          </div>
-        </Card>
-
-        <Card className="border-dashed p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-text">{t("integrations.forms")}</h3>
-            </div>
-            <Chip tone="muted">{t("integrations.notImplemented")}</Chip>
-          </div>
-        </Card>
       </div>
+
+      <Card className="p-5">
+        <h2 className="text-base font-bold">{t("integrations.googleDesc")}</h2>
+        <p className="mt-1 text-sm text-muted">{t("integrations.usesGoogle")}</p>
+        <ul className="mt-3 divide-y divide-border">
+          {([
+            { name: "integrations.classroom", route: "groups", action: "nav.groups" },
+            { name: "integrations.drive", route: "groups", action: "nav.groups" },
+            { name: "integrations.forms", route: "intake-forms", action: "nav.intakeForms" },
+          ] as const).map(({ name, route, action }) => (
+            <li key={name} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+              <span className="font-medium">{t(name)}</span>
+              <a className="font-semibold text-primary hover:underline" href={`#/${route}`}>{t(action)}</a>
+            </li>
+          ))}
+        </ul>
+      </Card>
     </div>
   );
 }

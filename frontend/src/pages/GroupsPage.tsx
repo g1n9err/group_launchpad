@@ -2,7 +2,7 @@
 // functionality (student ingestion, onboarding panel, statuses).
 
 import { useState, type FormEvent } from "react";
-import { useCreateGroup, useGroupOnboarding, useGroups } from "../lib/queries";
+import { useCreateGroup, useGroupOnboarding, useAllGroups } from "../lib/queries";
 import { useSettings } from "../i18n";
 import { navigate, useRoute } from "../lib/router";
 import { Card, OnboardingBadge, PageTitle, StatusBadge } from "../components/ui";
@@ -36,8 +36,8 @@ function CreateGroupForm() {
     setApiError(null);
     const emails = studentEmails.split(/[\s,]+/).map((s) => s.trim()).filter((s) => s.length > 0);
     try {
-      await create.mutateAsync({ name, courseName, startDate, studentEmails: emails });
-      setName(""); setCourseName(""); setStartDate(""); setStudentEmails("");
+      const group = await create.mutateAsync({ name, courseName, startDate, studentEmails: emails });
+      if (group) navigate(`/group-details/${group.id}`);
     } catch (err) {
       setApiError(err as { code?: string; fieldErrors?: Record<string, string>; message: string });
     }
@@ -45,8 +45,6 @@ function CreateGroupForm() {
 
   return (
     <Card className="p-6">
-      <h2 className="text-base font-semibold text-text">{t("form.title")}</h2>
-      <p className="mt-1 text-sm text-muted">{t("form.subtitle")}</p>
 
       <form onSubmit={onSubmit}>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -92,39 +90,40 @@ function CreateGroupForm() {
 
 function GroupsList() {
   const { t, formatDate } = useSettings();
-  const { data, isPending, isError } = useGroups();
+  const { data, isPending, isError } = useAllGroups();
 
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between px-6 py-4">
         <h2 className="text-base font-semibold text-text">{t("list.title")}</h2>
-        {data && <span className="text-sm text-muted">{t("list.total", { count: data.page.total })}</span>}
+        {data && <span className="text-sm text-muted">{t("list.total", { count: data.length })}</span>}
       </div>
 
       {isPending && <p className="px-6 pb-6 text-sm text-muted">{t("list.loading")}</p>}
       {isError && <p className="px-6 pb-6 text-sm text-danger-text">{t("list.error")}</p>}
-      {data && data.data.length === 0 && <p className="px-6 pb-6 text-sm text-muted">{t("list.empty")}</p>}
+      {data && data.length === 0 && <p className="px-6 pb-6 text-sm text-muted">{t("list.empty")}</p>}
 
-      {data && data.data.length > 0 && (
+      {data && data.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="app-table w-full text-left text-sm">
             <thead>
               <tr className="border-t border-border bg-surface-muted/50 text-xs uppercase tracking-wide text-muted">
                 <th className="px-4 py-2 font-semibold">{t("list.colGroup")}</th>
-                <th className="px-4 py-2 font-semibold">{t("list.colStarts")}</th>
                 <th className="px-4 py-2 font-semibold">{t("list.colCourse")}</th>
+                <th className="px-4 py-2 font-semibold">{t("list.colStarts")}</th>
                 <th className="px-4 py-2 font-semibold">{t("list.colStatus")}</th>
                 <th className="px-4 py-2 font-semibold">{t("list.colCreated")}</th>
               </tr>
             </thead>
             <tbody>
-              {data.data.map((group) => (
+              {data.map((group) => (
                 <tr
                   key={group.id}
-                  onClick={() => navigate(`/groups/${group.id}`)}
-                  className="cursor-pointer border-t border-border transition-colors hover:bg-surface-muted/60"
+                  className="border-t border-border transition-colors hover:bg-surface-muted/60"
                 >
-                  <td className="px-4 py-3 font-medium text-text">{group.name}</td>
+                  <td className="px-4 py-3 font-semibold text-text">
+                    <a className="text-primary hover:underline" href={`#/group-details/${group.id}`}>{group.name}</a>
+                  </td>
                   <td className="px-4 py-3 text-muted">{group.courseName}</td>
                   <td className="px-4 py-3 text-muted">{group.startDate}</td>
                   <td className="px-4 py-3"><StatusBadge status={group.status} t={t} /></td>
@@ -142,8 +141,8 @@ function GroupsList() {
 function GroupDetails({ groupId }: { groupId: string }) {
   const { t } = useSettings();
   const { data, isPending, isError, refetch } = useGroupOnboarding(groupId);
-  const groups = useGroups();
-  const group = groups.data?.data.find((g) => g.id === groupId);
+  const groups = useAllGroups();
+  const group = groups.data?.find((g) => g.id === groupId);
 
   return (
     <div className="space-y-6">
@@ -229,7 +228,7 @@ function GroupDetails({ groupId }: { groupId: string }) {
               <p className="mt-6 text-sm text-muted">{t("onboarding.noStudents")}</p>
             ) : (
               <div className="mt-6 overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="app-table w-full text-left text-sm">
                   <thead>
                     <tr className="border-t border-border bg-surface-muted/50 text-xs uppercase tracking-wide text-muted">
                       <th className="px-3 py-2 font-semibold">{t("onboarding.colStudent")}</th>
@@ -264,10 +263,20 @@ export function GroupsPage() {
     return <GroupDetails groupId={route.id} />;
   }
 
+  if (route.page === "groups" && route.id === "new") {
+    return (
+      <div className="max-w-4xl space-y-6">
+        <PageTitle title={t("form.title")} sub={t("form.subtitle")}
+          actions={<a className="text-sm font-semibold text-primary hover:underline" href="#/groups">{t("groups.backToList")}</a>} />
+        <CreateGroupForm />
+      </div>
+    );
+  }
+  if (route.page === "groups" && route.id) return <GroupDetails groupId={route.id} />;
+
   return (
     <div className="space-y-6">
-      <PageTitle title={t("nav.groups")} sub={t("form.subtitle")} />
-      <CreateGroupForm />
+      <PageTitle title={t("nav.groups")} actions={<a className="app-action" href="#/groups/new">{t("form.title")}</a>} />
       <GroupsList />
     </div>
   );

@@ -2,7 +2,7 @@
 // onboarding endpoints (no backend changes); client-side search/filter.
 
 import { useMemo, useState } from "react";
-import { groupOnboardingOptions, useGroups } from "../lib/queries";
+import { groupOnboardingOptions, useAllGroups } from "../lib/queries";
 import { useSettings } from "../i18n";
 import { useQueries } from "@tanstack/react-query";
 import { Card, OnboardingBadge, PageTitle } from "../components/ui";
@@ -15,9 +15,9 @@ interface StudentRow {
   onboardingStatus: string;
 }
 
-function useAllStudents(): { rows: StudentRow[]; loading: boolean } {
-  const groups = useGroups();
-  const ids = groups.data?.data.map((g) => ({ id: g.id, name: g.name })) ?? [];
+function useAllStudents(): { rows: StudentRow[]; loading: boolean; loadFailed: boolean } {
+  const groups = useAllGroups();
+  const ids = groups.data?.map((g) => ({ id: g.id, name: g.name })) ?? [];
   const reports = useQueries({
     queries: ids.map((group) => groupOnboardingOptions(group.id)),
   });
@@ -36,12 +36,12 @@ function useAllStudents(): { rows: StudentRow[]; loading: boolean } {
       });
     }
   });
-  return { rows, loading };
+  return { rows, loading, loadFailed: groups.isError || reports.some((report) => report.isError) };
 }
 
 export function StudentsPage() {
   const { t } = useSettings();
-  const { rows, loading } = useAllStudents();
+  const { rows, loading, loadFailed } = useAllStudents();
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -63,6 +63,7 @@ export function StudentsPage() {
         <div className="border-b border-border px-5 py-3">
           <input
             type="search"
+            aria-label={t("students.searchPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("students.searchPlaceholder")}
@@ -72,7 +73,9 @@ export function StudentsPage() {
 
         {loading && <p className="px-5 py-6 text-sm text-muted">{t("list.loading")}</p>}
 
-        {!loading && filtered.length === 0 && (
+        {loadFailed && <p role="alert" className="px-5 py-3 text-sm text-danger-text">{t("students.loadError")}</p>}
+
+        {!loading && !loadFailed && filtered.length === 0 && (
           <p className="px-5 py-6 text-sm text-muted">
             {rows.length === 0 ? t("students.none") : t("students.noResults")}
           </p>
@@ -80,7 +83,7 @@ export function StudentsPage() {
 
         {!loading && filtered.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="app-table w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-muted/50 text-xs uppercase tracking-wide text-muted">
                   <th className="px-4 py-2 font-semibold">{t("students.colName")}</th>

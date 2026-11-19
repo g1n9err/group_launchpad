@@ -4,78 +4,79 @@
    choice wins over prefers-color-scheme. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* ── Design tokens — Lavender + White, Clean Minimal SaaS ──────────────────
-   Single source of color truth. Components use semantic utilities only
-   (bg-surface, text-muted, ring-primary/40 …); no palette literals inside
-   components. Light values on :root; dark-plum overrides for dark theme. */
+/* Cyber-brutalist light and dark themes for the full workspace. */
 :root {
-  --bg: #f8f7fc;
-  --surface: #ffffff; /* sidebar + cards */
-  --surface-muted: #f1ecfc; /* table heads, hover, active nav */
-  --soft: #e9e2f8; /* soft lavender fills */
-  --border: #eae7f0;
-
-  --text: #272333;
-  --text-muted: #777386;
-
-  --primary: #8b5cf6;
-  --primary-hover: #7c3aed;
-  --on-primary: #ffffff;
-
-  --muted-text: #6d6784;
-  --muted-bg: #e9e2f8;
-  --muted-ring: #ddd3f0;
-
-  --info-text: #6d5bd0;
-  --info-bg: #f1ecfc;
-  --info-ring: #ddd3f0;
-
-  --success-text: #237a57;
-  --success-bg: #e9f7ef;
-  --success-ring: #bfe6cf;
-
-  --warn-text: #96660a;
-  --warn-bg: #fdf3e3;
-  --warn-ring: #f0dcb4;
-
-  --danger-text: #b33636;
-  --danger-bg: #fdeeee;
-  --danger-ring: #f3c7c7;
+  color-scheme: light;
+  --bg: #ecece8;
+  --surface: #f9f9f5;
+  --surface-muted: #edede9;
+  --soft: #eae4fb;
+  --border: #c5c4cb;
+  --text: #17171c;
+  --text-muted: #53515d;
+  --primary: #592cb8;
+  --primary-hover: #41208e;
+  --on-primary: #fff;
+  --muted-text: #4f5d71;
+  --muted-bg: #edf0f5;
+  --muted-ring: #d9e0ea;
+  --info-text: #5527a5;
+  --info-bg: #ece4ff;
+  --info-ring: #d1c0f5;
+  --success-text: #295c42;
+  --success-bg: #e4efe3;
+  --success-ring: #c7dec7;
+  --warn-text: #825413;
+  --warn-bg: #fcf0d8;
+  --warn-ring: #ead6ae;
+  --danger-text: #a13732;
+  --danger-bg: #f8e6e2;
+  --danger-ring: #ebc9c1;
+  --rail: #f4f4f0;
+  --rail-text: #1b1921;
+  --rail-muted: #555160;
+  --rail-hover: #ece8f5;
+  --rail-active: #eae1ff;
+  --rail-accent: #582cb1;
+  --card-shadow: none;
+  --rule: #26232c;
 }
 
 [data-theme="dark"] {
-  --bg: #171321;
-  --surface: #211b2d; /* sidebar + cards */
-  --surface-muted: #2a2338;
-  --soft: #352a49;
-  --border: #393146;
-
-  --text: #f5f3ff;
-  --text-muted: #b8b1c7;
-
-  --primary: #a78bfa;
-  --primary-hover: #c4b5fd;
-  --on-primary: #171321;
-
-  --muted-text: #b8b1c7;
-  --muted-bg: #352a49;
-  --muted-ring: #4a3d63;
-
-  --info-text: #c4b5fd;
-  --info-bg: #352a49;
-  --info-ring: #4a3d63;
-
-  --success-text: #7ddb9e;
-  --success-bg: #1d2f26;
-  --success-ring: #2c5940;
-
-  --warn-text: #ecc482;
-  --warn-bg: #382a14;
-  --warn-ring: #5d4720;
-
-  --danger-text: #f1a0a0;
-  --danger-bg: #3a1d1d;
-  --danger-ring: #6e2f2f;
+  color-scheme: dark;
+  --bg: #0e100f;
+  --surface: #161916;
+  --surface-muted: #202420;
+  --soft: #27301b;
+  --border: #454942;
+  --text: #f2f4e9;
+  --text-muted: #b4baae;
+  --primary: #d4f34f;
+  --primary-hover: #e3ff79;
+  --on-primary: #171b0b;
+  --muted-text: #b5c1d8;
+  --muted-bg: #293346;
+  --muted-ring: #3c4b64;
+  --info-text: #dcf583;
+  --info-bg: #29321b;
+  --info-ring: #54643b;
+  --success-text: #a9ddaf;
+  --success-bg: #263e2c;
+  --success-ring: #42634b;
+  --warn-text: #f1cc8b;
+  --warn-bg: #3b3221;
+  --warn-ring: #625237;
+  --danger-text: #f4aaa1;
+  --danger-bg: #422b29;
+  --danger-ring: #6b4440;
+  --rail: #111410;
+  --rail-hover: #252b21;
+  --rail-active: #2b331e;
+  --card-shadow: 0 1px 3px #0004;
+  --rail-text: #f3f5eb;
+  --rail-muted: #b1b8aa;
+  --rail-accent: #d4f34f;
+  --rule: #818a76;
 }
 
 @theme inline {
@@ -112,9 +113,193 @@
   --color-danger-bg: var(--danger-bg);
   --color-danger-ring: var(--danger-ring);
 
-  --font-sans: "Inter", "Noto Sans Armenian", ui-sans-serif, system-ui, sans-serif;
+  --color-rail: var(--rail);
+  --color-rail-text: var(--rail-text);
+  --color-rail-muted: var(--rail-muted);
+  --color-rail-hover: var(--rail-hover);
+  --color-rail-active: var(--rail-active);
+  --color-rail-accent: var(--rail-accent);
+  --shadow-card: var(--card-shadow);
+
+  --font-sans: "DM Sans", "Noto Sans Armenian", ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   @apply bg-bg text-text font-sans antialiased;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.app-sidebar {
+  border-inline-end: 1px solid var(--border);
+}
+
+.app-nav-link,
+.app-shell :is(button, input, select, textarea),
+.app-card {
+  border-radius: 0;
+}
+
+.app-card {
+  border-top-color: var(--rule);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--rule) 13%, transparent);
+}
+
+.app-page-title {
+  padding-block: 1.15rem 1.25rem;
+  border-block-end: 1px solid var(--rule);
+}
+
+.app-page-title h1 {
+  font-family: "Barlow Condensed", "Noto Sans Armenian", sans-serif;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 800;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+:lang(hy) .app-page-title h1 {
+  font-size: clamp(1.6rem, 3.3vw, 2.75rem);
+  line-height: 1.1;
+}
+
+.app-table thead th {
+  font-family: "IBM Plex Mono", "Noto Sans Armenian", monospace;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+}
+
+.app-wordmark {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 0.86;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.app-wordmark strong {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+.app-nav-link[aria-current="page"] {
+  font-weight: 700;
+}
+
+.app-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.app-action:hover {
+  background: var(--primary-hover);
+}
+
+.dashboard-metrics {
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.dashboard-metrics .metric-card {
+  border: 0;
+  box-shadow: none;
+}
+
+.dashboard-metrics .metric-label,
+.dashboard-metrics .metric-value {
+  font-family: "IBM Plex Mono", "Noto Sans Armenian", monospace;
+  letter-spacing: -0.025em;
+}
+
+.mobile-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border-block-end: 1px solid var(--border);
+  background: var(--border);
+}
+
+.mobile-nav-link {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  justify-items: center;
+  gap: 0.25rem;
+  min-height: 3.5rem;
+  padding: 0.45rem 0.2rem 0.3rem;
+  border-block-end: 2px solid transparent;
+  background: var(--surface);
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.mobile-nav-link[aria-current="page"] {
+  border-block-end-color: var(--primary);
+  background: var(--info-bg);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.mobile-nav-link:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline-offset: -3px;
+}
+
+@media (min-width: 64rem) {
+  .mobile-nav {
+    display: none;
+  }
+}
+
+.dashboard-stage-chart {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 19px, color-mix(in srgb, var(--border) 45%, transparent) 19px 20px),
+    var(--surface-muted);
+}
+
+.dashboard-stage-filter[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.dashboard-stage-filter {
+  font-family: "IBM Plex Mono", "Noto Sans Armenian", monospace;
+}
+
+.dashboard-provider-icon {
+  display: inline-grid;
+  width: 2rem;
+  aspect-ratio: 1;
+  place-items: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+}
+
+.dashboard-progress-ring {
+  width: 2.4rem;
+  flex: none;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  mask-image: radial-gradient(circle closest-side, transparent 64%, #000 66%);
 }

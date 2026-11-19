@@ -14,7 +14,8 @@ export default defineConfig({
       // on the backend via CORS_ALLOWED_ORIGINS).
       "/api": {
         target: "http://localhost:8080",
-        changeOrigin: true,
+        // Keep the browser-facing Host for the API's coordinator origin check.
+        changeOrigin: false,
       },
     },
   },
