@@ -23,7 +23,8 @@ func (GroupAuditArgs) Kind() string { return "group_audit" }
 
 type GroupAuditWorker struct {
 	river.WorkerDefaults[GroupAuditArgs]
-	Audit *audit.Service
+	Audit        *audit.Service
+	EmailEnabled bool
 }
 
 func (w *GroupAuditWorker) Timeout(*river.Job[GroupAuditArgs]) time.Duration {
@@ -31,11 +32,21 @@ func (w *GroupAuditWorker) Timeout(*river.Job[GroupAuditArgs]) time.Duration {
 }
 
 func (w *GroupAuditWorker) Work(ctx context.Context, job *river.Job[GroupAuditArgs]) error {
-	err := w.Audit.Run(ctx, job.Args.GroupID, job.ID, job.Args.Trigger)
+	id, err := w.Audit.Run(ctx, job.Args.GroupID, job.ID, job.Args.Trigger, w.EmailEnabled)
 	var missing *core.AppError
 	if errors.As(err, &missing) && missing.Code == core.CodeNotFound {
 		return nil // A group may be removed before its queued audit runs.
 	}
+	if err != nil || id == uuid.Nil || !w.EmailEnabled {
+		return err
+	}
+	client, err := river.ClientFromContextSafely[pgx.Tx](ctx)
+	if err != nil {
+		return err
+	}
+	_, err = client.Insert(ctx, AuditEmailArgs{NotificationID: id}, &river.InsertOpts{
+		Queue: AuditEmailQueue, UniqueOpts: river.UniqueOpts{ByArgs: true},
+	})
 	return err
 }
 

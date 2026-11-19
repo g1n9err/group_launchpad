@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	stdmail "net/mail"
 	"os"
 	"os/signal"
 	"syscall"
@@ -71,25 +72,43 @@ func run() error {
 	}
 	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
 	auth := google.NewAuthService(cfg, repo, logger)
-	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, Slack: slackChecker, Google: google.NewAuditChecker(auth)}})
 	river.AddWorker(workers, &jobs.DailyAuditWorker{Groups: repo})
 	jobConfig := jobs.Config{WorkerID: cfg.WorkerID()}
+	var mailer interface {
+		integrations.IntakeMailer
+		jobs.AuditMailer
+	}
 	if cfg.SMTPEnabled {
-		mailer, err := mailgw.NewRelay(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
+		relay, err := mailgw.NewRelay(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
 		if err != nil {
 			return err
 		}
-		river.AddWorker(workers, &jobs.IntakeDeliveryWorker{Store: repo, Mailer: mailer})
-		jobConfig.IntakeEmailWorkers = 2
+		mailer = relay
 	}
 
 	if cfg.GmailEnabled {
 		if !auth.Configured() {
 			return fmt.Errorf("GMAIL_ENABLED requires valid Google OAuth configuration")
 		}
-		river.AddWorker(workers, &jobs.IntakeDeliveryWorker{Store: repo, Mailer: mailgw.NewGmail(auth)})
+		mailer = mailgw.NewGmail(auth)
+	}
+
+	auditEmailEnabled := mailer != nil && cfg.AuditNotificationEmail != ""
+	if cfg.AuditNotificationEmail != "" {
+		address, err := stdmail.ParseAddress(cfg.AuditNotificationEmail)
+		if err != nil || address.Address != cfg.AuditNotificationEmail || address.Name != "" {
+			return fmt.Errorf("AUDIT_NOTIFICATION_EMAIL must be a single email address")
+		}
+	}
+	if mailer != nil {
+		river.AddWorker(workers, &jobs.IntakeDeliveryWorker{Store: repo, Mailer: mailer})
 		jobConfig.IntakeEmailWorkers = 2
 	}
+	if auditEmailEnabled {
+		jobConfig.AuditEmailEnabled = true
+		river.AddWorker(workers, &jobs.AuditEmailWorker{Store: repo, Mailer: mailer, Recipient: cfg.AuditNotificationEmail})
+	}
+	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, Slack: slackChecker, Google: google.NewAuditChecker(auth)}, EmailEnabled: auditEmailEnabled})
 
 	client, err := jobs.NewClient(pool, workers, jobConfig)
 	if err != nil {

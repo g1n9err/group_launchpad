@@ -38,7 +38,7 @@ type Inventory struct {
 
 type Store interface {
 	AuditInventory(context.Context, uuid.UUID) (Inventory, error)
-	SaveAudit(context.Context, int64, Snapshot, []Resource) error
+	SaveAudit(context.Context, int64, Snapshot, []Resource, bool) (uuid.UUID, error)
 }
 
 type Checker interface {
@@ -51,10 +51,10 @@ type Service struct {
 	Google Checker
 }
 
-func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigger string) error {
+func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigger string, emailEnabled bool) (uuid.UUID, error) {
 	inventory, err := s.Store.AuditInventory(ctx, groupID)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	expected := []Resource{
 		{Provider: "google_classroom", Kind: "course", Key: "course"},
@@ -77,7 +77,7 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 	snapshot := Snapshot{GroupID: groupID, Type: trigger, Results: make([]Result, 0, len(expected)), Issues: []Result{}}
 	for i, resource := range expected {
 		if err := ctx.Err(); err != nil {
-			return err
+			return uuid.Nil, err
 		}
 		for _, linked := range inventory.Resources {
 			if linked.Provider == resource.Provider && linked.Kind == resource.Kind && linked.Key == resource.Key {
@@ -104,5 +104,5 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 			snapshot.Issues = append(snapshot.Issues, result)
 		}
 	}
-	return s.Store.SaveAudit(ctx, jobID, snapshot, expected)
+	return s.Store.SaveAudit(ctx, jobID, snapshot, expected, emailEnabled)
 }

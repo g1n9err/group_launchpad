@@ -370,6 +370,24 @@ paths:
           description: Google Forms response import failed
         "503":
           description: Coordinator access or Google OAuth is unavailable
+  /api/audit-notifications:
+    get:
+      tags: [groups]
+      operationId: getAuditNotifications
+      summary: List current issues and recent audit changes for the coordinator
+      security:
+        - CoordinatorBasic: []
+      responses:
+        "200":
+          description: Current issues and recent notifications, up to 50 of each
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditNotifications"
+        "401":
+          description: Coordinator credentials required
+        "503":
+          description: Audit notifications are unavailable
   /api/groups/{groupId}/audits:
     parameters:
       - $ref: "#/components/parameters/GroupId"
@@ -719,6 +737,72 @@ components:
         attempts:
           type: integer
         error:
+          type: string
+    AuditNotifications:
+      type: object
+      required: [openIssues, notifications]
+      properties:
+        openIssues:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAuditIssues"
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditNotification"
+    OpenAuditIssues:
+      type: object
+      required: [groupId, groupName, checkedAt, issues]
+      properties:
+        groupId:
+          type: string
+          format: uuid
+        groupName:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupAuditResource"
+    AuditNotification:
+      type: object
+      required: [id, groupId, groupName, checkedAt, changes, emailStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        groupName:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+        emailStatus:
+          type: string
+          enum: [disabled, pending, sending, sent, failed, unknown]
+        emailError:
+          type: string
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditChange"
+    AuditChange:
+      type: object
+      required: [provider, kind, key, before, after]
+      properties:
+        provider:
+          type: string
+        kind:
+          type: string
+        key:
+          type: string
+        before:
+          type: string
+        after:
           type: string
     GroupAuditQueued:
       type: object

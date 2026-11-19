@@ -13,6 +13,36 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AuditNotificationEmailStatus.
+const (
+	AuditNotificationEmailStatusDisabled AuditNotificationEmailStatus = "disabled"
+	AuditNotificationEmailStatusFailed   AuditNotificationEmailStatus = "failed"
+	AuditNotificationEmailStatusPending  AuditNotificationEmailStatus = "pending"
+	AuditNotificationEmailStatusSending  AuditNotificationEmailStatus = "sending"
+	AuditNotificationEmailStatusSent     AuditNotificationEmailStatus = "sent"
+	AuditNotificationEmailStatusUnknown  AuditNotificationEmailStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditNotificationEmailStatus enum.
+func (e AuditNotificationEmailStatus) Valid() bool {
+	switch e {
+	case AuditNotificationEmailStatusDisabled:
+		return true
+	case AuditNotificationEmailStatusFailed:
+		return true
+	case AuditNotificationEmailStatusPending:
+		return true
+	case AuditNotificationEmailStatusSending:
+		return true
+	case AuditNotificationEmailStatusSent:
+		return true
+	case AuditNotificationEmailStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GoogleStatusStatus.
 const (
 	GoogleStatusStatusConnected    GoogleStatusStatus = "connected"
@@ -334,6 +364,35 @@ func (e SlackWelcomeResultStatus) Valid() bool {
 	}
 }
 
+// AuditChange defines model for AuditChange.
+type AuditChange struct {
+	After    string `json:"after"`
+	Before   string `json:"before"`
+	Key      string `json:"key"`
+	Kind     string `json:"kind"`
+	Provider string `json:"provider"`
+}
+
+// AuditNotification defines model for AuditNotification.
+type AuditNotification struct {
+	Changes     []AuditChange                `json:"changes"`
+	CheckedAt   time.Time                    `json:"checkedAt"`
+	EmailError  *string                      `json:"emailError,omitempty"`
+	EmailStatus AuditNotificationEmailStatus `json:"emailStatus"`
+	GroupId     openapi_types.UUID           `json:"groupId"`
+	GroupName   string                       `json:"groupName"`
+	Id          openapi_types.UUID           `json:"id"`
+}
+
+// AuditNotificationEmailStatus defines model for AuditNotification.EmailStatus.
+type AuditNotificationEmailStatus string
+
+// AuditNotifications defines model for AuditNotifications.
+type AuditNotifications struct {
+	Notifications []AuditNotification `json:"notifications"`
+	OpenIssues    []OpenAuditIssues   `json:"openIssues"`
+}
+
 // ClassroomCourse defines model for ClassroomCourse.
 type ClassroomCourse struct {
 	CourseId string `json:"courseId"`
@@ -527,6 +586,14 @@ type IntakeResponseSummary struct {
 	Unchanged int `json:"unchanged"`
 }
 
+// OpenAuditIssues defines model for OpenAuditIssues.
+type OpenAuditIssues struct {
+	CheckedAt time.Time            `json:"checkedAt"`
+	GroupId   openapi_types.UUID   `json:"groupId"`
+	GroupName string               `json:"groupName"`
+	Issues    []GroupAuditResource `json:"issues"`
+}
+
 // Page defines model for Page.
 type Page struct {
 	Limit  int `json:"limit"`
@@ -676,6 +743,9 @@ type SlackEventsJSONRequestBody = SlackEventsJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetAuditNotifications List current issues and recent audit changes for the coordinator
+	// (GET /api/audit-notifications)
+	GetAuditNotifications(ctx echo.Context) error
 	// ListGroups List groups (newest first)
 	// (GET /api/groups)
 	ListGroups(ctx echo.Context, params ListGroupsParams) error
@@ -750,6 +820,15 @@ type ServerInterface interface {
 // ServerInterfaceWrapper converts echo contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler ServerInterface
+}
+
+// GetAuditNotifications converts echo context to params.
+func (w *ServerInterfaceWrapper) GetAuditNotifications(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetAuditNotifications(ctx)
+	return err
 }
 
 // ListGroups converts echo context to params.
@@ -1157,6 +1236,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/distribute", wrapper.DistributeGroupForm, options.OperationMiddlewares["distributeGroupForm"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/forms/deliveries", wrapper.GetGroupFormDeliveries, options.OperationMiddlewares["getGroupFormDeliveries"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/responses/import", wrapper.ImportGroupFormResponses, options.OperationMiddlewares["importGroupFormResponses"]...)
+	router.GET(options.BaseURL+"/api/audit-notifications", wrapper.GetAuditNotifications, options.OperationMiddlewares["getAuditNotifications"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/audits", wrapper.ListGroupAudits, options.OperationMiddlewares["listGroupAudits"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/audits", wrapper.QueueGroupAudit, options.OperationMiddlewares["queueGroupAudit"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)

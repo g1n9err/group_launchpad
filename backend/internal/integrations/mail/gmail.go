@@ -33,8 +33,12 @@ func NewGmail(credentials GmailCredentials) *Gmail {
 }
 
 func (g *Gmail) Send(ctx context.Context, email integrations.IntakeEmail) (bool, error) {
-	if !validAddress(email.Recipient) {
-		return false, errors.New("student email address is invalid")
+	return g.SendMessage(ctx, email.Recipient, intakeSubject, intakeBody(email))
+}
+
+func (g *Gmail) SendMessage(ctx context.Context, recipient, subject, body string) (bool, error) {
+	if !validAddress(recipient) {
+		return false, errors.New("email recipient address is invalid")
 	}
 	token, from, err := g.credentials.GmailCredentials(ctx)
 	if err != nil {
@@ -43,7 +47,7 @@ func (g *Gmail) Send(ctx context.Context, email integrations.IntakeEmail) (bool,
 	if !validAddress(from) {
 		return false, errors.New("connected Google account has no valid sender address")
 	}
-	payload, err := json.Marshal(map[string]string{"raw": base64.RawURLEncoding.EncodeToString(intakeMessage(from, email))})
+	payload, err := json.Marshal(map[string]string{"raw": base64.RawURLEncoding.EncodeToString(formattedMessage(from, recipient, subject, body))})
 	if err != nil {
 		return false, errors.New("could not encode Gmail message")
 	}

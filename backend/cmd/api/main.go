@@ -78,7 +78,7 @@ func run() error {
 		delivery.CheckReady = googleSvc.CheckGmailPermission
 	}
 	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping,
-		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, Audit: audit, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
+		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, Audit: audit, AuditNotifications: repo, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
 
 	// 5. Serve with graceful shutdown.
 	servers := []*http.Server{{
