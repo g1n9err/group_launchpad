@@ -27,6 +27,15 @@ services:
       PORT: "8080"
       LOG_LEVEL: info
       MIGRATE_ON_BOOT: "true"
+      # Slack — bot token interpolated from the project-root .env. Empty
+      # default keeps the API booting with Slack safely disabled (503).
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      # Slack Events signing secret — required for the events webhook AND
+      # the dedicated events-only listener on 8081.
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      # Inside the container the listener binds all interfaces; the HOST
+      # mapping (127.0.0.1:8081) is what keeps it private.
+      SLACK_EVENTS_ADDR: 0.0.0.0:8081
       # Google OAuth — values interpolated from the project-root .env at
       # compose time. Empty defaults keep the API booting with the Google
       # integration safely disabled (503 NOT_READY) instead of warning.
@@ -36,6 +45,10 @@ services:
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
     ports:
       - "8080:8080"
+      # Events-only listener: published on host LOOPBACK only. Point a
+      # tunnel (e.g. cloudflared --url http://127.0.0.1:8081) at this —
+      # never expose it on 0.0.0.0.
+      - "127.0.0.1:8081:8081"
     depends_on:
       postgres:
         condition: service_healthy

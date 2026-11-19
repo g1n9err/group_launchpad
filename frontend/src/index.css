@@ -1,1 +1,120 @@
 @import "tailwindcss";
+
+/* Dark mode is driven by [data-theme="dark"] on <html>: the user's persisted
+   choice wins over prefers-color-scheme. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ── Design tokens — Lavender + White, Clean Minimal SaaS ──────────────────
+   Single source of color truth. Components use semantic utilities only
+   (bg-surface, text-muted, ring-primary/40 …); no palette literals inside
+   components. Light values on :root; dark-plum overrides for dark theme. */
+:root {
+  --bg: #f8f7fc;
+  --surface: #ffffff; /* sidebar + cards */
+  --surface-muted: #f1ecfc; /* table heads, hover, active nav */
+  --soft: #e9e2f8; /* soft lavender fills */
+  --border: #eae7f0;
+
+  --text: #272333;
+  --text-muted: #777386;
+
+  --primary: #8b5cf6;
+  --primary-hover: #7c3aed;
+  --on-primary: #ffffff;
+
+  --muted-text: #6d6784;
+  --muted-bg: #e9e2f8;
+  --muted-ring: #ddd3f0;
+
+  --info-text: #6d5bd0;
+  --info-bg: #f1ecfc;
+  --info-ring: #ddd3f0;
+
+  --success-text: #237a57;
+  --success-bg: #e9f7ef;
+  --success-ring: #bfe6cf;
+
+  --warn-text: #96660a;
+  --warn-bg: #fdf3e3;
+  --warn-ring: #f0dcb4;
+
+  --danger-text: #b33636;
+  --danger-bg: #fdeeee;
+  --danger-ring: #f3c7c7;
+}
+
+[data-theme="dark"] {
+  --bg: #171321;
+  --surface: #211b2d; /* sidebar + cards */
+  --surface-muted: #2a2338;
+  --soft: #352a49;
+  --border: #393146;
+
+  --text: #f5f3ff;
+  --text-muted: #b8b1c7;
+
+  --primary: #a78bfa;
+  --primary-hover: #c4b5fd;
+  --on-primary: #171321;
+
+  --muted-text: #b8b1c7;
+  --muted-bg: #352a49;
+  --muted-ring: #4a3d63;
+
+  --info-text: #c4b5fd;
+  --info-bg: #352a49;
+  --info-ring: #4a3d63;
+
+  --success-text: #7ddb9e;
+  --success-bg: #1d2f26;
+  --success-ring: #2c5940;
+
+  --warn-text: #ecc482;
+  --warn-bg: #382a14;
+  --warn-ring: #5d4720;
+
+  --danger-text: #f1a0a0;
+  --danger-bg: #3a1d1d;
+  --danger-ring: #6e2f2f;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-soft: var(--soft);
+  --color-border: var(--border);
+
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+
+  --color-muted-text: var(--muted-text);
+  --color-muted-bg: var(--muted-bg);
+  --color-muted-ring: var(--muted-ring);
+
+  --color-info-text: var(--info-text);
+  --color-info-bg: var(--info-bg);
+  --color-info-ring: var(--info-ring);
+
+  --color-success-text: var(--success-text);
+  --color-success-bg: var(--success-bg);
+  --color-success-ring: var(--success-ring);
+
+  --color-warn-text: var(--warn-text);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-ring: var(--warn-ring);
+
+  --color-danger-text: var(--danger-text);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-ring: var(--danger-ring);
+
+  --font-sans: "Inter", "Noto Sans Armenian", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-bg text-text font-sans antialiased;
+}

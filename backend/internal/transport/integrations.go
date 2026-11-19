@@ -5,9 +5,11 @@ package transport
 // endpoints never expose client secrets or tokens (PRD 7.4).
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"launchpad/internal/core/integrations"
 	gen "launchpad/internal/transport/gen"
@@ -63,6 +65,116 @@ func (h *Handlers) GoogleStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, toGoogleStatus(status))
 }
 
+// SlackStatus GET /api/integrations/slack/status — verifies the bot token
+// (one auth.test call), persists the outcome, and returns the state. The
+// token itself never crosses this boundary.
+func (h *Handlers) SlackStatus(c echo.Context) error {
+	if !h.slack.Configured() {
+		return errNotConfigured("slack")
+	}
+	status, err := h.slack.CheckConnection(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toSlackStatus(status))
+}
+
+// ProvisionGroupSlack POST /api/groups/{groupId}/slack/provision — idempotent
+// channel + invitation + welcome provisioning. Group data comes from the
+// database; invite emails come from the (optional) request body — staff data
+// is never hardcoded.
+func (h *Handlers) ProvisionGroupSlack(c echo.Context, groupId gen.GroupId) error {
+	if !h.slackChannels.Configured() {
+		return errNotConfigured("slack")
+	}
+	g, err := h.groups.Get(c.Request().Context(), groupId.String())
+	if err != nil {
+		return err
+	}
+
+	var body gen.SlackProvisionRequest
+	if c.Request().ContentLength != 0 {
+		if err := c.Bind(&body); err != nil {
+			return errBadRequest("invalid request body: " + err.Error())
+		}
+	}
+
+	result, err := h.slackChannels.Provision(c.Request().Context(), integrations.ProvisionInput{
+		GroupID:         g.ID,
+		GroupName:       g.Name,
+		CourseName:      g.CourseName,
+		StartDate:       g.StartDate.Format("2006-01-02"),
+		InviteEmails:    derefEmails(body.InviteEmails),
+		WelcomeTemplate: deref(body.WelcomeTemplate),
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toProvisionResult(result))
+}
+
+// SlackEvents POST /api/integrations/slack/events — the public webhook.
+// The RAW body is read and signature-verified BEFORE any parsing (echo's
+// binder never touches it). Auth is the signing secret, not the bot token.
+func (h *Handlers) SlackEvents(c echo.Context) error {
+	if !h.slackEvents.Configured() {
+		return errNotConfigured("slack events")
+	}
+	raw, err := io.ReadAll(io.LimitReader(c.Request().Body, 1<<20)) // bounded: 1 MiB
+	if err != nil {
+		return errBadRequest("could not read request body")
+	}
+	ack, err := h.slackEvents.Handle(c.Request().Context(), integrations.SlackEventRequest{
+		Timestamp: c.Request().Header.Get("X-Slack-Request-Timestamp"),
+		Signature: c.Request().Header.Get("X-Slack-Signature"),
+		RawBody:   string(raw),
+	})
+	if err != nil {
+		return err // sanitized AppError from the service (401/400/503)
+	}
+	if ack.Kind == "challenge" {
+		return c.JSON(http.StatusOK, gen.SlackEventAck{Challenge: &ack.Challenge})
+	}
+	status := gen.SlackEventAckStatus(ack.Kind)
+	return c.JSON(http.StatusOK, gen.SlackEventAck{Status: &status})
+}
+
+func derefEmails(list *[]openapi_types.Email) []string {
+	if list == nil {
+		return nil
+	}
+	out := make([]string, len(*list))
+	for i, e := range *list {
+		out[i] = string(e)
+	}
+	return out
+}
+
+func toProvisionResult(r integrations.ProvisionResult) gen.SlackProvisionResult {
+	channels := make([]gen.SlackChannelResult, len(r.Channels))
+	for i, ch := range r.Channels {
+		channels[i] = gen.SlackChannelResult{Name: ch.Name, ChannelId: &ch.ChannelID, Status: gen.SlackChannelResultStatus(ch.Status)}
+		if ch.Error != "" {
+			channels[i].Error = &ch.Error
+		}
+	}
+	invites := make([]gen.SlackInviteResult, len(r.Invites))
+	for i, iv := range r.Invites {
+		invites[i] = gen.SlackInviteResult{Email: iv.Email, ChannelName: iv.ChannelName, Status: gen.SlackInviteResultStatus(iv.Status)}
+		if iv.Error != "" {
+			invites[i].Error = &iv.Error
+		}
+	}
+	welcomes := make([]gen.SlackWelcomeResult, len(r.Welcomes))
+	for i, w := range r.Welcomes {
+		welcomes[i] = gen.SlackWelcomeResult{ChannelName: w.ChannelName, Status: gen.SlackWelcomeResultStatus(w.Status)}
+		if w.Error != "" {
+			welcomes[i].Error = &w.Error
+		}
+	}
+	return gen.SlackProvisionResult{Channels: channels, Invites: invites, WelcomeMessages: welcomes}
+}
+
 func toGoogleStatus(s integrations.GoogleStatus) gen.GoogleStatus {
 	out := gen.GoogleStatus{Status: gen.GoogleStatusStatus(s.Status)}
 	if s.AccountEmail != "" {
@@ -70,6 +182,20 @@ func toGoogleStatus(s integrations.GoogleStatus) gen.GoogleStatus {
 	}
 	if len(s.Scopes) > 0 {
 		out.Scopes = &s.Scopes
+	}
+	if !s.ConnectedAt.IsZero() {
+		out.ConnectedAt = &s.ConnectedAt
+	}
+	return out
+}
+
+func toSlackStatus(s integrations.SlackStatus) gen.SlackStatus {
+	out := gen.SlackStatus{Status: gen.SlackStatusStatus(s.Status)}
+	if s.TeamID != "" {
+		out.TeamId = &s.TeamID
+	}
+	if s.TeamName != "" {
+		out.TeamName = &s.TeamName
 	}
 	if !s.ConnectedAt.IsZero() {
 		out.ConnectedAt = &s.ConnectedAt

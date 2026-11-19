@@ -25,15 +25,18 @@ type PingFunc func(ctx context.Context) error
 
 // Handlers implements the generated gen.ServerInterface.
 type Handlers struct {
-	groups *groups.Service
-	google *integrations.GoogleAuthService
-	ping   PingFunc
-	logger *slog.Logger
+	groups        *groups.Service
+	google        *integrations.GoogleAuthService
+	slack         *integrations.SlackAuthService
+	slackChannels *integrations.SlackChannelsService
+	slackEvents   *integrations.SlackEventsService
+	ping          PingFunc
+	logger        *slog.Logger
 }
 
 // New builds the echo application with the full middleware chain and routes.
-func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, googleSvc *integrations.GoogleAuthService, ping PingFunc) *echo.Echo {
-	h := &Handlers{groups: groupsSvc, google: googleSvc, ping: ping, logger: logger}
+func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, googleSvc *integrations.GoogleAuthService, slackSvc *integrations.SlackAuthService, slackChannelsSvc *integrations.SlackChannelsService, slackEventsSvc *integrations.SlackEventsService, ping PingFunc) *echo.Echo {
+	h := &Handlers{groups: groupsSvc, google: googleSvc, slack: slackSvc, slackChannels: slackChannelsSvc, slackEvents: slackEventsSvc, ping: ping, logger: logger}
 
 	e := echo.New()
 	e.HideBanner = true
@@ -136,6 +139,8 @@ func appStatus(code string) int {
 		return http.StatusServiceUnavailable // 503
 	case core.CodeOAuthExchange:
 		return http.StatusBadGateway // 502 — upstream (Google) rejected the exchange
+	case core.CodeUnauthorized:
+		return http.StatusUnauthorized // 401 — signature verification failed
 	default:
 		return http.StatusInternalServerError
 	}

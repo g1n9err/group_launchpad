@@ -13,6 +13,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const completeSlackEvent = `-- name: CompleteSlackEvent :exec
+UPDATE slack_events
+SET processed_at = now(), process_status = $2, unresolved_reason = $3
+WHERE event_id = $1
+`
+
+type CompleteSlackEventParams struct {
+	EventID          string
+	ProcessStatus    string
+	UnresolvedReason *string
+}
+
+func (q *Queries) CompleteSlackEvent(ctx context.Context, arg CompleteSlackEventParams) error {
+	_, err := q.db.Exec(ctx, completeSlackEvent, arg.EventID, arg.ProcessStatus, arg.UnresolvedReason)
+	return err
+}
+
 const consumeOAuthState = `-- name: ConsumeOAuthState :one
 UPDATE oauth_states
 SET consumed_at = now()
@@ -53,6 +70,85 @@ func (q *Queries) CreateOAuthState(ctx context.Context, arg CreateOAuthStatePara
 		arg.ExpiresAt,
 	)
 	return err
+}
+
+const findGroupIDBySlackChannel = `-- name: FindGroupIDBySlackChannel :one
+SELECT group_id
+FROM group_resources
+WHERE provider = 'slack' AND resource_type = 'channel' AND external_resource_id = $1
+LIMIT 1
+`
+
+func (q *Queries) FindGroupIDBySlackChannel(ctx context.Context, externalResourceID string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, findGroupIDBySlackChannel, externalResourceID)
+	var group_id uuid.UUID
+	err := row.Scan(&group_id)
+	return group_id, err
+}
+
+const findGroupMemberByUser = `-- name: FindGroupMemberByUser :one
+SELECT id, onboarding_status
+FROM group_members
+WHERE group_id = $1 AND user_id = $2
+LIMIT 1
+`
+
+type FindGroupMemberByUserParams struct {
+	GroupID uuid.UUID
+	UserID  uuid.UUID
+}
+
+type FindGroupMemberByUserRow struct {
+	ID               uuid.UUID
+	OnboardingStatus string
+}
+
+func (q *Queries) FindGroupMemberByUser(ctx context.Context, arg FindGroupMemberByUserParams) (FindGroupMemberByUserRow, error) {
+	row := q.db.QueryRow(ctx, findGroupMemberByUser, arg.GroupID, arg.UserID)
+	var i FindGroupMemberByUserRow
+	err := row.Scan(&i.ID, &i.OnboardingStatus)
+	return i, err
+}
+
+const findUserIDBySlackID = `-- name: FindUserIDBySlackID :one
+SELECT id
+FROM users
+WHERE slack_user_id = $1
+LIMIT 1
+`
+
+func (q *Queries) FindUserIDBySlackID(ctx context.Context, slackUserID *string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, findUserIDBySlackID, slackUserID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const findUserIDsByEmail = `-- name: FindUserIDsByEmail :many
+SELECT id FROM users WHERE lower(btrim(email)) = $1
+`
+
+// Matching on lower(trim(email)): case-variant duplicates in users are
+// possible (the column unique index is case-sensitive) and MUST surface as
+// ambiguity rather than a silent single match.
+func (q *Queries) FindUserIDsByEmail(ctx context.Context, email string) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, findUserIDsByEmail, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getGoogleConnection = `-- name: GetGoogleConnection :one
@@ -104,6 +200,135 @@ func (q *Queries) GetGoogleConnection(ctx context.Context) (GetGoogleConnectionR
 	return i, err
 }
 
+const getGroupResource = `-- name: GetGroupResource :one
+SELECT id, group_id, provider, resource_type, external_resource_id, resource_name, status
+FROM group_resources
+WHERE group_id = $1 AND provider = $2 AND resource_type = $3 AND resource_name = $4
+`
+
+type GetGroupResourceParams struct {
+	GroupID      uuid.UUID
+	Provider     string
+	ResourceType string
+	ResourceName string
+}
+
+type GetGroupResourceRow struct {
+	ID                 uuid.UUID
+	GroupID            uuid.UUID
+	Provider           string
+	ResourceType       string
+	ExternalResourceID string
+	ResourceName       string
+	Status             string
+}
+
+func (q *Queries) GetGroupResource(ctx context.Context, arg GetGroupResourceParams) (GetGroupResourceRow, error) {
+	row := q.db.QueryRow(ctx, getGroupResource,
+		arg.GroupID,
+		arg.Provider,
+		arg.ResourceType,
+		arg.ResourceName,
+	)
+	var i GetGroupResourceRow
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.Provider,
+		&i.ResourceType,
+		&i.ExternalResourceID,
+		&i.ResourceName,
+		&i.Status,
+	)
+	return i, err
+}
+
+const getSlackBotUserID = `-- name: GetSlackBotUserID :one
+SELECT bot_user_id
+FROM integrations
+WHERE provider = 'slack' AND bot_user_id IS NOT NULL
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetSlackBotUserID(ctx context.Context) (*string, error) {
+	row := q.db.QueryRow(ctx, getSlackBotUserID)
+	var bot_user_id *string
+	err := row.Scan(&bot_user_id)
+	return bot_user_id, err
+}
+
+const getUserSlackID = `-- name: GetUserSlackID :one
+SELECT slack_user_id FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserSlackID(ctx context.Context, id uuid.UUID) (*string, error) {
+	row := q.db.QueryRow(ctx, getUserSlackID, id)
+	var slack_user_id *string
+	err := row.Scan(&slack_user_id)
+	return slack_user_id, err
+}
+
+const insertExternalOperationLog = `-- name: InsertExternalOperationLog :exec
+INSERT INTO external_operation_logs (group_id, provider, operation, status_code, error, duration_ms)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertExternalOperationLogParams struct {
+	GroupID    pgtype.UUID
+	Provider   string
+	Operation  string
+	StatusCode *int32
+	Error      *string
+	DurationMs *int32
+}
+
+// Every external API operation is recorded (PRD 8.7). group_id is NULL for
+// connection-level operations; error is a sanitized category, never raw text.
+func (q *Queries) InsertExternalOperationLog(ctx context.Context, arg InsertExternalOperationLogParams) error {
+	_, err := q.db.Exec(ctx, insertExternalOperationLog,
+		arg.GroupID,
+		arg.Provider,
+		arg.Operation,
+		arg.StatusCode,
+		arg.Error,
+		arg.DurationMs,
+	)
+	return err
+}
+
+const insertGroupResource = `-- name: InsertGroupResource :execrows
+INSERT INTO group_resources (group_id, provider, resource_type, external_resource_id, resource_name, status)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (group_id, provider, resource_type, resource_name) DO NOTHING
+`
+
+type InsertGroupResourceParams struct {
+	GroupID            uuid.UUID
+	Provider           string
+	ResourceType       string
+	ExternalResourceID string
+	ResourceName       string
+	Status             string
+}
+
+// Claim a resource row; ON CONFLICT DO NOTHING makes the insert the winner
+// of any race (idempotency registry, PRD §8).
+func (q *Queries) InsertGroupResource(ctx context.Context, arg InsertGroupResourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertGroupResource,
+		arg.GroupID,
+		arg.Provider,
+		arg.ResourceType,
+		arg.ExternalResourceID,
+		arg.ResourceName,
+		arg.Status,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertIntegrationCredential = `-- name: InsertIntegrationCredential :exec
 INSERT INTO integration_credentials (integration_id, refresh_token_enc, key_id, scopes)
 VALUES ($1, $2, $3, $4)
@@ -126,6 +351,59 @@ func (q *Queries) InsertIntegrationCredential(ctx context.Context, arg InsertInt
 	return err
 }
 
+const insertSlackEvent = `-- name: InsertSlackEvent :execrows
+
+INSERT INTO slack_events (event_id, event_type, team_id, user_id, channel_id, payload)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (event_id) DO NOTHING
+`
+
+type InsertSlackEventParams struct {
+	EventID   string
+	EventType string
+	TeamID    *string
+	UserID    *string
+	ChannelID *string
+	Payload   []byte
+}
+
+// ── Slack Events (Stage 2c) ────────────────────────────────────────────────
+// Atomic dedup: zero rows affected means the event_id was already recorded
+// (Slack retries up to 3×; delivery is at-least-once).
+func (q *Queries) InsertSlackEvent(ctx context.Context, arg InsertSlackEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertSlackEvent,
+		arg.EventID,
+		arg.EventType,
+		arg.TeamID,
+		arg.UserID,
+		arg.ChannelID,
+		arg.Payload,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const linkUserSlackID = `-- name: LinkUserSlackID :execrows
+UPDATE users SET slack_user_id = $1 WHERE id = $2 AND slack_user_id IS NULL
+`
+
+type LinkUserSlackIDParams struct {
+	SlackUserID *string
+	ID          uuid.UUID
+}
+
+// Guarded link: only a user with NO Slack ID can receive one. Lost races
+// yield 0 rows (caller re-reads to distinguish already-linked vs mismatch).
+func (q *Queries) LinkUserSlackID(ctx context.Context, arg LinkUserSlackIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, linkUserSlackID, arg.SlackUserID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markGoogleIntegrationError = `-- name: MarkGoogleIntegrationError :exec
 UPDATE integrations
 SET connection_status = 'error'
@@ -134,6 +412,29 @@ WHERE provider = 'google'
 
 func (q *Queries) MarkGoogleIntegrationError(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, markGoogleIntegrationError)
+	return err
+}
+
+const markGroupMemberJoinedSlack = `-- name: MarkGroupMemberJoinedSlack :exec
+UPDATE group_members
+SET onboarding_status = 'joined_slack'
+WHERE id = $1 AND onboarding_status IN ('pending', 'invited')
+`
+
+// Guarded transition: only pending/invited members move to joined_slack.
+func (q *Queries) MarkGroupMemberJoinedSlack(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markGroupMemberJoinedSlack, id)
+	return err
+}
+
+const markSlackIntegrationError = `-- name: MarkSlackIntegrationError :exec
+UPDATE integrations
+SET connection_status = 'error'
+WHERE provider = 'slack'
+`
+
+func (q *Queries) MarkSlackIntegrationError(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, markSlackIntegrationError)
 	return err
 }
 
@@ -151,6 +452,33 @@ func (q *Queries) RevokeActiveIntegrationCredentials(ctx context.Context, integr
 	return result.RowsAffected(), nil
 }
 
+const updateGroupResourceResult = `-- name: UpdateGroupResourceResult :exec
+UPDATE group_resources
+SET external_resource_id = $5, status = $6, updated_at = now()
+WHERE group_id = $1 AND provider = $2 AND resource_type = $3 AND resource_name = $4
+`
+
+type UpdateGroupResourceResultParams struct {
+	GroupID            uuid.UUID
+	Provider           string
+	ResourceType       string
+	ResourceName       string
+	ExternalResourceID string
+	Status             string
+}
+
+func (q *Queries) UpdateGroupResourceResult(ctx context.Context, arg UpdateGroupResourceResultParams) error {
+	_, err := q.db.Exec(ctx, updateGroupResourceResult,
+		arg.GroupID,
+		arg.Provider,
+		arg.ResourceType,
+		arg.ResourceName,
+		arg.ExternalResourceID,
+		arg.Status,
+	)
+	return err
+}
+
 const upsertGoogleIntegration = `-- name: UpsertGoogleIntegration :one
 INSERT INTO integrations (provider, account_identifier, connection_status)
 VALUES ('google', $1, 'connected')
@@ -159,9 +487,52 @@ SET connection_status = 'connected'
 RETURNING id, provider, account_identifier, connection_status, created_at
 `
 
-func (q *Queries) UpsertGoogleIntegration(ctx context.Context, accountIdentifier string) (Integration, error) {
+type UpsertGoogleIntegrationRow struct {
+	ID                uuid.UUID
+	Provider          string
+	AccountIdentifier string
+	ConnectionStatus  string
+	CreatedAt         time.Time
+}
+
+func (q *Queries) UpsertGoogleIntegration(ctx context.Context, accountIdentifier string) (UpsertGoogleIntegrationRow, error) {
 	row := q.db.QueryRow(ctx, upsertGoogleIntegration, accountIdentifier)
-	var i Integration
+	var i UpsertGoogleIntegrationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Provider,
+		&i.AccountIdentifier,
+		&i.ConnectionStatus,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertSlackIntegration = `-- name: UpsertSlackIntegration :one
+INSERT INTO integrations (provider, account_identifier, connection_status, bot_user_id)
+VALUES ('slack', $1, 'connected', $2)
+ON CONFLICT (provider, account_identifier) DO UPDATE
+SET connection_status = 'connected', bot_user_id = EXCLUDED.bot_user_id
+RETURNING id, provider, account_identifier, connection_status, created_at
+`
+
+type UpsertSlackIntegrationParams struct {
+	AccountIdentifier string
+	BotUserID         *string
+}
+
+type UpsertSlackIntegrationRow struct {
+	ID                uuid.UUID
+	Provider          string
+	AccountIdentifier string
+	ConnectionStatus  string
+	CreatedAt         time.Time
+}
+
+// Idempotent connection upsert: repeated checks keep the original created_at.
+func (q *Queries) UpsertSlackIntegration(ctx context.Context, arg UpsertSlackIntegrationParams) (UpsertSlackIntegrationRow, error) {
+	row := q.db.QueryRow(ctx, upsertSlackIntegration, arg.AccountIdentifier, arg.BotUserID)
+	var i UpsertSlackIntegrationRow
 	err := row.Scan(
 		&i.ID,
 		&i.Provider,

@@ -37,6 +37,20 @@ type Config struct {
 	// TokenEncryptionKey (base64, 32 bytes) encrypts stored OAuth refresh
 	// tokens (AES-256-GCM). Empty ⇒ Google OAuth disabled.
 	TokenEncryptionKey string
+
+	// SlackBotToken authenticates the installed workspace bot. Empty ⇒ Slack
+	// integration disabled. Env-only: never persisted, never logged.
+	SlackBotToken string
+
+	// SlackSigningSecret verifies Events API request signatures. Empty ⇒
+	// the events webhook is disabled. Env-only: never persisted, never logged.
+	SlackSigningSecret string
+
+	// SlackEventsAddr is the bind address of the dedicated events-only
+	// listener (tunnel-facing). Loopback default: only a local tunnel/proxy
+	// can reach it. Ignored when the signing secret is absent — an
+	// unprotected listener is never started.
+	SlackEventsAddr string
 }
 
 // GoogleOAuthConfigured reports whether every prerequisite for the Google
@@ -44,6 +58,22 @@ type Config struct {
 func (c Config) GoogleOAuthConfigured() bool {
 	return c.GoogleClientID != "" && c.GoogleClientSecret != "" &&
 		c.GoogleRedirectURL != "" && c.TokenEncryptionKey != ""
+}
+
+// SlackConfigured reports whether the Slack bot token is present.
+func (c Config) SlackConfigured() bool {
+	return c.SlackBotToken != ""
+}
+
+// SlackEventsConfigured reports whether the signing secret is present.
+func (c Config) SlackEventsConfigured() bool {
+	return c.SlackSigningSecret != ""
+}
+
+// SlackEventsListenerEnabled reports whether the dedicated events-only
+// listener should start: requires the signing secret (never unprotected).
+func (c Config) SlackEventsListenerEnabled() bool {
+	return c.SlackEventsConfigured() && c.SlackEventsAddr != ""
 }
 
 // Load reads configuration from the environment and validates it.
@@ -57,6 +87,9 @@ func Load() (Config, error) {
 		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:  getenv("GOOGLE_REDIRECT_URL", ""),
 		TokenEncryptionKey: getenv("TOKEN_ENCRYPTION_KEY", ""),
+		SlackBotToken:      getenv("SLACK_BOT_TOKEN", ""),
+		SlackSigningSecret: getenv("SLACK_SIGNING_SECRET", ""),
+		SlackEventsAddr:    getenv("SLACK_EVENTS_ADDR", "127.0.0.1:8081"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: DATABASE_URL is required")

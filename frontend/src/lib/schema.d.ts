@@ -73,6 +73,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups/{groupId}/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
+         * @description Read-only. "Joined" = onboarding status joined_slack, form_submitted, or complete (Stage 3A/3B conventions). joinedAt is not tracked yet and is deliberately omitted rather than fabricated. Exposes student emails — requires coordinator authentication before production exposure (not yet implemented).
+         */
+        get: operations["getGroupOnboarding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/integrations/google/connect": {
         parameters: {
             query?: never;
@@ -124,6 +144,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/slack/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Slack connection status (verifies the bot token, never exposes it) */
+        get: operations["slackStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/slack/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Events API webhook (strictly signature-verified, public)
+         * @description Verifies Slack's v0 HMAC signature and timestamp BEFORE any parsing, handles the url_verification handshake, deduplicates by event_id, and processes member_joined_channel events.
+         */
+        post: operations["slackEvents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{groupId}/slack/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Idempotently provision the group's Slack channels, invitations, and welcome messages
+         * @description Safe to retry — existing channels are reused, welcome messages are posted once, and invitations treat already-in-channel as success. Per-item failures are reported, never dropped.
+         */
+        post: operations["provisionGroupSlack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -152,6 +229,8 @@ export interface components {
             name: string;
             courseName: string;
             startDate: components["schemas"]["Date"];
+            /** @description Optional student roster (PRD 4.1). Emails are normalized (trimmed, lowercased); invalid entries and post-normalization duplicates are rejected with the offending values — never silently discarded. Existing users are reused by normalized email; new 'student' users are created and enrolled as pending group members atomically with the group. */
+            studentEmails?: string[];
         };
         Page: {
             limit: number;
@@ -178,6 +257,78 @@ export interface components {
             scopes?: string[];
             /** Format: date-time */
             connectedAt?: string;
+        };
+        SlackStatus: {
+            /**
+             * @description connection lifecycle state
+             * @enum {string}
+             */
+            status: "connected" | "disconnected" | "error";
+            /** @description verified workspace team ID (empty when not connected) */
+            teamId?: string;
+            /** @description workspace name — public metadata, safe to display */
+            teamName?: string;
+            /** Format: date-time */
+            connectedAt?: string;
+        };
+        SlackProvisionRequest: {
+            /** @description workspace members to invite to every group channel */
+            inviteEmails?: string[];
+            /** @description optional welcome-message override (default template otherwise) */
+            welcomeTemplate?: string;
+        };
+        SlackProvisionResult: {
+            channels: components["schemas"]["SlackChannelResult"][];
+            invites: components["schemas"]["SlackInviteResult"][];
+            welcomeMessages: components["schemas"]["SlackWelcomeResult"][];
+        };
+        SlackChannelResult: {
+            name: string;
+            channelId?: string;
+            /** @enum {string} */
+            status: "created" | "reused" | "failed";
+            error?: string;
+        };
+        SlackInviteResult: {
+            email: string;
+            channelName: string;
+            /** @enum {string} */
+            status: "invited" | "already_member" | "failed";
+            error?: string;
+        };
+        SlackWelcomeResult: {
+            channelName: string;
+            /** @enum {string} */
+            status: "posted" | "skipped" | "failed";
+            error?: string;
+        };
+        SlackEventAck: {
+            /**
+             * @description processing outcome
+             * @enum {string}
+             */
+            status?: "challenge" | "duplicate" | "processed" | "unresolved" | "bot" | "ignored";
+            /** @description echo of Slack's challenge (url_verification only) */
+            challenge?: string;
+        };
+        GroupOnboarding: {
+            group: components["schemas"]["Group"];
+            summary: {
+                expectedCount: number;
+                joinedCount: number;
+                pendingCount: number;
+                /** @description rounded to one decimal (e.g. 87.5) */
+                completionPercentage: number;
+            };
+            students: components["schemas"]["GroupOnboardingStudent"][];
+        };
+        GroupOnboardingStudent: {
+            /** Format: uuid */
+            userId: string;
+            fullName: string;
+            email: string;
+            /** @enum {string} */
+            onboardingStatus: "pending" | "invited" | "joined_slack" | "form_submitted" | "complete";
         };
         Error: {
             error: {
@@ -356,6 +507,37 @@ export interface operations {
             };
         };
     };
+    getGroupOnboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description onboarding report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupOnboarding"];
+                };
+            };
+            /** @description unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     googleConnect: {
         parameters: {
             query?: never;
@@ -446,6 +628,130 @@ export interface operations {
                 };
             };
             /** @description Google OAuth is not configured on the server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    slackStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description current connection state after a live auth.test check */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackStatus"];
+                };
+            };
+            /** @description Slack is not configured on the server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    slackEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description acknowledged (challenge, duplicate, or processing outcome) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackEventAck"];
+                };
+            };
+            /** @description malformed payload after verification */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description missing, malformed, or invalid signature / stale timestamp */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Slack events are not configured on the server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    provisionGroupSlack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SlackProvisionRequest"];
+            };
+        };
+        responses: {
+            /** @description provisioning outcome (per-item statuses) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackProvisionResult"];
+                };
+            };
+            /** @description unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Slack is not configured on the server */
             503: {
                 headers: {
                     [name: string]: unknown;

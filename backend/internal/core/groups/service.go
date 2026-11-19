@@ -6,12 +6,14 @@ package groups
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"launchpad/internal/core"
+	"launchpad/internal/core/integrations"
 )
 
 const (
@@ -20,7 +22,15 @@ const (
 
 	// StatusDraft is the initial lifecycle state of every group (PRD 4.1).
 	StatusDraft = "draft"
+
+	// maxStudentEmails bounds one ingestion batch (sanity, not a PRD limit).
+	maxStudentEmails = 500
 )
+
+// emailPattern is a pragmatic RFC-ish check after normalization: one @,
+// plausible domain. Deliberately permissive — the normalized-unique index
+// and Slack email matching are the real correctness mechanisms.
+var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 // Group is the domain representation of a student group.
 type Group struct {
@@ -38,13 +48,31 @@ type CreateInput struct {
 	Name       string
 	CourseName string
 	StartDate  string // ISO date, YYYY-MM-DD
+
+	// StudentEmails is optional (backward compatible). Raw as submitted;
+	// normalized (lower/trim) here — the same canonical form used by the
+	// Slack identity linker (core/integrations.NormalizeEmail).
+	StudentEmails []string
+}
+
+// CreateParams is the validated command handed to the Repository.
+type CreateParams struct {
+	Name          string
+	CourseName    string
+	StartDate     time.Time
+	StudentEmails []string // normalized (lower/trim)
 }
 
 // Repository is the persistence port for groups, implemented by internal/store.
 type Repository interface {
-	Create(ctx context.Context, name, courseName string, startDate time.Time) (Group, error)
+	// Create persists the group AND its student memberships atomically:
+	// a failure anywhere rolls the whole thing back (no partial groups).
+	Create(ctx context.Context, params CreateParams) (Group, error)
 	GetByID(ctx context.Context, id uuid.UUID) (Group, error)
 	List(ctx context.Context, limit, offset int) (items []Group, total int, err error)
+	// StudentRoster returns the group's student members with their onboarding
+	// status in ONE query (no N+1).
+	StudentRoster(ctx context.Context, groupID uuid.UUID) ([]Student, error)
 }
 
 // Service applies group business rules on top of a Repository.
@@ -59,10 +87,33 @@ func New(repo Repository) *Service { return &Service{repo: repo} }
 // core.AppError{DUPLICATE_GROUP}; the database unique constraint is the guard,
 // which is race-safe by design.
 func (s *Service) Create(ctx context.Context, in CreateInput) (Group, error) {
+	fieldErrors := map[string]string{}
+	startDate, name, course := validateGroupBasics(in, fieldErrors)
+	studentEmails, emailErr := normalizeStudentEmails(in.StudentEmails)
+	if emailErr != "" {
+		fieldErrors["studentEmails"] = emailErr
+	}
+	if len(fieldErrors) > 0 {
+		return Group{}, core.Validation("invalid group data", fieldErrors)
+	}
+
+	g, err := s.repo.Create(ctx, CreateParams{
+		Name:          name,
+		CourseName:    course,
+		StartDate:     startDate,
+		StudentEmails: studentEmails,
+	})
+	if err != nil {
+		return Group{}, err
+	}
+	return g, nil
+}
+
+// validateGroupBasics checks name/course/date; returns the parsed date and
+// the trimmed name/course.
+func validateGroupBasics(in CreateInput, fieldErrors map[string]string) (time.Time, string, string) {
 	name := strings.TrimSpace(in.Name)
 	course := strings.TrimSpace(in.CourseName)
-
-	fieldErrors := map[string]string{}
 	if name == "" {
 		fieldErrors["name"] = "is required"
 	} else if len(name) > nameMaxLen {
@@ -84,15 +135,44 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Group, error) {
 			startDate = parsed
 		}
 	}
-	if len(fieldErrors) > 0 {
-		return Group{}, core.Validation("invalid group data", fieldErrors)
-	}
+	return startDate, name, course
+}
 
-	g, err := s.repo.Create(ctx, name, course, startDate)
-	if err != nil {
-		return Group{}, err
+// normalizeStudentEmails canonicalizes every address (single source of truth:
+// integrations.NormalizeEmail — the same form the Slack identity linker
+// matches on), rejects malformed entries and post-normalization duplicates.
+// Nothing is silently discarded: problems are reported verbatim to the client.
+func normalizeStudentEmails(raw []string) ([]string, string) {
+	if len(raw) == 0 {
+		return nil, ""
 	}
-	return g, nil
+	if len(raw) > maxStudentEmails {
+		return nil, fmt.Sprintf("too many student emails (max %d)", maxStudentEmails)
+	}
+	seen := map[string]bool{}
+	var invalid []string
+	var duplicates []string
+	out := make([]string, 0, len(raw))
+	for _, r := range raw {
+		n := integrations.NormalizeEmail(r)
+		if n == "" || !emailPattern.MatchString(n) {
+			invalid = append(invalid, strings.TrimSpace(r))
+			continue
+		}
+		if seen[n] {
+			duplicates = append(duplicates, n)
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	switch {
+	case len(invalid) > 0:
+		return nil, "invalid email format: " + strings.Join(invalid, ", ")
+	case len(duplicates) > 0:
+		return nil, "duplicate email addresses: " + strings.Join(duplicates, ", ")
+	}
+	return out, ""
 }
 
 // Get returns one group by ID; invalid UUIDs and unknown IDs are domain errors.

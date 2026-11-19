@@ -60,9 +60,10 @@ func (h *Handlers) CreateGroup(c echo.Context) error {
 		return errBadRequest("invalid request body: " + err.Error())
 	}
 	g, err := h.groups.Create(c.Request().Context(), groups.CreateInput{
-		Name:       body.Name,
-		CourseName: body.CourseName,
-		StartDate:  body.StartDate, // Date is a string alias; the service parses it
+		Name:          body.Name,
+		CourseName:    body.CourseName,
+		StartDate:     body.StartDate, // Date is a string alias; the service parses it
+		StudentEmails: derefEmails(body.StudentEmails),
 	})
 	if err != nil {
 		return err
@@ -77,6 +78,42 @@ func (h *Handlers) GetGroup(c echo.Context, groupId gen.GroupId) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, toAPIGroup(g))
+}
+
+// GetGroupOnboarding GET /api/groups/{groupId}/onboarding — read-only
+// visibility (PRD 4.6). Emails are personal data: this endpoint requires
+// coordinator authentication before any production exposure.
+func (h *Handlers) GetGroupOnboarding(c echo.Context, groupId gen.GroupId) error {
+	report, err := h.groups.Onboarding(c.Request().Context(), groupId.String())
+	if err != nil {
+		return err
+	}
+	students := make([]gen.GroupOnboardingStudent, len(report.Students))
+	for i, s := range report.Students {
+		students[i] = gen.GroupOnboardingStudent{
+			UserId:           openapi_types.UUID(s.UserID),
+			FullName:         s.FullName,
+			Email:            s.Email,
+			OnboardingStatus: gen.GroupOnboardingStudentOnboardingStatus(s.OnboardingStatus),
+		}
+	}
+	// Inline anonymous struct in the generated model — bind once, locally.
+	summary := struct {
+		CompletionPercentage float32 `json:"completionPercentage"`
+		ExpectedCount        int     `json:"expectedCount"`
+		JoinedCount          int     `json:"joinedCount"`
+		PendingCount         int     `json:"pendingCount"`
+	}{
+		CompletionPercentage: float32(report.Summary.CompletionPercentage),
+		ExpectedCount:        report.Summary.ExpectedCount,
+		JoinedCount:          report.Summary.JoinedCount,
+		PendingCount:         report.Summary.PendingCount,
+	}
+	return c.JSON(http.StatusOK, gen.GroupOnboarding{
+		Group:    toAPIGroup(report.Group),
+		Summary:  summary,
+		Students: students,
+	})
 }
 
 // ── domain → API mapping ──────────────────────────────────────────────────

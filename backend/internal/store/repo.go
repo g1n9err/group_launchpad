@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -38,19 +37,70 @@ func (r *Repo) Pool() *pgxpool.Pool { return r.pool }
 
 // groups.Repository
 
-func (r *Repo) Create(ctx context.Context, name, courseName string, startDate time.Time) (groups.Group, error) {
-	row, err := r.q.CreateGroup(ctx, gen.CreateGroupParams{
-		Name:       name,
-		CourseName: courseName,
-		StartDate:  startDate,
+func (r *Repo) Create(ctx context.Context, params groups.CreateParams) (groups.Group, error) {
+	// One transaction: group + users + memberships commit together or not at
+	// all — a failed student insertion can never leave a partial group.
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return groups.Group{}, fmt.Errorf("store: create group tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck — no-op after commit
+
+	qtx := r.q.WithTx(tx)
+	row, err := qtx.CreateGroup(ctx, gen.CreateGroupParams{
+		Name:       params.Name,
+		CourseName: params.CourseName,
+		StartDate:  params.StartDate,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
-			return groups.Group{}, core.DuplicateGroup(name)
+			return groups.Group{}, core.DuplicateGroup(params.Name)
 		}
 		return groups.Group{}, fmt.Errorf("store: create group: %w", err)
 	}
+
+	for _, email := range params.StudentEmails {
+		userID, err := upsertStudentUser(ctx, qtx, email)
+		if err != nil {
+			return groups.Group{}, err
+		}
+		if _, err := qtx.InsertGroupMember(ctx, gen.InsertGroupMemberParams{
+			GroupID: row.ID,
+			UserID:  userID,
+		}); err != nil {
+			return groups.Group{}, fmt.Errorf("store: insert group member: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return groups.Group{}, fmt.Errorf("store: create group commit: %w", err)
+	}
 	return groupFromRow(row), nil
+}
+
+// upsertStudentUser reuses an existing user matched by normalized email
+// (role and Slack identity untouched) or creates a 'student' user. The
+// full_name is the email itself until the intake form supplies a real name —
+// nothing is invented.
+func upsertStudentUser(ctx context.Context, qtx *gen.Queries, normalizedEmail string) (uuid.UUID, error) {
+	id, err := qtx.InsertUserIfAbsent(ctx, gen.InsertUserIfAbsentParams{
+		FullName: normalizedEmail,
+		Email:    normalizedEmail,
+	})
+	if err == nil {
+		return id, nil
+	}
+	// ON CONFLICT DO NOTHING + RETURNING yields ErrNoRows when the row
+	// existed (or a concurrent insert won the race); a bare unique violation
+	// is also possible via other paths. Either way: reuse the existing user.
+	if !errors.Is(err, pgx.ErrNoRows) && !isUniqueViolation(err) {
+		return uuid.Nil, fmt.Errorf("store: insert user: %w", err)
+	}
+	id, err = qtx.FindUserIDByNormalizedEmail(ctx, normalizedEmail)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("store: find existing user: %w", err)
+	}
+	return id, nil
 }
 
 func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (groups.Group, error) {
@@ -78,6 +128,24 @@ func (r *Repo) List(ctx context.Context, limit, offset int) ([]groups.Group, int
 		out[i] = groupFromRow(row)
 	}
 	return out, int(total), nil
+}
+
+// StudentRoster returns the group's student roster in one query.
+func (r *Repo) StudentRoster(ctx context.Context, groupID uuid.UUID) ([]groups.Student, error) {
+	rows, err := r.q.ListStudentRoster(ctx, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("store: student roster: %w", err)
+	}
+	out := make([]groups.Student, len(rows))
+	for i, row := range rows {
+		out[i] = groups.Student{
+			UserID:           row.UserID,
+			FullName:         row.FullName,
+			Email:            row.Email,
+			OnboardingStatus: row.OnboardingStatus,
+		}
+	}
+	return out, nil
 }
 
 // helper

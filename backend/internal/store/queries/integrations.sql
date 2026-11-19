@@ -53,3 +53,98 @@ LIMIT 1;
 UPDATE integrations
 SET connection_status = 'error'
 WHERE provider = 'google';
+
+-- name: UpsertSlackIntegration :one
+-- Idempotent connection upsert: repeated checks keep the original created_at.
+INSERT INTO integrations (provider, account_identifier, connection_status, bot_user_id)
+VALUES ('slack', $1, 'connected', $2)
+ON CONFLICT (provider, account_identifier) DO UPDATE
+SET connection_status = 'connected', bot_user_id = EXCLUDED.bot_user_id
+RETURNING id, provider, account_identifier, connection_status, created_at;
+
+-- name: MarkSlackIntegrationError :exec
+UPDATE integrations
+SET connection_status = 'error'
+WHERE provider = 'slack';
+
+-- name: InsertExternalOperationLog :exec
+-- Every external API operation is recorded (PRD 8.7). group_id is NULL for
+-- connection-level operations; error is a sanitized category, never raw text.
+INSERT INTO external_operation_logs (group_id, provider, operation, status_code, error, duration_ms)
+VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: GetGroupResource :one
+SELECT id, group_id, provider, resource_type, external_resource_id, resource_name, status
+FROM group_resources
+WHERE group_id = $1 AND provider = $2 AND resource_type = $3 AND resource_name = $4;
+
+-- name: InsertGroupResource :execrows
+-- Claim a resource row; ON CONFLICT DO NOTHING makes the insert the winner
+-- of any race (idempotency registry, PRD §8).
+INSERT INTO group_resources (group_id, provider, resource_type, external_resource_id, resource_name, status)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (group_id, provider, resource_type, resource_name) DO NOTHING;
+
+-- name: UpdateGroupResourceResult :exec
+UPDATE group_resources
+SET external_resource_id = $5, status = $6, updated_at = now()
+WHERE group_id = $1 AND provider = $2 AND resource_type = $3 AND resource_name = $4;
+
+-- ── Slack Events (Stage 2c) ────────────────────────────────────────────────
+
+-- name: InsertSlackEvent :execrows
+-- Atomic dedup: zero rows affected means the event_id was already recorded
+-- (Slack retries up to 3×; delivery is at-least-once).
+INSERT INTO slack_events (event_id, event_type, team_id, user_id, channel_id, payload)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (event_id) DO NOTHING;
+
+-- name: CompleteSlackEvent :exec
+UPDATE slack_events
+SET processed_at = now(), process_status = $2, unresolved_reason = $3
+WHERE event_id = $1;
+
+-- name: GetSlackBotUserID :one
+SELECT bot_user_id
+FROM integrations
+WHERE provider = 'slack' AND bot_user_id IS NOT NULL
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: FindGroupIDBySlackChannel :one
+SELECT group_id
+FROM group_resources
+WHERE provider = 'slack' AND resource_type = 'channel' AND external_resource_id = $1
+LIMIT 1;
+
+-- name: FindUserIDBySlackID :one
+SELECT id
+FROM users
+WHERE slack_user_id = $1
+LIMIT 1;
+
+-- name: FindUserIDsByEmail :many
+-- Matching on lower(trim(email)): case-variant duplicates in users are
+-- possible (the column unique index is case-sensitive) and MUST surface as
+-- ambiguity rather than a silent single match.
+SELECT id FROM users WHERE lower(btrim(email)) = $1;
+
+-- name: LinkUserSlackID :execrows
+-- Guarded link: only a user with NO Slack ID can receive one. Lost races
+-- yield 0 rows (caller re-reads to distinguish already-linked vs mismatch).
+UPDATE users SET slack_user_id = $1 WHERE id = $2 AND slack_user_id IS NULL;
+
+-- name: GetUserSlackID :one
+SELECT slack_user_id FROM users WHERE id = $1;
+
+-- name: FindGroupMemberByUser :one
+SELECT id, onboarding_status
+FROM group_members
+WHERE group_id = $1 AND user_id = $2
+LIMIT 1;
+
+-- name: MarkGroupMemberJoinedSlack :exec
+-- Guarded transition: only pending/invited members move to joined_slack.
+UPDATE group_members
+SET onboarding_status = 'joined_slack'
+WHERE id = $1 AND onboarding_status IN ('pending', 'invited');

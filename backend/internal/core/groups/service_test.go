@@ -13,17 +13,19 @@ import (
 // stubRepo is an in-memory Repository for pure unit tests (no database).
 type stubRepo struct {
 	groups       []Group
+	lastStudents []string
 	lastListArgs struct{ limit, offset int }
 }
 
-func (r *stubRepo) Create(_ context.Context, name, courseName string, startDate time.Time) (Group, error) {
+func (r *stubRepo) Create(_ context.Context, p CreateParams) (Group, error) {
 	for _, g := range r.groups {
-		if g.Name == name {
-			return Group{}, core.DuplicateGroup(name)
+		if g.Name == p.Name {
+			return Group{}, core.DuplicateGroup(p.Name)
 		}
 	}
-	g := Group{ID: uuid.New(), Name: name, CourseName: courseName, StartDate: startDate, Status: StatusDraft, CreatedAt: time.Now().UTC()}
+	g := Group{ID: uuid.New(), Name: p.Name, CourseName: p.CourseName, StartDate: p.StartDate, Status: StatusDraft, CreatedAt: time.Now().UTC()}
 	r.groups = append(r.groups, g)
+	r.lastStudents = p.StudentEmails
 	return g, nil
 }
 
@@ -38,6 +40,7 @@ func (r *stubRepo) GetByID(_ context.Context, id uuid.UUID) (Group, error) {
 
 func (r *stubRepo) List(_ context.Context, limit, offset int) ([]Group, int, error) {
 	r.lastListArgs.limit, r.lastListArgs.offset = limit, offset
+
 	total := len(r.groups)
 	end := offset + limit
 	if end > total {
@@ -47,6 +50,10 @@ func (r *stubRepo) List(_ context.Context, limit, offset int) ([]Group, int, err
 		offset = total
 	}
 	return r.groups[offset:end], total, nil
+}
+
+func (r *stubRepo) StudentRoster(context.Context, uuid.UUID) ([]Student, error) {
+	return nil, nil
 }
 
 func newService() (*Service, *stubRepo) {

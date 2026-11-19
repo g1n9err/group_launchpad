@@ -89,6 +89,7 @@ type Integration struct {
 	AccountIdentifier string
 	ConnectionStatus  string
 	CreatedAt         time.Time
+	BotUserID         *string
 }
 
 type IntegrationCredential struct {
@@ -122,10 +123,24 @@ type ScheduledAnnouncement struct {
 	CreatedAt      time.Time
 }
 
+type SlackEvent struct {
+	EventID          string
+	EventType        string
+	TeamID           *string
+	UserID           *string
+	ChannelID        *string
+	Payload          []byte
+	ReceivedAt       time.Time
+	ProcessedAt      pgtype.Timestamptz
+	ProcessStatus    string
+	UnresolvedReason *string
+}
+
 type User struct {
-	ID        uuid.UUID
-	FullName  string
-	Email     string
-	Role      string
-	CreatedAt time.Time
+	ID          uuid.UUID
+	FullName    string
+	Email       string
+	Role        string
+	CreatedAt   time.Time
+	SlackUserID *string
 }

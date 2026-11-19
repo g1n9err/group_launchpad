@@ -110,6 +110,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/groups/{groupId}/onboarding:
+    get:
+      tags: [groups]
+      operationId: getGroupOnboarding
+      summary: Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
+      description: >
+        Read-only. "Joined" = onboarding status joined_slack, form_submitted,
+        or complete (Stage 3A/3B conventions). joinedAt is not tracked yet
+        and is deliberately omitted rather than fabricated. Exposes student
+        emails — requires coordinator authentication before production
+        exposure (not yet implemented).
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: onboarding report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupOnboarding"
+        "404":
+          description: unknown group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/integrations/google/connect:
     get:
       tags: [integrations]
@@ -184,6 +210,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/integrations/slack/status:
+    get:
+      tags: [integrations]
+      operationId: slackStatus
+      summary: Slack connection status (verifies the bot token, never exposes it)
+      responses:
+        "200":
+          description: current connection state after a live auth.test check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlackStatus"
+        "503":
+          description: Slack is not configured on the server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/integrations/slack/events:
+    post:
+      tags: [integrations]
+      operationId: slackEvents
+      summary: Slack Events API webhook (strictly signature-verified, public)
+      description: >
+        Verifies Slack's v0 HMAC signature and timestamp BEFORE any parsing,
+        handles the url_verification handshake, deduplicates by event_id, and
+        processes member_joined_channel events.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Slack Events API envelope (verified over raw bytes)
+      responses:
+        "200":
+          description: acknowledged (challenge, duplicate, or processing outcome)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlackEventAck"
+        "400":
+          description: malformed payload after verification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: missing, malformed, or invalid signature / stale timestamp
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Slack events are not configured on the server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/groups/{groupId}/slack/provision:
+    post:
+      tags: [integrations]
+      operationId: provisionGroupSlack
+      summary: Idempotently provision the group's Slack channels, invitations, and welcome messages
+      description: >
+        Safe to retry — existing channels are reused, welcome messages are
+        posted once, and invitations treat already-in-channel as success.
+        Per-item failures are reported, never dropped.
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SlackProvisionRequest"
+      responses:
+        "200":
+          description: provisioning outcome (per-item statuses)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlackProvisionResult"
+        "404":
+          description: unknown group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Slack is not configured on the server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     Limit:
@@ -253,6 +374,19 @@ components:
           maxLength: 200
         startDate:
           $ref: "#/components/schemas/Date"
+        studentEmails:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+            format: email
+          description: >
+            Optional student roster (PRD 4.1). Emails are normalized
+            (trimmed, lowercased); invalid entries and post-normalization
+            duplicates are rejected with the offending values — never
+            silently discarded. Existing users are reused by normalized
+            email; new 'student' users are created and enrolled as pending
+            group members atomically with the group.
     Page:
       type: object
       required: [limit, offset, total]
@@ -299,6 +433,135 @@ components:
         connectedAt:
           type: string
           format: date-time
+    SlackStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: connection lifecycle state
+          enum: [connected, disconnected, error]
+        teamId:
+          type: string
+          description: verified workspace team ID (empty when not connected)
+        teamName:
+          type: string
+          description: workspace name — public metadata, safe to display
+        connectedAt:
+          type: string
+          format: date-time
+    SlackProvisionRequest:
+      type: object
+      properties:
+        inviteEmails:
+          type: array
+          items:
+            type: string
+            format: email
+          description: workspace members to invite to every group channel
+        welcomeTemplate:
+          type: string
+          description: optional welcome-message override (default template otherwise)
+    SlackProvisionResult:
+      type: object
+      required: [channels, invites, welcomeMessages]
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlackChannelResult"
+        invites:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlackInviteResult"
+        welcomeMessages:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlackWelcomeResult"
+    SlackChannelResult:
+      type: object
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        channelId:
+          type: string
+        status:
+          type: string
+          enum: [created, reused, failed]
+        error:
+          type: string
+    SlackInviteResult:
+      type: object
+      required: [email, channelName, status]
+      properties:
+        email:
+          type: string
+        channelName:
+          type: string
+        status:
+          type: string
+          enum: [invited, already_member, failed]
+        error:
+          type: string
+    SlackWelcomeResult:
+      type: object
+      required: [channelName, status]
+      properties:
+        channelName:
+          type: string
+        status:
+          type: string
+          enum: [posted, skipped, failed]
+        error:
+          type: string
+    SlackEventAck:
+      type: object
+      properties:
+        status:
+          type: string
+          description: processing outcome
+          enum: [challenge, duplicate, processed, unresolved, bot, ignored]
+        challenge:
+          type: string
+          description: echo of Slack's challenge (url_verification only)
+    GroupOnboarding:
+      type: object
+      required: [group, summary, students]
+      properties:
+        group:
+          $ref: "#/components/schemas/Group"
+        summary:
+          type: object
+          required: [expectedCount, joinedCount, pendingCount, completionPercentage]
+          properties:
+            expectedCount:
+              type: integer
+            joinedCount:
+              type: integer
+            pendingCount:
+              type: integer
+            completionPercentage:
+              type: number
+              description: rounded to one decimal (e.g. 87.5)
+        students:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupOnboardingStudent"
+    GroupOnboardingStudent:
+      type: object
+      required: [userId, fullName, email, onboardingStatus]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        email:
+          type: string
+        onboardingStatus:
+          type: string
+          enum: [pending, invited, joined_slack, form_submitted, complete]
     Error:
       type: object
       required: [error]

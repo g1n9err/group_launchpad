@@ -53,6 +53,19 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 	return i, err
 }
 
+const findUserIDByNormalizedEmail = `-- name: FindUserIDByNormalizedEmail :one
+SELECT id FROM users
+WHERE lower(btrim(email)) = $1
+LIMIT 1
+`
+
+func (q *Queries) FindUserIDByNormalizedEmail(ctx context.Context, email string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, findUserIDByNormalizedEmail, email)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getGroup = `-- name: GetGroup :one
 SELECT id, name, course_name, start_date, status, created_at
 FROM groups
@@ -71,6 +84,49 @@ func (q *Queries) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertGroupMember = `-- name: InsertGroupMember :execrows
+INSERT INTO group_members (group_id, user_id, member_role, onboarding_status)
+VALUES ($1, $2, 'student', 'pending')
+ON CONFLICT (group_id, user_id) DO NOTHING
+`
+
+type InsertGroupMemberParams struct {
+	GroupID uuid.UUID
+	UserID  uuid.UUID
+}
+
+// Idempotent membership: (group_id, user_id) conflicts are no-ops.
+func (q *Queries) InsertGroupMember(ctx context.Context, arg InsertGroupMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertGroupMember, arg.GroupID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertUserIfAbsent = `-- name: InsertUserIfAbsent :one
+INSERT INTO users (full_name, email, role)
+VALUES ($1, $2, 'student')
+ON CONFLICT DO NOTHING
+RETURNING id
+`
+
+type InsertUserIfAbsentParams struct {
+	FullName string
+	Email    string
+}
+
+// Student ingestion (Stage 3B): create the user only when the NORMALIZED
+// email is new; DO NOTHING (no target) covers both the stock email unique
+// constraint and uq_users_email_normalized. No row returned ⇒ concurrent
+// insert won; the caller re-selects.
+func (q *Queries) InsertUserIfAbsent(ctx context.Context, arg InsertUserIfAbsentParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertUserIfAbsent, arg.FullName, arg.Email)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listGroups = `-- name: ListGroups :many
@@ -101,6 +157,48 @@ func (q *Queries) ListGroups(ctx context.Context, arg ListGroupsParams) ([]Group
 			&i.StartDate,
 			&i.Status,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStudentRoster = `-- name: ListStudentRoster :many
+SELECT u.id AS user_id, u.full_name, u.email, gm.onboarding_status
+FROM group_members gm
+JOIN users u ON u.id = gm.user_id
+WHERE gm.group_id = $1 AND gm.member_role = 'student'
+ORDER BY gm.onboarding_status DESC, lower(u.full_name)
+`
+
+type ListStudentRosterRow struct {
+	UserID           uuid.UUID
+	FullName         string
+	Email            string
+	OnboardingStatus string
+}
+
+// One query for the whole roster (Stage 3C): joined-first, then name.
+// Backed by idx_group_members_group (0001).
+func (q *Queries) ListStudentRoster(ctx context.Context, groupID uuid.UUID) ([]ListStudentRosterRow, error) {
+	rows, err := q.db.Query(ctx, listStudentRoster, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStudentRosterRow
+	for rows.Next() {
+		var i ListStudentRosterRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.FullName,
+			&i.Email,
+			&i.OnboardingStatus,
 		); err != nil {
 			return nil, err
 		}

@@ -44,5 +44,33 @@ export function useGoogleStatus() {
   });
 }
 
+// Slack connection state (server-side bot token — no connect flow).
+export function useSlackStatus() {
+  return useQuery({
+    queryKey: ["slack-status"],
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await api.GET("/api/integrations/slack/status");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+// Onboarding report for one group (refreshable).
+export function useGroupOnboarding(groupId: string | undefined) {
+  return useQuery({
+    queryKey: ["onboarding", groupId],
+    enabled: groupId !== undefined,
+    queryFn: async () => {
+      const { data, error } = await api.GET("/api/groups/{groupId}/onboarding", {
+        params: { path: { groupId: groupId as string } },
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 // Browser-navigation URL that starts the Google OAuth flow on the API origin.
 export const googleConnectUrl = () => apiUrl("/api/integrations/google/connect");

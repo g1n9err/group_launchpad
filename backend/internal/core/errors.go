@@ -9,6 +9,7 @@ const (
 	CodeNotFound      = "NOT_FOUND"
 	CodeNotReady      = "NOT_READY"
 	CodeOAuthExchange = "OAUTH_EXCHANGE_FAILED"
+	CodeUnauthorized  = "UNAUTHORIZED"
 	CodeInternal      = "INTERNAL"
 )
 

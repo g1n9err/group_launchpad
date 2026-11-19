@@ -34,30 +34,171 @@ func (e GoogleStatusStatus) Valid() bool {
 	}
 }
 
+// Defines values for GroupOnboardingStudentOnboardingStatus.
+const (
+	GroupOnboardingStudentOnboardingStatusComplete      GroupOnboardingStudentOnboardingStatus = "complete"
+	GroupOnboardingStudentOnboardingStatusFormSubmitted GroupOnboardingStudentOnboardingStatus = "form_submitted"
+	GroupOnboardingStudentOnboardingStatusInvited       GroupOnboardingStudentOnboardingStatus = "invited"
+	GroupOnboardingStudentOnboardingStatusJoinedSlack   GroupOnboardingStudentOnboardingStatus = "joined_slack"
+	GroupOnboardingStudentOnboardingStatusPending       GroupOnboardingStudentOnboardingStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the GroupOnboardingStudentOnboardingStatus enum.
+func (e GroupOnboardingStudentOnboardingStatus) Valid() bool {
+	switch e {
+	case GroupOnboardingStudentOnboardingStatusComplete:
+		return true
+	case GroupOnboardingStudentOnboardingStatusFormSubmitted:
+		return true
+	case GroupOnboardingStudentOnboardingStatusInvited:
+		return true
+	case GroupOnboardingStudentOnboardingStatusJoinedSlack:
+		return true
+	case GroupOnboardingStudentOnboardingStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupStatus.
 const (
-	Archived        GroupStatus = "archived"
-	Draft           GroupStatus = "draft"
-	Failed          GroupStatus = "failed"
-	Launched        GroupStatus = "launched"
-	Launching       GroupStatus = "launching"
-	PartiallyFailed GroupStatus = "partially_failed"
+	GroupStatusArchived        GroupStatus = "archived"
+	GroupStatusDraft           GroupStatus = "draft"
+	GroupStatusFailed          GroupStatus = "failed"
+	GroupStatusLaunched        GroupStatus = "launched"
+	GroupStatusLaunching       GroupStatus = "launching"
+	GroupStatusPartiallyFailed GroupStatus = "partially_failed"
 )
 
 // Valid indicates whether the value is a known member of the GroupStatus enum.
 func (e GroupStatus) Valid() bool {
 	switch e {
-	case Archived:
+	case GroupStatusArchived:
 		return true
-	case Draft:
+	case GroupStatusDraft:
 		return true
-	case Failed:
+	case GroupStatusFailed:
 		return true
-	case Launched:
+	case GroupStatusLaunched:
 		return true
-	case Launching:
+	case GroupStatusLaunching:
 		return true
-	case PartiallyFailed:
+	case GroupStatusPartiallyFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlackChannelResultStatus.
+const (
+	SlackChannelResultStatusCreated SlackChannelResultStatus = "created"
+	SlackChannelResultStatusFailed  SlackChannelResultStatus = "failed"
+	SlackChannelResultStatusReused  SlackChannelResultStatus = "reused"
+)
+
+// Valid indicates whether the value is a known member of the SlackChannelResultStatus enum.
+func (e SlackChannelResultStatus) Valid() bool {
+	switch e {
+	case SlackChannelResultStatusCreated:
+		return true
+	case SlackChannelResultStatusFailed:
+		return true
+	case SlackChannelResultStatusReused:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlackEventAckStatus.
+const (
+	Bot        SlackEventAckStatus = "bot"
+	Challenge  SlackEventAckStatus = "challenge"
+	Duplicate  SlackEventAckStatus = "duplicate"
+	Ignored    SlackEventAckStatus = "ignored"
+	Processed  SlackEventAckStatus = "processed"
+	Unresolved SlackEventAckStatus = "unresolved"
+)
+
+// Valid indicates whether the value is a known member of the SlackEventAckStatus enum.
+func (e SlackEventAckStatus) Valid() bool {
+	switch e {
+	case Bot:
+		return true
+	case Challenge:
+		return true
+	case Duplicate:
+		return true
+	case Ignored:
+		return true
+	case Processed:
+		return true
+	case Unresolved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlackInviteResultStatus.
+const (
+	SlackInviteResultStatusAlreadyMember SlackInviteResultStatus = "already_member"
+	SlackInviteResultStatusFailed        SlackInviteResultStatus = "failed"
+	SlackInviteResultStatusInvited       SlackInviteResultStatus = "invited"
+)
+
+// Valid indicates whether the value is a known member of the SlackInviteResultStatus enum.
+func (e SlackInviteResultStatus) Valid() bool {
+	switch e {
+	case SlackInviteResultStatusAlreadyMember:
+		return true
+	case SlackInviteResultStatusFailed:
+		return true
+	case SlackInviteResultStatusInvited:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlackStatusStatus.
+const (
+	SlackStatusStatusConnected    SlackStatusStatus = "connected"
+	SlackStatusStatusDisconnected SlackStatusStatus = "disconnected"
+	SlackStatusStatusError        SlackStatusStatus = "error"
+)
+
+// Valid indicates whether the value is a known member of the SlackStatusStatus enum.
+func (e SlackStatusStatus) Valid() bool {
+	switch e {
+	case SlackStatusStatusConnected:
+		return true
+	case SlackStatusStatusDisconnected:
+		return true
+	case SlackStatusStatusError:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlackWelcomeResultStatus.
+const (
+	SlackWelcomeResultStatusFailed  SlackWelcomeResultStatus = "failed"
+	SlackWelcomeResultStatusPosted  SlackWelcomeResultStatus = "posted"
+	SlackWelcomeResultStatusSkipped SlackWelcomeResultStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the SlackWelcomeResultStatus enum.
+func (e SlackWelcomeResultStatus) Valid() bool {
+	switch e {
+	case SlackWelcomeResultStatusFailed:
+		return true
+	case SlackWelcomeResultStatusPosted:
+		return true
+	case SlackWelcomeResultStatusSkipped:
 		return true
 	default:
 		return false
@@ -120,7 +261,34 @@ type GroupCreate struct {
 
 	// StartDate ISO 8601 calendar date (YYYY-MM-DD)
 	StartDate Date `json:"startDate"`
+
+	// StudentEmails Optional student roster (PRD 4.1). Emails are normalized (trimmed, lowercased); invalid entries and post-normalization duplicates are rejected with the offending values — never silently discarded. Existing users are reused by normalized email; new 'student' users are created and enrolled as pending group members atomically with the group.
+	StudentEmails *[]openapi_types.Email `json:"studentEmails,omitempty"`
 }
+
+// GroupOnboarding defines model for GroupOnboarding.
+type GroupOnboarding struct {
+	Group    Group                    `json:"group"`
+	Students []GroupOnboardingStudent `json:"students"`
+	Summary  struct {
+		// CompletionPercentage rounded to one decimal (e.g. 87.5)
+		CompletionPercentage float32 `json:"completionPercentage"`
+		ExpectedCount        int     `json:"expectedCount"`
+		JoinedCount          int     `json:"joinedCount"`
+		PendingCount         int     `json:"pendingCount"`
+	} `json:"summary"`
+}
+
+// GroupOnboardingStudent defines model for GroupOnboardingStudent.
+type GroupOnboardingStudent struct {
+	Email            string                                 `json:"email"`
+	FullName         string                                 `json:"fullName"`
+	OnboardingStatus GroupOnboardingStudentOnboardingStatus `json:"onboardingStatus"`
+	UserId           openapi_types.UUID                     `json:"userId"`
+}
+
+// GroupOnboardingStudentOnboardingStatus defines model for GroupOnboardingStudent.OnboardingStatus.
+type GroupOnboardingStudentOnboardingStatus string
 
 // GroupStatus group lifecycle state
 type GroupStatus string
@@ -143,6 +311,83 @@ type Page struct {
 	Offset int `json:"offset"`
 	Total  int `json:"total"`
 }
+
+// SlackChannelResult defines model for SlackChannelResult.
+type SlackChannelResult struct {
+	ChannelId *string                  `json:"channelId,omitempty"`
+	Error     *string                  `json:"error,omitempty"`
+	Name      string                   `json:"name"`
+	Status    SlackChannelResultStatus `json:"status"`
+}
+
+// SlackChannelResultStatus defines model for SlackChannelResult.Status.
+type SlackChannelResultStatus string
+
+// SlackEventAck defines model for SlackEventAck.
+type SlackEventAck struct {
+	// Challenge echo of Slack's challenge (url_verification only)
+	Challenge *string `json:"challenge,omitempty"`
+
+	// Status processing outcome
+	Status *SlackEventAckStatus `json:"status,omitempty"`
+}
+
+// SlackEventAckStatus processing outcome
+type SlackEventAckStatus string
+
+// SlackInviteResult defines model for SlackInviteResult.
+type SlackInviteResult struct {
+	ChannelName string                  `json:"channelName"`
+	Email       string                  `json:"email"`
+	Error       *string                 `json:"error,omitempty"`
+	Status      SlackInviteResultStatus `json:"status"`
+}
+
+// SlackInviteResultStatus defines model for SlackInviteResult.Status.
+type SlackInviteResultStatus string
+
+// SlackProvisionRequest defines model for SlackProvisionRequest.
+type SlackProvisionRequest struct {
+	// InviteEmails workspace members to invite to every group channel
+	InviteEmails *[]openapi_types.Email `json:"inviteEmails,omitempty"`
+
+	// WelcomeTemplate optional welcome-message override (default template otherwise)
+	WelcomeTemplate *string `json:"welcomeTemplate,omitempty"`
+}
+
+// SlackProvisionResult defines model for SlackProvisionResult.
+type SlackProvisionResult struct {
+	Channels        []SlackChannelResult `json:"channels"`
+	Invites         []SlackInviteResult  `json:"invites"`
+	WelcomeMessages []SlackWelcomeResult `json:"welcomeMessages"`
+}
+
+// SlackStatus defines model for SlackStatus.
+type SlackStatus struct {
+	ConnectedAt *time.Time `json:"connectedAt,omitempty"`
+
+	// Status connection lifecycle state
+	Status SlackStatusStatus `json:"status"`
+
+	// TeamId verified workspace team ID (empty when not connected)
+	TeamId *string `json:"teamId,omitempty"`
+
+	// TeamName workspace name — public metadata, safe to display
+	TeamName *string `json:"teamName,omitempty"`
+}
+
+// SlackStatusStatus connection lifecycle state
+type SlackStatusStatus string
+
+// SlackWelcomeResult defines model for SlackWelcomeResult.
+type SlackWelcomeResult struct {
+	ChannelName string                   `json:"channelName"`
+	Error       *string                  `json:"error,omitempty"`
+	Status      SlackWelcomeResultStatus `json:"status"`
+}
+
+// SlackWelcomeResultStatus defines model for SlackWelcomeResult.Status.
+type SlackWelcomeResultStatus string
 
 // GroupId defines model for GroupId.
 type GroupId = openapi_types.UUID
@@ -172,8 +417,17 @@ type GoogleCallbackParams struct {
 	Error *string `form:"error,omitempty" json:"error,omitempty"`
 }
 
+// SlackEventsJSONBody defines parameters for SlackEvents.
+type SlackEventsJSONBody = map[string]interface{}
+
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = GroupCreate
+
+// ProvisionGroupSlackJSONRequestBody defines body for ProvisionGroupSlack for application/json ContentType.
+type ProvisionGroupSlackJSONRequestBody = SlackProvisionRequest
+
+// SlackEventsJSONRequestBody defines body for SlackEvents for application/json ContentType.
+type SlackEventsJSONRequestBody = SlackEventsJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -186,6 +440,12 @@ type ServerInterface interface {
 	// GetGroup Get one group
 	// (GET /api/groups/{groupId})
 	GetGroup(ctx echo.Context, groupId GroupId) error
+	// GetGroupOnboarding Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
+	// (GET /api/groups/{groupId}/onboarding)
+	GetGroupOnboarding(ctx echo.Context, groupId GroupId) error
+	// ProvisionGroupSlack Idempotently provision the group's Slack channels, invitations, and welcome messages
+	// (POST /api/groups/{groupId}/slack/provision)
+	ProvisionGroupSlack(ctx echo.Context, groupId GroupId) error
 	// GoogleCallback Google OAuth callback (Google redirects the browser here after consent)
 	// (GET /api/integrations/google/callback)
 	GoogleCallback(ctx echo.Context, params GoogleCallbackParams) error
@@ -195,6 +455,12 @@ type ServerInterface interface {
 	// GoogleStatus Google connection status (never includes tokens)
 	// (GET /api/integrations/google/status)
 	GoogleStatus(ctx echo.Context) error
+	// SlackEvents Slack Events API webhook (strictly signature-verified, public)
+	// (POST /api/integrations/slack/events)
+	SlackEvents(ctx echo.Context) error
+	// SlackStatus Slack connection status (verifies the bot token, never exposes it)
+	// (GET /api/integrations/slack/status)
+	SlackStatus(ctx echo.Context) error
 	// GetHealth Liveness probe
 	// (GET /health)
 	GetHealth(ctx echo.Context) error
@@ -258,6 +524,38 @@ func (w *ServerInterfaceWrapper) GetGroup(ctx echo.Context) error {
 	return err
 }
 
+// GetGroupOnboarding converts echo context to params.
+func (w *ServerInterfaceWrapper) GetGroupOnboarding(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetGroupOnboarding(ctx, groupId)
+	return err
+}
+
+// ProvisionGroupSlack converts echo context to params.
+func (w *ServerInterfaceWrapper) ProvisionGroupSlack(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ProvisionGroupSlack(ctx, groupId)
+	return err
+}
+
 // GoogleCallback converts echo context to params.
 func (w *ServerInterfaceWrapper) GoogleCallback(ctx echo.Context) error {
 	var err error
@@ -305,6 +603,24 @@ func (w *ServerInterfaceWrapper) GoogleStatus(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GoogleStatus(ctx)
+	return err
+}
+
+// SlackEvents converts echo context to params.
+func (w *ServerInterfaceWrapper) SlackEvents(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.SlackEvents(ctx)
+	return err
+}
+
+// SlackStatus converts echo context to params.
+func (w *ServerInterfaceWrapper) SlackStatus(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.SlackStatus(ctx)
 	return err
 }
 
@@ -378,8 +694,12 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/api/groups", wrapper.ListGroups, options.OperationMiddlewares["listGroups"]...)
 	router.POST(options.BaseURL+"/api/groups", wrapper.CreateGroup, options.OperationMiddlewares["createGroup"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId", wrapper.GetGroup, options.OperationMiddlewares["getGroup"]...)
+	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/status", wrapper.GoogleStatus, options.OperationMiddlewares["googleStatus"]...)
+	router.GET(options.BaseURL+"/api/integrations/slack/status", wrapper.SlackStatus, options.OperationMiddlewares["slackStatus"]...)
+	router.POST(options.BaseURL+"/api/integrations/slack/events", wrapper.SlackEvents, options.OperationMiddlewares["slackEvents"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/slack/provision", wrapper.ProvisionGroupSlack, options.OperationMiddlewares["provisionGroupSlack"]...)
 
 }

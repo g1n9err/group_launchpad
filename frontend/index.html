@@ -1,10 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="hy" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Group Launchpad</title>
+    <!-- Armenian + Latin typefaces -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Armenian:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // Restore theme + language before first paint (no flash, no reload).
+      try {
+        var t = localStorage.getItem("launchpad.theme");
+        document.documentElement.dataset.theme = t === "dark" ? "dark" : "light";
+        var l = localStorage.getItem("launchpad.lang");
+        if (l === "en" || l === "ru" || l === "hy") document.documentElement.lang = l;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

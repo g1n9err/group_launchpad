@@ -56,12 +56,12 @@ func newGroupsService(pool *pgxpool.Pool) *groups.Service {
 }
 
 // newApp builds the full wiring (pool → store → core → transport) with the
-// fake Google gateway and truncates every table tests touch.
+// fake gateways and truncates every table tests touch.
 func newApp(t *testing.T) *httptest.Server {
 	t.Helper()
 	pool := newTestPool(t)
-	truncate(t, pool, "groups", "oauth_states", "integrations", "integration_credentials")
-	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool), pool.Ping)
+	truncate(t, pool, "groups", "oauth_states", "integrations", "integration_credentials", "external_operation_logs", "group_resources")
+	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool), slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping)
 	return httptestNew(app, t)
 }
 
