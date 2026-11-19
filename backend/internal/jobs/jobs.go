@@ -23,7 +23,8 @@ type Config struct {
 	// WorkerID identifies this worker process in job logs (optional).
 	WorkerID string
 	// MaxWorkers is the concurrent job workers for the default queue.
-	MaxWorkers int
+	MaxWorkers         int
+	IntakeEmailWorkers int
 }
 
 // DefaultMaxWorkers is the number of concurrent workers for the default queue.
@@ -44,13 +45,16 @@ func NewClient(pool *pgxpool.Pool, workers *river.Workers, cfg Config) (*river.C
 		cfg.MaxWorkers = DefaultMaxWorkers
 	}
 
+	queues := map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.MaxWorkers}}
+	if cfg.IntakeEmailWorkers > 0 {
+		queues[IntakeEmailQueue] = river.QueueConfig{MaxWorkers: cfg.IntakeEmailWorkers}
+	}
+
 	client, err := river.NewClient(
 		riverpgxv5.New(pool),
 		&river.Config{
-			ID: cfg.WorkerID,
-			Queues: map[string]river.QueueConfig{
-				river.QueueDefault: {MaxWorkers: cfg.MaxWorkers},
-			},
+			ID:              cfg.WorkerID,
+			Queues:          queues,
 			Workers:         workers,
 			SoftStopTimeout: 30 * time.Second,
 		},

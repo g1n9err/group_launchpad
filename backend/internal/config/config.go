@@ -32,6 +32,10 @@ type Config struct {
 	// those routes unavailable.
 	CoordinatorPassword string
 
+	// Intake email is queued only when an SMTP worker is explicitly enabled.
+	SMTPEnabled, GmailEnabled                                bool
+	SMTPHost, SMTPPort, SMTPUsername, SMTPPassword, SMTPFrom string
+
 	// Google OAuth connection credentials. Empty ⇒ Google OAuth disabled
 	// (endpoints return 503 NOT_READY); nothing is simulated.
 	GoogleClientID     string
@@ -89,6 +93,11 @@ func (c Config) WorkerID() string {
 func Load() (Config, error) {
 	cfg := Config{
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		SMTPHost:            getenv("SMTP_HOST", ""),
+		SMTPPort:            getenv("SMTP_PORT", "587"),
+		SMTPUsername:        getenv("SMTP_USERNAME", ""),
+		SMTPPassword:        os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:            getenv("SMTP_FROM", ""),
 		Port:                getenv("PORT", "8080"),
 		LogLevel:            getenv("LOG_LEVEL", "info"),
 		CoordinatorPassword: os.Getenv("COORDINATOR_PASSWORD"),
@@ -115,6 +124,17 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: MIGRATE_ON_BOOT must be a boolean: %w", err)
 	}
 	cfg.MigrateOnBoot = migrateOnBoot
+	cfg.SMTPEnabled, err = strconv.ParseBool(getenv("SMTP_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("config: SMTP_ENABLED must be a boolean")
+	}
+	cfg.GmailEnabled, err = strconv.ParseBool(getenv("GMAIL_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("config: GMAIL_ENABLED must be a boolean")
+	}
+	if cfg.GmailEnabled && cfg.SMTPEnabled {
+		return Config{}, fmt.Errorf("config: enable only one intake email provider")
+	}
 	return cfg, nil
 }
 

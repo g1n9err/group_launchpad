@@ -33,6 +33,8 @@ const StateTTL = 10 * time.Minute
 //   - 4.4 Drive:     create the app-owned group folder tree + permissions
 //   - 4.5 Forms:     create intake forms, read responses
 //   - 4.6 matching:  roster emails
+const GmailSendScope = "https://www.googleapis.com/auth/gmail.send"
+
 var GoogleScopes = []string{
 	"openid",
 	"email",
@@ -262,6 +264,7 @@ type GoogleTokenBundle struct {
 	RefreshToken string
 	Expiry       time.Time
 	AccountEmail string
+	Scopes       []string
 }
 
 // TokenCipher encrypts values stored at rest (impl: internal/secrets).

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,9 +24,10 @@ type GoogleAuthService struct {
 	configured bool
 
 	// access-token cache; guarded by mu (also serializes refresh: single-flight).
-	mu        sync.Mutex
-	access    string
-	accessExp time.Time
+	mu               sync.Mutex
+	access           string
+	accessExp        time.Time
+	cachedCredential string
 }
 
 // NewGoogleAuthService builds the service. configured requires client
@@ -105,18 +107,22 @@ func (s *GoogleAuthService) Callback(ctx context.Context, code, state string) (G
 	if err != nil {
 		return GoogleStatus{}, fmt.Errorf("encrypt refresh token: %w", err)
 	}
-	if err := s.repo.SaveConnection(ctx, bundle.AccountEmail, GoogleScopes, refreshTokenEnc, s.cipher.KeyID()); err != nil {
+	scopes := bundle.Scopes
+	if scopes == nil {
+		scopes = GoogleScopes
+	}
+	if err := s.repo.SaveConnection(ctx, bundle.AccountEmail, scopes, refreshTokenEnc, s.cipher.KeyID()); err != nil {
 		return GoogleStatus{}, err
 	}
 
 	s.mu.Lock()
-	s.access, s.accessExp = bundle.AccessToken, bundle.Expiry
+	s.access, s.accessExp, s.cachedCredential = bundle.AccessToken, bundle.Expiry, refreshTokenEnc
 	s.mu.Unlock()
 
 	return GoogleStatus{
 		Status:       StatusConnected,
 		AccountEmail: bundle.AccountEmail,
-		Scopes:       GoogleScopes,
+		Scopes:       scopes,
 		ConnectedAt:  time.Now().UTC(),
 	}, nil
 }
@@ -135,41 +141,64 @@ func (s *GoogleAuthService) Status(ctx context.Context) (GoogleStatus, error) {
 // (single-flight). A permanently rejected refresh token marks the connection
 // errored and surfaces a reconnect-required domain error.
 func (s *GoogleAuthService) AccessToken(ctx context.Context) (string, error) {
+	token, _, err := s.accessToken(ctx, "")
+	return token, err
+}
+
+func (s *GoogleAuthService) CheckGmailPermission(ctx context.Context) error {
+	_, err := s.connectionWithScope(ctx, GmailSendScope)
+	return err
+}
+
+func (s *GoogleAuthService) GmailCredentials(ctx context.Context) (token, from string, err error) {
+	return s.accessToken(ctx, GmailSendScope)
+}
+
+func (s *GoogleAuthService) connectionWithScope(ctx context.Context, scope string) (StoredGoogleConnection, error) {
 	if !s.configured {
-		return "", errNotConfigured()
+		return StoredGoogleConnection{}, errNotConfigured()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.access != "" && time.Now().Add(30*time.Second).Before(s.accessExp) {
-		return s.access, nil
-	}
-
 	stored, err := s.repo.GoogleConnection(ctx)
 	if err != nil {
-		return "", err
+		return StoredGoogleConnection{}, err
 	}
 	if stored.Status.Status != StatusConnected || stored.RefreshTokenEnc == "" {
-		return "", &core.AppError{Code: core.CodeNotReady, Message: "google is not connected — run the connect flow first"}
+		return StoredGoogleConnection{}, &core.AppError{Code: core.CodeNotReady, Message: "google is not connected — run the connect flow first"}
+	}
+	if scope != "" && !slices.Contains(stored.Status.Scopes, scope) {
+		return StoredGoogleConnection{}, &core.AppError{Code: core.CodeNotReady, Message: "reconnect Google and allow Gmail sending"}
+	}
+	return stored, nil
+}
+
+func (s *GoogleAuthService) accessToken(ctx context.Context, scope string) (string, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stored, err := s.connectionWithScope(ctx, scope)
+	if err != nil {
+		return "", "", err
+	}
+	if s.cachedCredential == stored.RefreshTokenEnc && s.access != "" && time.Now().Add(30*time.Second).Before(s.accessExp) {
+		return s.access, stored.Status.AccountEmail, nil
 	}
 	refreshToken, err := s.cipher.Decrypt(stored.RefreshTokenEnc)
 	if err != nil {
-		return "", &core.AppError{Code: core.CodeNotReady, Message: "stored google credential cannot be decrypted (encryption key changed?) — reconnect required"}
+		return "", "", &core.AppError{Code: core.CodeNotReady, Message: "stored google credential cannot be decrypted (encryption key changed?) — reconnect required"}
 	}
 
 	token, expiry, err := s.gateway.Refresh(ctx, refreshToken)
 	if err != nil {
 		if err == ErrRefreshRevoked { // errors.Is not needed: gateway returns it unwrapped
 			if markErr := s.repo.MarkGoogleError(ctx); markErr != nil {
-				return "", fmt.Errorf("mark google errored after rejected refresh: %w", markErr)
+				return "", "", fmt.Errorf("mark google errored after rejected refresh: %w", markErr)
 			}
-			return "", &core.AppError{Code: core.CodeNotReady, Message: "google connection expired or was revoked — reconnect required"}
+			return "", "", &core.AppError{Code: core.CodeNotReady, Message: "google connection expired or was revoked — reconnect required"}
 		}
-		return "", &core.AppError{Code: core.CodeNotReady, Message: "google token refresh failed"}
+		return "", "", &core.AppError{Code: core.CodeNotReady, Message: "google token refresh failed"}
 	}
 
-	s.access, s.accessExp = token, expiry
-	return s.access, nil
+	s.access, s.accessExp, s.cachedCredential = token, expiry, stored.RefreshTokenEnc
+	return s.access, stored.Status.AccountEmail, nil
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
