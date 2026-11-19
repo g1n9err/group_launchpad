@@ -204,6 +204,32 @@ paths:
           description: Google Classroom rejected the request
         "503":
           description: Google OAuth is unavailable
+  /api/groups/{groupId}/drive/provision:
+    post:
+      tags: [groups]
+      operationId: provisionGroupDrive
+      security:
+        - CoordinatorBasic: []
+      summary: Create or reuse the group's Google Drive folder tree
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: Linked Google Drive folders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveFolders"
+        "401":
+          description: Coordinator credentials are missing or invalid
+        "403":
+          description: The request origin is not allowed
+        "404":
+          description: Unknown group
+        "502":
+          description: Google Drive provisioning failed and can be retried
+        "503":
+          description: Coordinator access or Google OAuth is unavailable
   /api/groups/{groupId}/onboarding:
     get:
       tags: [groups]
@@ -454,6 +480,24 @@ components:
         type: string
         format: uuid
   schemas:
+    DriveFolder:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    DriveFolders:
+      type: object
+      required: [root, subfolders]
+      properties:
+        root:
+          $ref: "#/components/schemas/DriveFolder"
+        subfolders:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriveFolder"
     ClassroomCourse:
       type: object
       required: [courseId]

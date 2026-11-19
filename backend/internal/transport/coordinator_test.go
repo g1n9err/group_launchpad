@@ -19,6 +19,7 @@ func TestCoordinatorRoutesRejectUnauthorizedRequests(t *testing.T) {
 		{http.MethodGet, group + "/status"},
 		{http.MethodPost, group + "/slack/provision"},
 		{http.MethodPost, group + "/classroom/provision"},
+		{http.MethodPost, group + "/drive/provision"},
 		{http.MethodGet, "/api/integrations/google/connect"},
 	}
 	for _, route := range routes {
