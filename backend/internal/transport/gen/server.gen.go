@@ -34,6 +34,60 @@ func (e GoogleStatusStatus) Valid() bool {
 	}
 }
 
+// Defines values for GroupAuditType.
+const (
+	DailySync GroupAuditType = "daily_sync"
+	Manual    GroupAuditType = "manual"
+)
+
+// Valid indicates whether the value is a known member of the GroupAuditType enum.
+func (e GroupAuditType) Valid() bool {
+	switch e {
+	case DailySync:
+		return true
+	case Manual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupAuditResourceStatus.
+const (
+	GroupAuditResourceStatusArchived              GroupAuditResourceStatus = "archived"
+	GroupAuditResourceStatusInactive              GroupAuditResourceStatus = "inactive"
+	GroupAuditResourceStatusMisconfigured         GroupAuditResourceStatus = "misconfigured"
+	GroupAuditResourceStatusMissingOrInaccessible GroupAuditResourceStatus = "missing_or_inaccessible"
+	GroupAuditResourceStatusOk                    GroupAuditResourceStatus = "ok"
+	GroupAuditResourceStatusTrashed               GroupAuditResourceStatus = "trashed"
+	GroupAuditResourceStatusUnavailable           GroupAuditResourceStatus = "unavailable"
+	GroupAuditResourceStatusUnlinked              GroupAuditResourceStatus = "unlinked"
+)
+
+// Valid indicates whether the value is a known member of the GroupAuditResourceStatus enum.
+func (e GroupAuditResourceStatus) Valid() bool {
+	switch e {
+	case GroupAuditResourceStatusArchived:
+		return true
+	case GroupAuditResourceStatusInactive:
+		return true
+	case GroupAuditResourceStatusMisconfigured:
+		return true
+	case GroupAuditResourceStatusMissingOrInaccessible:
+		return true
+	case GroupAuditResourceStatusOk:
+		return true
+	case GroupAuditResourceStatusTrashed:
+		return true
+	case GroupAuditResourceStatusUnavailable:
+		return true
+	case GroupAuditResourceStatusUnlinked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupOnboardingStudentOnboardingStatus.
 const (
 	GroupOnboardingStudentOnboardingStatusComplete      GroupOnboardingStudentOnboardingStatus = "complete"
@@ -346,6 +400,35 @@ type Group struct {
 	Status GroupStatus `json:"status"`
 }
 
+// GroupAudit defines model for GroupAudit.
+type GroupAudit struct {
+	CheckedAt time.Time            `json:"checkedAt"`
+	GroupId   openapi_types.UUID   `json:"groupId"`
+	Id        openapi_types.UUID   `json:"id"`
+	Issues    []GroupAuditResource `json:"issues"`
+	Results   []GroupAuditResource `json:"results"`
+	Type      GroupAuditType       `json:"type"`
+}
+
+// GroupAuditType defines model for GroupAudit.Type.
+type GroupAuditType string
+
+// GroupAuditQueued defines model for GroupAuditQueued.
+type GroupAuditQueued struct {
+	JobId int64 `json:"jobId"`
+}
+
+// GroupAuditResource defines model for GroupAuditResource.
+type GroupAuditResource struct {
+	Key      string                   `json:"key"`
+	Kind     string                   `json:"kind"`
+	Provider string                   `json:"provider"`
+	Status   GroupAuditResourceStatus `json:"status"`
+}
+
+// GroupAuditResourceStatus defines model for GroupAuditResource.Status.
+type GroupAuditResourceStatus string
+
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
 	CourseName string `json:"courseName"`
@@ -602,6 +685,12 @@ type ServerInterface interface {
 	// GetGroup Get one group
 	// (GET /api/groups/{groupId})
 	GetGroup(ctx echo.Context, groupId GroupId) error
+	// ListGroupAudits List the most recent group resource audits
+	// (GET /api/groups/{groupId}/audits)
+	ListGroupAudits(ctx echo.Context, groupId GroupId) error
+	// QueueGroupAudit Queue a read-only audit of a group's external resources
+	// (POST /api/groups/{groupId}/audits)
+	QueueGroupAudit(ctx echo.Context, groupId GroupId) error
 	// ProvisionGroupClassroom Create or reuse the Google Classroom course for a group
 	// (POST /api/groups/{groupId}/classroom/provision)
 	ProvisionGroupClassroom(ctx echo.Context, groupId GroupId) error
@@ -710,6 +799,38 @@ func (w *ServerInterfaceWrapper) GetGroup(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GetGroup(ctx, groupId)
+	return err
+}
+
+// ListGroupAudits converts echo context to params.
+func (w *ServerInterfaceWrapper) ListGroupAudits(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListGroupAudits(ctx, groupId)
+	return err
+}
+
+// QueueGroupAudit converts echo context to params.
+func (w *ServerInterfaceWrapper) QueueGroupAudit(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.QueueGroupAudit(ctx, groupId)
 	return err
 }
 
@@ -1036,6 +1157,8 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/distribute", wrapper.DistributeGroupForm, options.OperationMiddlewares["distributeGroupForm"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/forms/deliveries", wrapper.GetGroupFormDeliveries, options.OperationMiddlewares["getGroupFormDeliveries"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/responses/import", wrapper.ImportGroupFormResponses, options.OperationMiddlewares["importGroupFormResponses"]...)
+	router.GET(options.BaseURL+"/api/groups/:groupId/audits", wrapper.ListGroupAudits, options.OperationMiddlewares["listGroupAudits"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/audits", wrapper.QueueGroupAudit, options.OperationMiddlewares["queueGroupAudit"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)
