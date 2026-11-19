@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useSettings } from "../i18n";
 import type { TranslationKey } from "../i18n/en";
 import { api } from "../lib/api";
@@ -27,7 +27,9 @@ const providers: Record<string, string> = {
   slack: "Slack", google_classroom: "Classroom", google_drive: "Drive", google_forms: "Forms",
 };
 
-export function AuditNotifications() {
+export function AuditNotifications({ children }: {
+  children?: (authorization: string, onUnauthorized: () => void, reload: number) => ReactNode;
+} = {}) {
   const { t, lang } = useSettings();
   const [password, setPassword] = useState("");
   const [authorization, setAuthorization] = useState("");
@@ -35,6 +37,13 @@ export function AuditNotifications() {
   const [error, setError] = useState<TranslationKey>();
   const [loading, setLoading] = useState(false);
   const [reload, setReload] = useState(0);
+
+  const rejectAuthorization = useCallback(() => {
+    setAuthorization("");
+    setFeed(undefined);
+    setLoading(false);
+    setError("audit.invalidPassword");
+  }, []);
 
   useEffect(() => {
     if (!authorization) return;
@@ -51,9 +60,7 @@ export function AuditNotifications() {
         });
         if (controller.signal.aborted) return;
         if (response.status === 401) {
-          setAuthorization("");
-          setFeed(undefined);
-          setError("audit.invalidPassword");
+          rejectAuthorization();
         } else if (!data) {
           setError("audit.loadFailed");
         } else {
@@ -73,7 +80,7 @@ export function AuditNotifications() {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [authorization, reload]);
+  }, [authorization, reload, rejectAuthorization]);
 
   function unlock(event: FormEvent) {
     event.preventDefault();
@@ -87,7 +94,7 @@ export function AuditNotifications() {
   const dateFormat = new Intl.DateTimeFormat({ hy: "hy-AM", en: "en-US", ru: "ru-RU" }[lang], { dateStyle: "medium", timeStyle: "short" });
   const time = (value: string) => dateFormat.format(new Date(value));
 
-  return (
+  const notifications = (
     <Card className="space-y-4 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-text">{t("audit.title")}</h2>
@@ -166,5 +173,12 @@ export function AuditNotifications() {
         </div>
       )}
     </Card>
+  );
+
+  return (
+    <>
+      {notifications}
+      {authorization && feed && children?.(authorization, rejectAuthorization, reload)}
+    </>
   );
 }

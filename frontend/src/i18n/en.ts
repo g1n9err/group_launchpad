@@ -99,6 +99,11 @@ const en = {
   "overview.onboardingProgress": "Slack onboarding",
   "overview.integrationStatus": "Integration status",
   "overview.recentActivity": "Recent activity",
+  "overview.launchStatus": "Group launch status",
+  "overview.failedAnnouncements": "Failed announcements",
+  "overview.noUpcoming": "No upcoming announcements.",
+  "overview.noFailedAnnouncements": "No failed announcements.",
+  "overview.incompleteAnnouncements": "Some groups’ announcements could not be loaded.",
   "overview.upcomingAnnouncements": "Upcoming announcements",
   "overview.joinedOf": "{joined} of {total} joined",
 

@@ -18,9 +18,9 @@ export function useGroups() {
   });
 }
 
-export function useIntakeGroups(enabled: boolean) {
+export function useAllGroups(enabled = true) {
   return useQuery({
-    queryKey: ["groups", "intake"],
+    queryKey: ["groups", "all"],
     enabled,
     queryFn: async ({ signal }) => {
       const items: Group[] = [];
@@ -31,12 +31,17 @@ export function useIntakeGroups(enabled: boolean) {
           signal,
         });
         if (!data) throw error ?? new Error("Could not load groups");
-        items.push(...data.data.filter((group) => group.status !== "archived"));
+        items.push(...data.data);
         offset += data.data.length;
         if (!data.data.length || offset >= data.page.total) return items;
       }
     },
   });
+}
+
+export function useIntakeGroups(enabled: boolean) {
+  const query = useAllGroups(enabled);
+  return { ...query, data: query.data?.filter((group) => group.status !== "archived") };
 }
 
 export function useCreateGroup() {
@@ -79,18 +84,24 @@ export function useSlackStatus() {
 }
 
 // Onboarding report for one group (refreshable).
-export function useGroupOnboarding(groupId: string | undefined) {
-  return useQuery({
+export function groupOnboardingOptions(groupId: string | undefined) {
+  return {
     queryKey: ["onboarding", groupId],
     enabled: groupId !== undefined,
-    queryFn: async () => {
+    staleTime: 30_000,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
       const { data, error } = await api.GET("/api/groups/{groupId}/onboarding", {
         params: { path: { groupId: groupId as string } },
+        signal,
       });
-      if (error) throw error;
+      if (!data) throw error ?? new Error("Could not load onboarding");
       return data;
     },
-  });
+  };
+}
+
+export function useGroupOnboarding(groupId: string | undefined) {
+  return useQuery(groupOnboardingOptions(groupId));
 }
 
 // Browser-navigation URL that starts the Google OAuth flow on the API origin.
