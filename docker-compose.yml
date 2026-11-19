@@ -27,6 +27,7 @@ services:
       PORT: "8080"
       LOG_LEVEL: info
       MIGRATE_ON_BOOT: "true"
+      COORDINATOR_PASSWORD: ${COORDINATOR_PASSWORD:-}
       # Slack — bot token interpolated from the project-root .env. Empty
       # default keeps the API booting with Slack safely disabled (503).
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
@@ -61,6 +62,7 @@ services:
     environment:
       DATABASE_URL: postgres://launchpad:launchpad@postgres:5432/launchpad?sslmode=disable
       LOG_LEVEL: info
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy

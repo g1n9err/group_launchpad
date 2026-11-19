@@ -30,13 +30,27 @@ type Handlers struct {
 	slack         *integrations.SlackAuthService
 	slackChannels *integrations.SlackChannelsService
 	slackEvents   *integrations.SlackEventsService
+	launch        SlackLaunchService
+	classroom     *integrations.ClassroomService
+	coordinator   coordinatorAuth
 	ping          PingFunc
 	logger        *slog.Logger
 }
 
-// New builds the echo application with the full middleware chain and routes.
-func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, googleSvc *integrations.GoogleAuthService, slackSvc *integrations.SlackAuthService, slackChannelsSvc *integrations.SlackChannelsService, slackEventsSvc *integrations.SlackEventsService, ping PingFunc) *echo.Echo {
+// GroupProvisioning wires the group launch and Classroom use cases.
+type GroupProvisioning struct {
+	Launch    SlackLaunchService
+	Classroom *integrations.ClassroomService
+}
+
+// New builds the HTTP application and optionally enables group provisioning.
+func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, googleSvc *integrations.GoogleAuthService, slackSvc *integrations.SlackAuthService, slackChannelsSvc *integrations.SlackChannelsService, slackEventsSvc *integrations.SlackEventsService, ping PingFunc, provisioning ...GroupProvisioning) *echo.Echo {
 	h := &Handlers{groups: groupsSvc, google: googleSvc, slack: slackSvc, slackChannels: slackChannelsSvc, slackEvents: slackEventsSvc, ping: ping, logger: logger}
+	h.coordinator = newCoordinatorAuth(cfg.CoordinatorPassword, cfg.CORSAllowedOrigins)
+	if len(provisioning) > 0 {
+		h.launch = provisioning[0].Launch
+		h.classroom = provisioning[0].Classroom
+	}
 
 	e := echo.New()
 	e.HideBanner = true
@@ -137,10 +151,12 @@ func appStatus(code string) int {
 		return http.StatusNotFound // 404
 	case core.CodeNotReady:
 		return http.StatusServiceUnavailable // 503
-	case core.CodeOAuthExchange:
+	case core.CodeOAuthExchange, core.CodeUpstream:
 		return http.StatusBadGateway // 502 — upstream (Google) rejected the exchange
 	case core.CodeUnauthorized:
-		return http.StatusUnauthorized // 401 — signature verification failed
+		return http.StatusUnauthorized
+	case core.CodeForbidden:
+		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
 	}

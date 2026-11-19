@@ -28,6 +28,10 @@ type Config struct {
 	// Default covers the local Vite dev server.
 	CORSAllowedOrigins []string
 
+	// CoordinatorPassword protects coordinator-only routes. Empty leaves
+	// those routes unavailable.
+	CoordinatorPassword string
+
 	// Google OAuth connection credentials. Empty ⇒ Google OAuth disabled
 	// (endpoints return 503 NOT_READY); nothing is simulated.
 	GoogleClientID     string
@@ -84,20 +88,24 @@ func (c Config) WorkerID() string {
 // Load reads configuration from the environment and validates it.
 func Load() (Config, error) {
 	cfg := Config{
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		Port:               getenv("PORT", "8080"),
-		LogLevel:           getenv("LOG_LEVEL", "info"),
-		CORSAllowedOrigins: splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
-		GoogleClientID:     getenv("GOOGLE_CLIENT_ID", ""),
-		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
-		GoogleRedirectURL:  getenv("GOOGLE_REDIRECT_URL", ""),
-		TokenEncryptionKey: getenv("TOKEN_ENCRYPTION_KEY", ""),
-		SlackBotToken:      getenv("SLACK_BOT_TOKEN", ""),
-		SlackSigningSecret: getenv("SLACK_SIGNING_SECRET", ""),
-		SlackEventsAddr:    getenv("SLACK_EVENTS_ADDR", "127.0.0.1:8081"),
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		Port:                getenv("PORT", "8080"),
+		LogLevel:            getenv("LOG_LEVEL", "info"),
+		CoordinatorPassword: os.Getenv("COORDINATOR_PASSWORD"),
+		CORSAllowedOrigins:  splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
+		GoogleClientID:      getenv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:  getenv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:   getenv("GOOGLE_REDIRECT_URL", ""),
+		TokenEncryptionKey:  getenv("TOKEN_ENCRYPTION_KEY", ""),
+		SlackBotToken:       getenv("SLACK_BOT_TOKEN", ""),
+		SlackSigningSecret:  getenv("SLACK_SIGNING_SECRET", ""),
+		SlackEventsAddr:     getenv("SLACK_EVENTS_ADDR", "127.0.0.1:8081"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: DATABASE_URL is required")
+	}
+	if cfg.CoordinatorPassword != "" && (len(cfg.CoordinatorPassword) < 32 || strings.TrimSpace(cfg.CoordinatorPassword) != cfg.CoordinatorPassword) {
+		return Config{}, fmt.Errorf("config: COORDINATOR_PASSWORD must contain at least 32 characters without surrounding whitespace")
 	}
 	if cfg.Port == "" {
 		return Config{}, fmt.Errorf("config: PORT must not be empty")

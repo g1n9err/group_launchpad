@@ -163,6 +163,33 @@ func (e SlackInviteResultStatus) Valid() bool {
 	}
 }
 
+// Defines values for SlackLaunchStatus.
+const (
+	SlackLaunchStatusFailed          SlackLaunchStatus = "failed"
+	SlackLaunchStatusPartiallyFailed SlackLaunchStatus = "partially_failed"
+	SlackLaunchStatusPending         SlackLaunchStatus = "pending"
+	SlackLaunchStatusRunning         SlackLaunchStatus = "running"
+	SlackLaunchStatusSucceeded       SlackLaunchStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the SlackLaunchStatus enum.
+func (e SlackLaunchStatus) Valid() bool {
+	switch e {
+	case SlackLaunchStatusFailed:
+		return true
+	case SlackLaunchStatusPartiallyFailed:
+		return true
+	case SlackLaunchStatusPending:
+		return true
+	case SlackLaunchStatusRunning:
+		return true
+	case SlackLaunchStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SlackStatusStatus.
 const (
 	SlackStatusStatusConnected    SlackStatusStatus = "connected"
@@ -203,6 +230,11 @@ func (e SlackWelcomeResultStatus) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// ClassroomCourse defines model for ClassroomCourse.
+type ClassroomCourse struct {
+	CourseId string `json:"courseId"`
 }
 
 // Date ISO 8601 calendar date (YYYY-MM-DD)
@@ -346,6 +378,20 @@ type SlackInviteResult struct {
 // SlackInviteResultStatus defines model for SlackInviteResult.Status.
 type SlackInviteResultStatus string
 
+// SlackLaunch defines model for SlackLaunch.
+type SlackLaunch struct {
+	Attempts    int                `json:"attempts"`
+	CompletedAt *time.Time         `json:"completedAt,omitempty"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	Error       *string            `json:"error,omitempty"`
+	GroupId     openapi_types.UUID `json:"groupId"`
+	Id          openapi_types.UUID `json:"id"`
+	Status      SlackLaunchStatus  `json:"status"`
+}
+
+// SlackLaunchStatus defines model for SlackLaunch.Status.
+type SlackLaunchStatus string
+
 // SlackProvisionRequest defines model for SlackProvisionRequest.
 type SlackProvisionRequest struct {
 	// InviteEmails workspace members to invite to every group channel
@@ -440,12 +486,21 @@ type ServerInterface interface {
 	// GetGroup Get one group
 	// (GET /api/groups/{groupId})
 	GetGroup(ctx echo.Context, groupId GroupId) error
+	// ProvisionGroupClassroom Create or reuse the Google Classroom course for a group
+	// (POST /api/groups/{groupId}/classroom/provision)
+	ProvisionGroupClassroom(ctx echo.Context, groupId GroupId) error
+	// LaunchGroup Queue the Slack stage of a group launch
+	// (POST /api/groups/{groupId}/launch)
+	LaunchGroup(ctx echo.Context, groupId GroupId) error
 	// GetGroupOnboarding Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
 	// (GET /api/groups/{groupId}/onboarding)
 	GetGroupOnboarding(ctx echo.Context, groupId GroupId) error
 	// ProvisionGroupSlack Idempotently provision the group's Slack channels, invitations, and welcome messages
 	// (POST /api/groups/{groupId}/slack/provision)
 	ProvisionGroupSlack(ctx echo.Context, groupId GroupId) error
+	// GetGroupLaunchStatus Read the Slack stage of a group launch
+	// (GET /api/groups/{groupId}/status)
+	GetGroupLaunchStatus(ctx echo.Context, groupId GroupId) error
 	// GoogleCallback Google OAuth callback (Google redirects the browser here after consent)
 	// (GET /api/integrations/google/callback)
 	GoogleCallback(ctx echo.Context, params GoogleCallbackParams) error
@@ -524,6 +579,38 @@ func (w *ServerInterfaceWrapper) GetGroup(ctx echo.Context) error {
 	return err
 }
 
+// ProvisionGroupClassroom converts echo context to params.
+func (w *ServerInterfaceWrapper) ProvisionGroupClassroom(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ProvisionGroupClassroom(ctx, groupId)
+	return err
+}
+
+// LaunchGroup converts echo context to params.
+func (w *ServerInterfaceWrapper) LaunchGroup(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.LaunchGroup(ctx, groupId)
+	return err
+}
+
 // GetGroupOnboarding converts echo context to params.
 func (w *ServerInterfaceWrapper) GetGroupOnboarding(ctx echo.Context) error {
 	var err error
@@ -553,6 +640,22 @@ func (w *ServerInterfaceWrapper) ProvisionGroupSlack(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ProvisionGroupSlack(ctx, groupId)
+	return err
+}
+
+// GetGroupLaunchStatus converts echo context to params.
+func (w *ServerInterfaceWrapper) GetGroupLaunchStatus(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetGroupLaunchStatus(ctx, groupId)
 	return err
 }
 
@@ -694,6 +797,9 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/api/groups", wrapper.ListGroups, options.OperationMiddlewares["listGroups"]...)
 	router.POST(options.BaseURL+"/api/groups", wrapper.CreateGroup, options.OperationMiddlewares["createGroup"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId", wrapper.GetGroup, options.OperationMiddlewares["getGroup"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/launch", wrapper.LaunchGroup, options.OperationMiddlewares["launchGroup"]...)
+	router.GET(options.BaseURL+"/api/groups/:groupId/status", wrapper.GetGroupLaunchStatus, options.OperationMiddlewares["getGroupLaunchStatus"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/classroom/provision", wrapper.ProvisionGroupClassroom, options.OperationMiddlewares["provisionGroupClassroom"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)

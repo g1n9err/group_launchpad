@@ -41,6 +41,14 @@ GOOGLE_REDIRECT_URL=      # Must match the registered redirect URI exactly
 TOKEN_ENCRYPTION_KEY=     # openssl rand -base64 32
 ```
 
+Coordinator operations use HTTP Basic authentication with username `coordinator`.
+Set `COORDINATOR_PASSWORD` to a random value (for example, generate it with
+`openssl rand -hex 32`). This protects Slack launch, launch status, direct
+Slack provisioning, Classroom provisioning, and the start of Google OAuth.
+Without a password these routes return HTTP 503. For a browser-based OAuth
+connection, open the Google Connect URL and enter the coordinator credentials
+when prompted. Use HTTPS for coordinator traffic outside local development.
+
 **Never commit `.env`** — it is git-ignored.
 
 ### 2. Start PostgreSQL

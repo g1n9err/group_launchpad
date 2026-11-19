@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"launchpad/internal/config"
 	"launchpad/internal/core/groups"
@@ -21,6 +23,7 @@ import (
 	"launchpad/internal/dbmigrate"
 	"launchpad/internal/integrations/google"
 	slackgw "launchpad/internal/integrations/slack"
+	"launchpad/internal/jobs"
 	"launchpad/internal/secrets"
 	"launchpad/internal/store"
 	"launchpad/internal/transport"
@@ -62,7 +65,14 @@ func run() error {
 	googleSvc := newGoogleService(cfg, repo, logger)
 	slackSvc, slackChannelsSvc := newSlackServices(cfg, repo)
 	slackEventsSvc := newSlackEventsService(cfg, repo, logger)
-	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping)
+	queue, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		return fmt.Errorf("initialize River insert client: %w", err)
+	}
+	launch := &jobs.SlackLaunchService{Queue: repo, River: queue}
+	classroom := &integrations.ClassroomService{Tokens: googleSvc, Gateway: google.NewClassroomGateway(), Store: repo, Operations: repo}
+	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping,
+		transport.GroupProvisioning{Launch: launch, Classroom: classroom})
 
 	// 5. Serve with graceful shutdown.
 	servers := []*http.Server{{

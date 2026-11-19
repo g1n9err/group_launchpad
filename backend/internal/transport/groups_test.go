@@ -89,6 +89,7 @@ func doJSON(t *testing.T, srv *httptest.Server, method, path, body string) (int,
 		t.Fatalf("request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth("coordinator", testCoordinatorPassword)
 	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)

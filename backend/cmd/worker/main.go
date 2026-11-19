@@ -17,10 +17,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
 
 	"launchpad/internal/config"
+	"launchpad/internal/core/integrations"
 	"launchpad/internal/dbmigrate"
+	slackgw "launchpad/internal/integrations/slack"
 	"launchpad/internal/jobs"
+	"launchpad/internal/store"
 )
 
 func main() {
@@ -54,6 +58,12 @@ func run() error {
 
 	// Build the River client with registered workers.
 	workers := jobs.NewWorkers(logger)
+	repo := store.New(pool)
+	slack := integrations.NewSlackChannelsService(nil, repo, repo, false)
+	if cfg.SlackConfigured() {
+		slack = integrations.NewSlackChannelsService(slackgw.NewGateway(cfg.SlackBotToken), repo, repo, true)
+	}
+	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
 	client, err := jobs.NewClient(pool, workers, jobs.Config{
 		WorkerID: cfg.WorkerID(),
 	})

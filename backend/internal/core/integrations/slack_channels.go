@@ -105,17 +105,17 @@ type ProvisionResult struct {
 type SlackChannelsService struct {
 	gateway    SlackGateway
 	resources  SlackResourceRepository
-	operations SlackOperationRecorder
+	operations ExternalOperationRecorder
 	configured bool
 }
 
-// SlackOperationRecorder persists external operation logs.
-type SlackOperationRecorder interface {
+// ExternalOperationRecorder persists external operation logs.
+type ExternalOperationRecorder interface {
 	RecordExternalOperation(ctx context.Context, op ExternalOperation) error
 }
 
 // NewSlackChannelsService builds the provisioning service.
-func NewSlackChannelsService(gateway SlackGateway, resources SlackResourceRepository, recorder SlackOperationRecorder, configured bool) *SlackChannelsService {
+func NewSlackChannelsService(gateway SlackGateway, resources SlackResourceRepository, recorder ExternalOperationRecorder, configured bool) *SlackChannelsService {
 	return &SlackChannelsService{gateway: gateway, resources: resources, operations: recorder, configured: configured}
 }
 
