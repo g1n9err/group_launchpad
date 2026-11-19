@@ -7,6 +7,7 @@ import { useSettings } from "../i18n";
 import { navigate, useRoute } from "../lib/router";
 import { Card, OnboardingBadge, PageTitle, StatusBadge } from "../components/ui";
 import { IconBack } from "../components/icons";
+import { GroupLaunch } from "../components/GroupLaunch";
 
 function CreateGroupForm() {
   const { t } = useSettings();
@@ -167,6 +168,8 @@ function GroupDetails({ groupId }: { groupId: string }) {
           </div>
         </Card>
       )}
+
+      <GroupLaunch key={groupId} groupId={groupId} />
 
       <Card className="p-6">
         <div className="flex items-center justify-between gap-2">
