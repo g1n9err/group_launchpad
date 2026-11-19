@@ -100,6 +100,24 @@ cd backend && go test ./... # without race detector
 
 Use a development PostgreSQL instance and a role with permission to create databases. The HTTP suite uses a dedicated `launchpad_test` database and truncates its test tables. Migration and River integration tests require `TEST_DATABASE_URL` and create and remove their own temporary databases. `make dev-up` starts PostgreSQL for local testing.
 
+### Intake email delivery
+
+To send from the connected Google account, enable the Gmail API and set
+`GMAIL_ENABLED=true` for both processes. Reconnect Google to grant
+`https://www.googleapis.com/auth/gmail.send`.
+
+For SMTP instead, set `SMTP_ENABLED=true` for both processes.
+The worker connects to a STARTTLS relay via `SMTP_HOST` and `SMTP_PORT`,
+using `SMTP_FROM` as the sender. Set `SMTP_USERNAME` and `SMTP_PASSWORD`
+when the relay requires authentication. Keep relay credentials in the worker
+environment.
+
+The coordinator can queue a published form with
+`POST /api/groups/{groupId}/forms/distribute` and read recipient status with
+`GET /api/groups/{groupId}/forms/deliveries`. A `sent` result means the
+configured mail provider accepted the message. Repeating distribution retries confirmed
+failures. Check the relay's records before handling an `unknown` outcome.
+
 ### Frontend
 
 ```bash

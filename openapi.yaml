@@ -294,6 +294,54 @@ paths:
           description: Google Forms publication failed
         "503":
           description: Coordinator access or Google OAuth is unavailable
+  /api/groups/{groupId}/forms/distribute:
+    post:
+      tags: [groups]
+      operationId: distributeGroupForm
+      security:
+        - CoordinatorBasic: []
+      summary: Queue the published intake link for the group's saved students
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "202":
+          description: Current delivery records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeDeliveries"
+        "401":
+          description: Coordinator credentials are missing or invalid
+        "403":
+          description: The request origin is not allowed
+        "404":
+          description: The group has no intake form
+        "409":
+          description: The intake form is not published
+        "503":
+          description: Coordinator access or SMTP delivery is unavailable
+  /api/groups/{groupId}/forms/deliveries:
+    get:
+      tags: [groups]
+      operationId: getGroupFormDeliveries
+      security:
+        - CoordinatorBasic: []
+      summary: Read recipient-level intake delivery results
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: Current delivery records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeDeliveries"
+        "401":
+          description: Coordinator credentials are missing or invalid
+        "404":
+          description: The group has no intake form
+        "503":
+          description: Coordinator access or delivery status is unavailable
   /api/groups/{groupId}/onboarding:
     get:
       tags: [groups]
@@ -574,6 +622,30 @@ components:
         formId:
           type: string
         editUrl:
+          type: string
+    IntakeDeliveries:
+      type: object
+      required: [deliveries]
+      properties:
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntakeDelivery"
+    IntakeDelivery:
+      type: object
+      required: [id, recipient, status, attempts]
+      properties:
+        id:
+          type: string
+          format: uuid
+        recipient:
+          type: string
+        status:
+          type: string
+          enum: [pending, sending, sent, failed, unknown]
+        attempts:
+          type: integer
+        error:
           type: string
     PublishedIntakeForm:
       type: object

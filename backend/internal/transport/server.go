@@ -25,26 +25,30 @@ type PingFunc func(ctx context.Context) error
 
 // Handlers implements the generated gen.ServerInterface.
 type Handlers struct {
-	groups        *groups.Service
-	google        *integrations.GoogleAuthService
-	slack         *integrations.SlackAuthService
-	slackChannels *integrations.SlackChannelsService
-	slackEvents   *integrations.SlackEventsService
-	launch        SlackLaunchService
-	classroom     *integrations.ClassroomService
-	drive         *integrations.DriveService
-	forms         *integrations.FormsService
-	coordinator   coordinatorAuth
-	ping          PingFunc
-	logger        *slog.Logger
+	groups          *groups.Service
+	google          *integrations.GoogleAuthService
+	slack           *integrations.SlackAuthService
+	slackChannels   *integrations.SlackChannelsService
+	slackEvents     *integrations.SlackEventsService
+	launch          SlackLaunchService
+	classroom       *integrations.ClassroomService
+	drive           *integrations.DriveService
+	forms           *integrations.FormsService
+	delivery        IntakeDeliveryService
+	deliveryEnabled bool
+	coordinator     coordinatorAuth
+	ping            PingFunc
+	logger          *slog.Logger
 }
 
 // GroupProvisioning wires the group launch and Google provisioning use cases.
 type GroupProvisioning struct {
-	Launch    SlackLaunchService
-	Classroom *integrations.ClassroomService
-	Drive     *integrations.DriveService
-	Forms     *integrations.FormsService
+	Launch          SlackLaunchService
+	Classroom       *integrations.ClassroomService
+	Drive           *integrations.DriveService
+	Forms           *integrations.FormsService
+	Delivery        IntakeDeliveryService
+	DeliveryEnabled bool
 }
 
 // New builds the HTTP application and optionally enables group provisioning.
@@ -56,6 +60,8 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 		h.classroom = provisioning[0].Classroom
 		h.drive = provisioning[0].Drive
 		h.forms = provisioning[0].Forms
+		h.delivery = provisioning[0].Delivery
+		h.deliveryEnabled = provisioning[0].DeliveryEnabled
 	}
 
 	e := echo.New()

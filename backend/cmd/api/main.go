@@ -24,7 +24,6 @@ import (
 	"launchpad/internal/integrations/google"
 	slackgw "launchpad/internal/integrations/slack"
 	"launchpad/internal/jobs"
-	"launchpad/internal/secrets"
 	"launchpad/internal/store"
 	"launchpad/internal/transport"
 )
@@ -62,7 +61,7 @@ func run() error {
 	// 4. Wire the layers: store implements core ports, transport consumes core.
 	repo := store.New(pool)
 	groupsSvc := groups.New(repo)
-	googleSvc := newGoogleService(cfg, repo, logger)
+	googleSvc := google.NewAuthService(cfg, repo, logger)
 	slackSvc, slackChannelsSvc := newSlackServices(cfg, repo)
 	slackEventsSvc := newSlackEventsService(cfg, repo, logger)
 	queue, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
@@ -73,8 +72,12 @@ func run() error {
 	classroom := &integrations.ClassroomService{Tokens: googleSvc, Gateway: google.NewClassroomGateway(), Store: repo, Operations: repo}
 	drive := &integrations.DriveService{Tokens: googleSvc, Gateway: google.NewDriveGateway(), Store: repo, Operations: repo}
 	forms := &integrations.FormsService{Tokens: googleSvc, Gateway: google.NewFormsGateway(), Store: repo, Operations: repo}
+	delivery := &jobs.IntakeDeliveryService{Queue: repo, River: queue}
+	if cfg.GmailEnabled {
+		delivery.CheckReady = googleSvc.CheckGmailPermission
+	}
 	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping,
-		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive, Forms: forms})
+		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
 
 	// 5. Serve with graceful shutdown.
 	servers := []*http.Server{{
@@ -143,23 +146,6 @@ func newLogger(level string) *slog.Logger {
 		lvl = slog.LevelInfo
 	}
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
-}
-
-// newGoogleService wires the Google OAuth flow when — and only when — every
-// prerequisite is configured. Unset credentials leave the integration
-// disabled (503 on its endpoints); nothing is simulated.
-func newGoogleService(cfg config.Config, repo *store.Repo, logger *slog.Logger) *integrations.GoogleAuthService {
-	if !cfg.GoogleOAuthConfigured() {
-		logger.Warn("google oauth disabled: set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URL, TOKEN_ENCRYPTION_KEY")
-		return integrations.NewGoogleAuthService(repo, nil, nil, false)
-	}
-	cipher, err := secrets.New(cfg.TokenEncryptionKey)
-	if err != nil {
-		logger.Error("google oauth disabled: invalid TOKEN_ENCRYPTION_KEY", "err", err.Error())
-		return integrations.NewGoogleAuthService(repo, nil, nil, false)
-	}
-	gateway := google.NewGateway(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL, integrations.GoogleScopes)
-	return integrations.NewGoogleAuthService(repo, gateway, cipher, true)
 }
 
 // newSlackServices wires the Slack connection and channel operations when —

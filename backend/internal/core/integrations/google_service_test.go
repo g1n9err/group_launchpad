@@ -442,3 +442,27 @@ func TestAccessTokenRefreshIsSingleFlight(t *testing.T) {
 		}
 	}
 }
+
+func TestGmailCredentialsRequireGrantAndTrackReconnectedAccount(t *testing.T) {
+	repo := newFakeRepo()
+	if err := repo.SaveConnection(t.Context(), "first@example.test", GoogleScopes, "k1:first", "test-key"); err != nil {
+		t.Fatal(err)
+	}
+	gateway := &fakeGateway{refreshFn: func(token string) (string, time.Time, error) {
+		return token + "-access", time.Now().Add(time.Hour), nil
+	}}
+	service := newService(repo, gateway)
+	if _, err := service.AccessToken(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.CheckGmailPermission(t.Context()); err == nil {
+		t.Fatal("Gmail scope should be required")
+	}
+	if err := repo.SaveConnection(t.Context(), "other@example.test", []string{GmailSendScope}, "k1:other", "test-key"); err != nil {
+		t.Fatal(err)
+	}
+	token, from, err := service.GmailCredentials(t.Context())
+	if err != nil || token != "other-access" || from != "other@example.test" {
+		t.Fatalf("Gmail credentials did not use the current connection: sender=%q err=%v", from, err)
+	}
+}

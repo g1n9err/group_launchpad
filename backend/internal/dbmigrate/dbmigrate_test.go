@@ -31,7 +31,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		if err := dbmigrate.Up(dsn); err != nil {
 			t.Fatal(err)
 		}
-		checkVersion(7)
+		checkVersion(8)
 	}
 	down := func(steps int, want uint) {
 		t.Helper()
@@ -43,6 +43,12 @@ func TestMigrationRoundTrip(t *testing.T) {
 
 	up()
 	up()
+	down(1, 7)
+	var deliveryTableGone bool
+	err = conn.QueryRow(ctx, "SELECT to_regclass('intake_form_deliveries') IS NULL").Scan(&deliveryTableGone)
+	if err != nil || !deliveryTableGone {
+		t.Fatalf("intake delivery rollback: table gone=%t err=%v", deliveryTableGone, err)
+	}
 	down(1, 6)
 	var questionsColumn bool
 	err = conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
@@ -51,7 +57,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		t.Fatalf("intake question rollback: column exists=%t err=%v", questionsColumn, err)
 	}
 	up()
-	down(2, 5)
+	down(3, 5)
 	if _, err := conn.Exec(ctx, "INSERT INTO groups (name, course_name, start_date) VALUES ('preserved', 'Go', CURRENT_DATE)"); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +66,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 	if _, err := conn.Exec(ctx, "INSERT INTO river_job (state, args, kind) VALUES ('pending', '{}', 'ping')"); err != nil {
 		t.Fatalf("insert pending job: %v", err)
 	}
-	down(2, 5)
+	down(3, 5)
 
 	var riverGone, groupPresent, emailIndexPresent bool
 	err = conn.QueryRow(ctx, `

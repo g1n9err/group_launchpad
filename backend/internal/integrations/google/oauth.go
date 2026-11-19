@@ -12,15 +12,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
 	goauth "golang.org/x/oauth2/google"
 
+	"launchpad/internal/config"
 	coreintegrations "launchpad/internal/core/integrations"
+	"launchpad/internal/secrets"
 )
 
 const userinfoEndpoint = "https://openidconnect.googleapis.com/v1/userinfo"
@@ -44,6 +48,25 @@ func NewGateway(clientID, clientSecret, redirectURL string, scopes []string) *Ga
 		},
 		http: &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+// NewAuthService wires Google OAuth for the API and the Gmail worker.
+func NewAuthService(cfg config.Config, repo coreintegrations.GoogleAuthRepository, logger *slog.Logger) *coreintegrations.GoogleAuthService {
+	if !cfg.GoogleOAuthConfigured() {
+		logger.Warn("google oauth disabled: credentials are incomplete")
+		return coreintegrations.NewGoogleAuthService(repo, nil, nil, false)
+	}
+	cipher, err := secrets.New(cfg.TokenEncryptionKey)
+	if err != nil {
+		logger.Error("google oauth disabled: invalid TOKEN_ENCRYPTION_KEY")
+		return coreintegrations.NewGoogleAuthService(repo, nil, nil, false)
+	}
+	scopes := slices.Clone(coreintegrations.GoogleScopes)
+	if cfg.GmailEnabled {
+		scopes = append(scopes, coreintegrations.GmailSendScope)
+	}
+	gateway := NewGateway(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL, scopes)
+	return coreintegrations.NewGoogleAuthService(repo, gateway, cipher, true)
 }
 
 // AuthCodeURL builds the Google consent URL: PKCE S256, offline access, and
@@ -84,7 +107,9 @@ func (g *Gateway) Exchange(ctx context.Context, code, codeVerifier string) (core
 	if err != nil {
 		return coreintegrations.GoogleTokenBundle{}, err
 	}
+	scope, _ := tok.Extra("scope").(string)
 	return coreintegrations.GoogleTokenBundle{
+		Scopes:       strings.Fields(scope),
 		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
 		Expiry:       tok.Expiry,

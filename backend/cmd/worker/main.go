@@ -22,6 +22,8 @@ import (
 	"launchpad/internal/config"
 	"launchpad/internal/core/integrations"
 	"launchpad/internal/dbmigrate"
+	"launchpad/internal/integrations/google"
+	mailgw "launchpad/internal/integrations/mail"
 	slackgw "launchpad/internal/integrations/slack"
 	"launchpad/internal/jobs"
 	"launchpad/internal/store"
@@ -64,9 +66,26 @@ func run() error {
 		slack = integrations.NewSlackChannelsService(slackgw.NewGateway(cfg.SlackBotToken), repo, repo, true)
 	}
 	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
-	client, err := jobs.NewClient(pool, workers, jobs.Config{
-		WorkerID: cfg.WorkerID(),
-	})
+	jobConfig := jobs.Config{WorkerID: cfg.WorkerID()}
+	if cfg.SMTPEnabled {
+		mailer, err := mailgw.NewRelay(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
+		if err != nil {
+			return err
+		}
+		river.AddWorker(workers, &jobs.IntakeDeliveryWorker{Store: repo, Mailer: mailer})
+		jobConfig.IntakeEmailWorkers = 2
+	}
+
+	if cfg.GmailEnabled {
+		auth := google.NewAuthService(cfg, repo, logger)
+		if !auth.Configured() {
+			return fmt.Errorf("GMAIL_ENABLED requires valid Google OAuth configuration")
+		}
+		river.AddWorker(workers, &jobs.IntakeDeliveryWorker{Store: repo, Mailer: mailgw.NewGmail(auth)})
+		jobConfig.IntakeEmailWorkers = 2
+	}
+
+	client, err := jobs.NewClient(pool, workers, jobConfig)
 	if err != nil {
 		return err
 	}
