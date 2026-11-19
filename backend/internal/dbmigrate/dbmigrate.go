@@ -17,11 +17,17 @@ import (
 )
 
 func newMigrate(databaseURL string) (*migrate.Migrate, error) {
+	url := databaseURL
+	for _, prefix := range []string{"postgres://", "postgresql://"} {
+		if strings.HasPrefix(databaseURL, prefix) {
+			url = "pgx5://" + strings.TrimPrefix(databaseURL, prefix)
+			break
+		}
+	}
 	src, err := migrations.Source()
 	if err != nil {
 		return nil, fmt.Errorf("dbmigrate: embed source: %w", err)
 	}
-	url := strings.Replace(databaseURL, "postgres://", "pgx5://", 1)
 	m, err := migrate.NewWithSourceInstance("iofs", src, url)
 	if err != nil {
 		return nil, fmt.Errorf("dbmigrate: open: %w", err)
@@ -44,6 +50,9 @@ func Up(databaseURL string) error {
 
 // Down rolls back the last N migrations.
 func Down(databaseURL string, steps int) error {
+	if steps <= 0 {
+		return fmt.Errorf("dbmigrate: down requires a positive step count")
+	}
 	m, err := newMigrate(databaseURL)
 	if err != nil {
 		return err

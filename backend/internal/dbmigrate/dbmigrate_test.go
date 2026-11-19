@@ -1,0 +1,74 @@
+package dbmigrate_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+
+	"launchpad/internal/dbmigrate"
+	"launchpad/internal/testdb"
+)
+
+func TestMigrationRoundTrip(t *testing.T) {
+	dsn := testdb.New(t)
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(ctx) })
+
+	checkVersion := func(want uint) {
+		t.Helper()
+		version, dirty, err := dbmigrate.Version(dsn)
+		if err != nil || dirty || version != want {
+			t.Fatalf("schema: version=%d dirty=%t err=%v; want clean version %d", version, dirty, err, want)
+		}
+	}
+	up := func() {
+		t.Helper()
+		if err := dbmigrate.Up(dsn); err != nil {
+			t.Fatal(err)
+		}
+		checkVersion(6)
+	}
+	down := func(steps int, want uint) {
+		t.Helper()
+		if err := dbmigrate.Down(dsn, steps); err != nil {
+			t.Fatal(err)
+		}
+		checkVersion(want)
+	}
+
+	up()
+	up()
+	down(1, 5)
+	if _, err := conn.Exec(ctx, "INSERT INTO groups (name, course_name, start_date) VALUES ('preserved', 'Go', CURRENT_DATE)"); err != nil {
+		t.Fatal(err)
+	}
+
+	up()
+	if _, err := conn.Exec(ctx, "INSERT INTO river_job (state, args, kind) VALUES ('pending', '{}', 'ping')"); err != nil {
+		t.Fatalf("insert pending job: %v", err)
+	}
+	down(1, 5)
+
+	var riverGone, groupPresent, emailIndexPresent bool
+	err = conn.QueryRow(ctx, `
+		SELECT to_regclass('river_job') IS NULL
+		   AND to_regclass('river_job_id_seq') IS NULL
+		   AND to_regclass('river_queue') IS NULL
+		   AND to_regclass('river_leader') IS NULL
+		   AND to_regclass('river_notification') IS NULL
+		   AND to_regtype('river_job_state') IS NULL,
+		   EXISTS (SELECT 1 FROM groups WHERE name = 'preserved'),
+		   to_regclass('uq_users_email_normalized') IS NOT NULL
+	`).Scan(&riverGone, &groupPresent, &emailIndexPresent)
+	if err != nil || !riverGone || !groupPresent || !emailIndexPresent {
+		t.Fatalf("rollback: river removed=%t group preserved=%t email index preserved=%t err=%v", riverGone, groupPresent, emailIndexPresent, err)
+	}
+
+	down(5, 0)
+	up()
+}

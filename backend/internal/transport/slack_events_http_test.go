@@ -15,10 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"launchpad/internal/core/integrations"
+
 	"launchpad/internal/dbmigrate"
 	slackgw "launchpad/internal/integrations/slack"
 	"launchpad/internal/store"
+	"launchpad/internal/testdb"
 	"launchpad/internal/transport"
 )
 
@@ -210,43 +213,46 @@ func TestSlackEventsUnconfigured503(t *testing.T) {
 	}
 }
 
-// TestSlackEventsMigrationRollback proves the 0004 down+up restores cleanly.
-// Steps down TWO migrations (0005's index, then 0004's tables) so the test
-// stays correct as new migrations stack on top.
+// TestSlackEventsMigrationRollback rolls back to the version before Slack Events
+// in a separate database so a failed check cannot affect the other HTTP tests.
 func TestSlackEventsMigrationRollback(t *testing.T) {
-	pool := newTestPool(t)
-	if err := dbmigrate.Down(testURL, 2); err != nil {
-		t.Fatalf("migrate down: %v", err)
-	}
-	var exists bool
-	_ = pool.QueryRow(ctxbg(), `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='slack_events')`).Scan(&exists)
-	if exists {
-		t.Fatal("slack_events still present after down")
-	}
-	var colExists bool
-	_ = pool.QueryRow(ctxbg(), `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='slack_user_id')`).Scan(&colExists)
-	if colExists {
-		t.Fatal("users.slack_user_id still present after down")
-	}
-	var idxExists bool
-	_ = pool.QueryRow(ctxbg(), `SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='uq_users_email_normalized')`).Scan(&idxExists)
-	if idxExists {
-		t.Fatal("uq_users_email_normalized still present after down")
-	}
-	// Up: everything restored.
-	if err := dbmigrate.Up(testURL); err != nil {
+	dsn := testdb.New(t)
+	if err := dbmigrate.Up(dsn); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
-	_ = pool.QueryRow(ctxbg(), `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='slack_events')`).Scan(&exists)
-	if !exists {
-		t.Fatal("slack_events missing after up")
+	version, dirty, err := dbmigrate.Version(dsn)
+	if err != nil || dirty || version < 4 {
+		t.Fatalf("expected clean schema at version 4 or later: version=%d dirty=%t err=%v", version, dirty, err)
 	}
-	_ = pool.QueryRow(ctxbg(), `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='slack_user_id')`).Scan(&colExists)
-	if !colExists {
-		t.Fatal("users.slack_user_id missing after up")
+	pool, err := pgxpool.New(ctxbg(), dsn)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_ = pool.QueryRow(ctxbg(), `SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='uq_users_email_normalized')`).Scan(&idxExists)
-	if !idxExists {
-		t.Fatal("uq_users_email_normalized missing after up")
+	t.Cleanup(pool.Close)
+	if err := dbmigrate.Down(dsn, int(version)-3); err != nil {
+		t.Fatalf("migrate down to 0003: %v", err)
 	}
+
+	checks := []struct {
+		name  string
+		query string
+	}{
+		{"slack_events", "SELECT to_regclass('slack_events') IS NOT NULL"},
+		{"users.slack_user_id", "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='slack_user_id')"},
+		{"uq_users_email_normalized", "SELECT to_regclass('uq_users_email_normalized') IS NOT NULL"},
+	}
+	checkSchema := func(want bool) {
+		t.Helper()
+		for _, check := range checks {
+			var exists bool
+			if err := pool.QueryRow(ctxbg(), check.query).Scan(&exists); err != nil || exists != want {
+				t.Errorf("%s exists=%t, want %t: %v", check.name, exists, want, err)
+			}
+		}
+	}
+	checkSchema(false)
+	if err := dbmigrate.Up(dsn); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	checkSchema(true)
 }

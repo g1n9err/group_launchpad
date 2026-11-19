@@ -51,7 +51,7 @@ make dev-up
 
 ### 3. Run database migrations
 
-Migrations apply automatically when the API boots (`MIGRATE_ON_BOOT=true`, the default). To apply or inspect them manually:
+Migrations apply automatically when the API or worker boots (`MIGRATE_ON_BOOT=true`, the default). Migration `0006` owns the River queue schema. Rolling it back removes queued jobs and job history. To apply or inspect migrations manually:
 
 ```bash
 make migrate-up       # apply pending migrations
@@ -85,11 +85,12 @@ make full-up    # PostgreSQL + API container + worker container
 ### Backend (Go)
 
 ```bash
+export TEST_DATABASE_URL='postgres://launchpad:launchpad@localhost:5432/postgres?sslmode=disable'
 make test-backend           # all packages, -race enabled
 cd backend && go test ./... # without race detector
 ```
 
-Tests run against an isolated `launchpad_test` database (created automatically when the Docker PostgreSQL is running). Integration tests use real PostgreSQL — start it with `make dev-up` first if it isn't running.
+Use a development PostgreSQL instance and a role with permission to create databases. The HTTP suite uses a dedicated `launchpad_test` database and truncates its test tables. Migration and River integration tests require `TEST_DATABASE_URL` and create and remove their own temporary databases. `make dev-up` starts PostgreSQL for local testing.
 
 ### Frontend
 
@@ -111,7 +112,7 @@ launchpad/
 │   ├── cmd/
 │   │   ├── api/          # API server (composition root — wires all layers)
 │   │   ├── migrate/      # standalone migration command
-│   │   └── worker/       # background worker (heartbeat placeholder)
+│   │   └── worker/       # River background worker
 │   ├── internal/
 │   │   ├── core/         # pure business logic — no HTTP, no SQL, no SDKs
 │   │   │   ├── groups/       # group CRUD, student ingestion, onboarding
