@@ -172,6 +172,26 @@ test("coordinator login: full navigation, Bearer header, token only in memory", 
   expect(persisted).toBe("");
 });
 
+test("coordinator creates a group through the form (regression: request headers)", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  await page.goto(`${baseURL}/#/groups/new`);
+
+  // Fill the creation form exactly like a user would.
+  await page.locator("#name").fill("E2E Form Created Group");
+  await page.locator("#courseName").fill("E2E Course");
+  await page.locator("#startDate").fill("2026-12-01");
+  await page.locator("#staffEmails").fill("e2e-staff@launchpad.test");
+  await page.locator("#lecturerEmails").fill("e2e-lecturer@launchpad.test");
+  await page.locator("#studentEmails").fill("e2e-form-student@launchpad.test");
+  // Regression for the authFetch wrapper bug: openapi-fetch passes a Request
+  // object; the wrapper must PRESERVE its Content-Type when overriding
+  // Authorization, or this submit fails with 415 Unsupported Media Type.
+  await page.locator("form button[type=submit]").click();
+
+  await page.waitForURL(/#\/group-details\//, { timeout: 10_000 });
+  await expect(page.getByText("E2E Form Created Group").first()).toBeVisible({ timeout: 10_000 });
+});
+
 test("lecturer login lands on scoped groups; only the assigned group is visible", async ({ page }) => {
   await signIn(page, accounts.lecturer.email, accounts.lecturer.password);
   await expect(page).toHaveURL(/#\/groups/);

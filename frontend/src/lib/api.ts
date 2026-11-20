@@ -13,6 +13,12 @@ import { currentSession, getAuthHeader, refreshSession, rejectSession } from "./
 // authFetch wraps global fetch to inject the Authorization header from the
 // in-memory store on every request — picking up lock/unlock transitions
 // without recreating the openapi-fetch client.
+//
+// openapi-fetch calls fetch(new Request(url, init)) — a Request object with
+// the serialized body and headers inside. The Authorization override MUST
+// start from the incoming Request's headers: passing fresh (empty) headers
+// to fetch(request, { headers }) REPLACES them per the fetch spec and would
+// strip Content-Type, breaking every form submission with 415.
 async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const rawURL = input instanceof Request ? input.url : input.toString();
   if (new URL(rawURL, window.location.href).pathname === "/api/auth/login") {
@@ -24,7 +30,8 @@ async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     session = currentSession();
   }
   const auth = getAuthHeader();
-  const headers = new Headers(init?.headers);
+  const base = input instanceof Request ? input.headers : init?.headers;
+  const headers = new Headers(base);
   // The session store is authoritative; this also replaces any stale header
   // captured by a long-lived component before a token rotation.
   if (auth.Authorization) headers.set("Authorization", auth.Authorization);
