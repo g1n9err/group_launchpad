@@ -56,7 +56,10 @@ func deref(s *string) string {
 	return *s
 }
 
-// GoogleStatus GET /api/integrations/google/status — connection state only.
+// GoogleStatus GET /api/integrations/google/status — public endpoint that
+// returns the connection state. Coordinator-only metadata (account email,
+// scopes, connected-at) is stripped for anonymous callers; the full status
+// is returned only when valid coordinator credentials are present.
 func (h *Handlers) GoogleStatus(c echo.Context) error {
 	if !h.google.Configured() {
 		return errNotConfigured("google oauth")
@@ -64,6 +67,12 @@ func (h *Handlers) GoogleStatus(c echo.Context) error {
 	status, err := h.google.Status(c.Request().Context())
 	if err != nil {
 		return err
+	}
+	// Try coordinator auth — on failure return the safe (public) projection.
+	if authErr := h.coordinator.authorize(c); authErr != nil {
+		return c.JSON(http.StatusOK, gen.GoogleStatus{
+			Status: gen.GoogleStatusStatus(status.Status),
+		})
 	}
 	return c.JSON(http.StatusOK, toGoogleStatus(status))
 }

@@ -291,6 +291,12 @@ const en = {
   "settings.prefHint": "Preferences are saved on this device and restored on your next visit.",
 
   "footer.copyright": "© 2026 Group Launchpad",
+
+  "auth.lock": "Lock",
+  "auth.unlock": "Unlock",
+  "auth.password": "Password",
+  "auth.required": "Coordinator access required to view roster data and create groups.",
+  "auth.invalid": "Invalid credentials.",
 } as const;
 
 export type TranslationKey = keyof typeof en;

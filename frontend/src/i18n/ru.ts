@@ -292,6 +292,12 @@ const ru: Dictionary = {
   "settings.prefHint": "Настройки сохраняются на этом устройстве и восстанавливаются при следующем визите.",
 
   "footer.copyright": "© 2026 Group Launchpad",
+
+  "auth.lock": "Заблокировать",
+  "auth.unlock": "Разблокировать",
+  "auth.password": "Пароль",
+  "auth.required": "Требуется доступ координатора для просмотра данных студентов и создания групп.",
+  "auth.invalid": "Неверные учётные данные.",
 };
 
 export default ru;

@@ -4,6 +4,7 @@
 import type { ReactNode } from "react";
 import { useSettings } from "../i18n";
 import { useRoute } from "../lib/router";
+import { CoordinatorUnlock, useCoordinatorLock } from "./auth";
 import {
   IconAnnouncements,
   IconAutomation,
@@ -62,6 +63,7 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
 function Header() {
   const { t, theme, toggleTheme } = useSettings();
   const route = useRoute();
+  useCoordinatorLock(); // attaches the cache-clearing listener
 
   // Page title + breadcrumb for the current route.
   let title = t("nav.overview");
@@ -101,6 +103,9 @@ function Header() {
           className="inline-flex min-h-10 shrink-0 items-center border border-border bg-surface px-2 text-xs font-semibold text-text transition-colors hover:border-primary hover:text-primary sm:px-3 sm:text-sm">
           {t("nav.notifications")}
         </a>
+        <div className="flex min-h-10 shrink-0 items-center">
+          <CoordinatorUnlock />
+        </div>
         <button type="button" onClick={toggleTheme}
           className="min-h-10 shrink-0 border border-border bg-surface px-2 text-xs font-semibold text-text transition-colors hover:border-primary hover:text-primary sm:px-3 sm:text-sm">
           {t(theme === "light" ? "nav.themeDark" : "nav.themeLight")}

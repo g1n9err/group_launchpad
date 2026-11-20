@@ -55,6 +55,9 @@ func (h *Handlers) ListGroups(c echo.Context, params gen.ListGroupsParams) error
 
 // CreateGroup POST /api/groups
 func (h *Handlers) CreateGroup(c echo.Context) error {
+	if err := h.coordinator.authorize(c); err != nil {
+		return err
+	}
 	var body gen.GroupCreate
 	if err := c.Bind(&body); err != nil {
 		return errBadRequest("invalid request body: " + err.Error())
@@ -80,10 +83,12 @@ func (h *Handlers) GetGroup(c echo.Context, groupId gen.GroupId) error {
 	return c.JSON(http.StatusOK, toAPIGroup(g))
 }
 
-// GetGroupOnboarding GET /api/groups/{groupId}/onboarding — read-only
-// visibility (PRD 4.6). Emails are personal data: this endpoint requires
-// coordinator authentication before any production exposure.
+// GetGroupOnboarding GET /api/groups/{groupId}/onboarding — exposes student
+// names and emails (PRD 4.6): coordinator-only.
 func (h *Handlers) GetGroupOnboarding(c echo.Context, groupId gen.GroupId) error {
+	if err := h.coordinator.authorize(c); err != nil {
+		return err
+	}
 	report, err := h.groups.Onboarding(c.Request().Context(), groupId.String())
 	if err != nil {
 		return err
