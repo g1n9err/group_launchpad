@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Card, PageTitle, StatCard, StatusBadge } from "../components/ui";
 import { AuditNotifications } from "../components/AuditNotifications";
 import { DashboardAnnouncements } from "../components/DashboardAnnouncements";
+import { AuthGate } from "../components/AuthGate";
 import { IconAutomation, IconBack, IconGroups, IconOverview, IconStudents } from "../components/icons";
 
 const launchStages = [
@@ -22,6 +23,14 @@ function launchStage(status: LaunchStage | "failed" | "partially_failed" | "arch
 }
 
 export function OverviewPage() {
+  return (
+    <AuthGate>
+      <OverviewContent />
+    </AuthGate>
+  );
+}
+
+function OverviewContent() {
   const { t, formatNumber } = useSettings();
   const groups = useAllGroups();
   const google = useGoogleStatus();

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the complete runtime configuration for the API and worker.
@@ -60,6 +61,46 @@ type Config struct {
 	// can reach it. Ignored when the signing secret is absent — an
 	// unprotected listener is never started.
 	SlackEventsAddr string
+
+	// SessionTTL is the lifetime of multi-role bearer sessions. Default 12h.
+	SessionTTL time.Duration
+
+	// LoginRateMax is the failed-login budget per IP+email within the
+	// window before the account address pair is throttled (429).
+	LoginRateMax int
+	// LoginRateWindow is the login throttle window.
+	LoginRateWindow time.Duration
+
+	// TrustProxy enables X-Forwarded-For-based client-IP extraction for the
+	// login throttle and logs. Enable ONLY behind a reverse proxy that
+	// OVERWRITES (not appends to) X-Forwarded-For — otherwise clients can
+	// forge their apparent address. Default false: the direct socket peer is
+	// used, which misattributes (and globally caps) all users behind a proxy.
+	TrustProxy bool
+}
+
+// LoginRateMaxOrDefault returns the configured max or 10.
+func (c Config) LoginRateMaxOrDefault() int {
+	if c.LoginRateMax > 0 {
+		return c.LoginRateMax
+	}
+	return 10
+}
+
+// LoginRateWindowOrDefault returns the configured window or 5 minutes.
+func (c Config) LoginRateWindowOrDefault() time.Duration {
+	if c.LoginRateWindow > 0 {
+		return c.LoginRateWindow
+	}
+	return 5 * time.Minute
+}
+
+// SessionTTLOrDefault returns the configured session TTL or 12h.
+func (c Config) SessionTTLOrDefault() time.Duration {
+	if c.SessionTTL > 0 {
+		return c.SessionTTL
+	}
+	return 12 * time.Hour
 }
 
 // GoogleOAuthConfigured reports whether every prerequisite for the Google
@@ -114,6 +155,25 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: DATABASE_URL is required")
+	}
+	if ttl, err := time.ParseDuration(getenv("AUTH_SESSION_TTL", "12h")); err != nil {
+		return Config{}, fmt.Errorf("config: AUTH_SESSION_TTL must be a duration (e.g. 12h): %w", err)
+	} else {
+		cfg.SessionTTL = ttl
+	}
+	loginMax, err := strconv.Atoi(getenv("LOGIN_RATE_MAX", "10"))
+	if err != nil || loginMax <= 0 {
+		return Config{}, fmt.Errorf("config: LOGIN_RATE_MAX must be a positive integer")
+	}
+	cfg.LoginRateMax = loginMax
+	if window, err := time.ParseDuration(getenv("LOGIN_RATE_WINDOW", "5m")); err != nil {
+		return Config{}, fmt.Errorf("config: LOGIN_RATE_WINDOW must be a duration (e.g. 5m): %w", err)
+	} else {
+		cfg.LoginRateWindow = window
+	}
+	cfg.TrustProxy, err = strconv.ParseBool(getenv("TRUST_PROXY", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("config: TRUST_PROXY must be a boolean")
 	}
 	if cfg.CoordinatorPassword != "" && (len(cfg.CoordinatorPassword) < 32 || strings.TrimSpace(cfg.CoordinatorPassword) != cfg.CoordinatorPassword) {
 		return Config{}, fmt.Errorf("config: COORDINATOR_PASSWORD must contain at least 32 characters without surrounding whitespace")

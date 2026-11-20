@@ -28,6 +28,7 @@ type AnnouncementWorker struct {
 	Store interface {
 		StartAnnouncement(context.Context, uuid.UUID) (announcements.Announcement, bool, error)
 		FinishAnnouncement(context.Context, uuid.UUID, string, string, string) error
+		EnsureAnnouncementNotification(context.Context, uuid.UUID) error
 	}
 	Slack AnnouncementPublisher
 }
@@ -40,6 +41,12 @@ func (w *AnnouncementWorker) Work(ctx context.Context, job *river.Job[Announceme
 	if !claimed {
 		if item.Status == "scheduled" {
 			return river.JobSnooze(max(time.Second, time.Until(item.ScheduledAt)))
+		}
+		if item.Status == "publishing" {
+			return river.JobSnooze(30 * time.Second)
+		}
+		if item.Status == "published" || item.Status == "failed" || item.Status == "unknown" {
+			return w.Store.EnsureAnnouncementNotification(ctx, item.ID)
 		}
 		return nil
 	}

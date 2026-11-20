@@ -51,11 +51,11 @@ func TestDriveProvisionResumesAfterInterruptedCreate(t *testing.T) {
 	fake := &fakeDrive{created: make(map[string]string)}
 	service := &integrations.DriveService{Tokens: fake, Gateway: fake, Store: repo, Operations: repo}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
 		transport.GroupProvisioning{Drive: service})
 	srv := httptestNew(app, t)
 
-	code, group := doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Drive Provision","courseName":"Go","startDate":"2026-12-01"}`)
+	code, group := doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Drive Provision","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create group: %d %v", code, group)
 	}

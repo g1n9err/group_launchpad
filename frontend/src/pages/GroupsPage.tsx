@@ -2,9 +2,12 @@
 // functionality (student ingestion, onboarding panel, statuses).
 
 import { useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useCreateGroup, useGroupOnboarding, useAllGroups } from "../lib/queries";
 import { AuthGate } from "../components/AuthGate";
 import { useSettings } from "../i18n";
+import { api } from "../lib/api";
+import { useAuthUser } from "../lib/auth";
 import { navigate, useRoute } from "../lib/router";
 import { Card, OnboardingBadge, PageTitle, StatusBadge } from "../components/ui";
 import { IconBack } from "../components/icons";
@@ -16,6 +19,8 @@ function CreateGroupForm() {
   const [courseName, setCourseName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [studentEmails, setStudentEmails] = useState("");
+  const [staffEmails, setStaffEmails] = useState("");
+  const [lecturerEmails, setLecturerEmails] = useState("");
   const [apiError, setApiError] = useState<{ code?: string; fieldErrors?: Record<string, string>; message: string } | null>(null);
   const create = useCreateGroup();
 
@@ -35,9 +40,10 @@ function CreateGroupForm() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setApiError(null);
-    const emails = studentEmails.split(/[\s,]+/).map((s) => s.trim()).filter((s) => s.length > 0);
+    const emails = (value: string) => value.split(/[\s,]+/).map((s) => s.trim()).filter((s) => s.length > 0);
     try {
-      const group = await create.mutateAsync({ name, courseName, startDate, studentEmails: emails });
+      const group = await create.mutateAsync({ name, courseName, startDate,
+        studentEmails: emails(studentEmails), staffEmails: emails(staffEmails), lecturerEmails: emails(lecturerEmails) });
       if (group) navigate(`/group-details/${group.id}`);
     } catch (err) {
       setApiError(err as { code?: string; fieldErrors?: Record<string, string>; message: string });
@@ -63,6 +69,19 @@ function CreateGroupForm() {
             <label htmlFor="startDate" className="mb-1 block text-sm font-medium text-text">{t("form.startDate")}</label>
             <input id="startDate" type="date" className={inputClass("startDate")} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             {fieldError("startDate") && <p className="mt-1 text-xs text-danger-text">{fieldError("startDate")}</p>}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <label htmlFor="staffEmails" className="mb-1 block text-sm font-medium text-text">{t("form.staffEmails")}</label>
+            <textarea id="staffEmails" rows={3} required className={inputClass("staffEmails")} value={staffEmails} onChange={(e) => setStaffEmails(e.target.value)} placeholder={t("form.staffEmailsPlaceholder")} />
+            {fieldError("staffEmails") && <p className="mt-1 text-xs text-danger-text">{fieldError("staffEmails")}</p>}
+          </div>
+          <div>
+            <label htmlFor="lecturerEmails" className="mb-1 block text-sm font-medium text-text">{t("form.lecturerEmails")}</label>
+            <textarea id="lecturerEmails" rows={3} required className={inputClass("lecturerEmails")} value={lecturerEmails} onChange={(e) => setLecturerEmails(e.target.value)} placeholder={t("form.staffEmailsPlaceholder")} />
+            {fieldError("lecturerEmails") && <p className="mt-1 text-xs text-danger-text">{fieldError("lecturerEmails")}</p>}
           </div>
         </div>
 
@@ -141,9 +160,21 @@ function GroupsList() {
 
 function GroupDetails({ groupId }: { groupId: string }) {
   const { t } = useSettings();
-  const { data, isPending, isError, refetch } = useGroupOnboarding(groupId);
+  const user = useAuthUser();
+  const isStaff = user?.role === "admin" || user?.role === "coordinator";
+  const isGroupReader = user?.role === "lecturer" || user?.role === "ta";
+  const { data, isPending, isError, refetch } = useGroupOnboarding(groupId, isStaff);
   const groups = useAllGroups();
   const group = groups.data?.find((g) => g.id === groupId);
+  const resources = useQuery({
+    queryKey: ["group-resources", groupId],
+    enabled: isGroupReader,
+    queryFn: async () => {
+      const { data, error } = await api.GET("/api/groups/{groupId}/resources", { params: { path: { groupId } } });
+      if (!data) throw error ?? new Error("Could not load group resources");
+      return data;
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -169,9 +200,34 @@ function GroupDetails({ groupId }: { groupId: string }) {
         </Card>
       )}
 
-      <GroupLaunch key={groupId} groupId={groupId} />
+      {isStaff && <GroupLaunch key={groupId} groupId={groupId} />}
 
-      <Card className="p-6">
+      {isGroupReader && (
+        <Card className="p-6">
+          <h2 className="text-base font-semibold text-text">{t("groups.resources")}</h2>
+          {resources.isPending && <p className="mt-4 text-sm text-muted">{t("list.loading")}</p>}
+          {resources.isError && <p role="alert" className="mt-4 text-sm text-danger-text">{t("groups.resourcesError")}</p>}
+          {resources.data?.length === 0 && <p className="mt-4 text-sm text-muted">{t("groups.resourcesEmpty")}</p>}
+          {resources.data && resources.data.length > 0 && (
+            <ul className="mt-4 divide-y divide-border">
+              {resources.data.map((resource) => (
+                <li key={`${resource.provider}:${resource.kind}:${resource.ref}`} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <span className="text-sm font-medium text-text">{resource.name}</span>
+                  {resource.ref.startsWith("https://") ? (
+                    <a className="text-sm font-semibold text-primary hover:underline" href={resource.ref} target="_blank" rel="noreferrer">
+                      {resource.provider} · {resource.kind}
+                    </a>
+                  ) : (
+                    <span className="text-sm text-muted">{resource.provider} · {resource.kind}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {isStaff && <Card className="p-6">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-text">{t("onboarding.progressTitle")}</h2>
           <button
@@ -251,7 +307,7 @@ function GroupDetails({ groupId }: { groupId: string }) {
             )}
           </>
         )}
-      </Card>
+      </Card>}
     </div>
   );
 }
@@ -259,10 +315,12 @@ function GroupDetails({ groupId }: { groupId: string }) {
 export function GroupsPage() {
   const { t } = useSettings();
   const route = useRoute();
+  const user = useAuthUser();
+  const canCreate = user?.role === "admin" || user?.role === "coordinator";
 
   if (route.page === "group-details" && route.id) {
     return (
-      <AuthGate>
+      <AuthGate roles={["admin", "coordinator", "lecturer", "ta"]}>
         <GroupDetails groupId={route.id} />
       </AuthGate>
     );
@@ -273,22 +331,22 @@ export function GroupsPage() {
       <div className="max-w-4xl space-y-6">
         <PageTitle title={t("form.title")} sub={t("form.subtitle")}
           actions={<a className="text-sm font-semibold text-primary hover:underline" href="#/groups">{t("groups.backToList")}</a>} />
-        <AuthGate>
+        <AuthGate roles={["admin", "coordinator"]}>
           <CreateGroupForm />
         </AuthGate>
       </div>
     );
   }
   if (route.page === "groups" && route.id) return (
-    <AuthGate>
+    <AuthGate roles={["admin", "coordinator", "lecturer", "ta"]}>
       <GroupDetails groupId={route.id} />
     </AuthGate>
   );
 
   return (
     <div className="space-y-6">
-      <PageTitle title={t("nav.groups")} actions={<a className="app-action" href="#/groups/new">{t("form.title")}</a>} />
-      <AuthGate>
+      <PageTitle title={t("nav.groups")} actions={canCreate ? <a className="app-action" href="#/groups/new">{t("form.title")}</a> : undefined} />
+      <AuthGate roles={["admin", "coordinator", "lecturer", "ta"]}>
         <GroupsList />
       </AuthGate>
     </div>

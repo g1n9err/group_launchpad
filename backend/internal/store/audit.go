@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -51,7 +53,33 @@ func (r *Repo) AuditInventory(ctx context.Context, groupID uuid.UUID) (audit.Inv
 			resources[i].ParentID = root
 		}
 	}
-	return audit.Inventory{GroupName: group.Name, Resources: resources}, nil
+	inventory := audit.Inventory{GroupName: group.Name, StartDate: group.StartDate, Resources: resources}
+
+	// Per-group staff assignments for the membership audit (PRD §4.7).
+	staffRows, err := r.pool.Query(ctx,
+		`SELECT role, lower(btrim(email)) FROM staff_assignments WHERE group_id=$1 ORDER BY role, email`, groupID)
+	if err != nil {
+		return audit.Inventory{}, fmt.Errorf("store: audit staff assignments: %w", err)
+	}
+	members, err := pgx.CollectRows(staffRows, func(row pgx.CollectableRow) (audit.ExpectedMember, error) {
+		var m audit.ExpectedMember
+		err := row.Scan(&m.Role, &m.Email)
+		return m, err
+	})
+	if err != nil {
+		return audit.Inventory{}, err
+	}
+	inventory.Members = members
+
+	// Student roster summary for the audit and the onboarding notification.
+	if err := r.pool.QueryRow(ctx, `
+		SELECT count(*),
+		       count(*) FILTER (WHERE onboarding_status IN ('joined_slack','complete'))
+		FROM group_members WHERE group_id=$1 AND member_role='student'`, groupID).
+		Scan(&inventory.Roster.Expected, &inventory.Roster.Joined); err != nil {
+		return audit.Inventory{}, fmt.Errorf("store: audit roster summary: %w", err)
+	}
+	return inventory, nil
 }
 
 func (r *Repo) AuditableGroupIDs(ctx context.Context) ([]uuid.UUID, error) {
@@ -113,7 +141,9 @@ func (r *Repo) SaveAudit(ctx context.Context, jobID int64, snapshot audit.Snapsh
 	}
 	changes := audit.Changes(previous, snapshot.Results)
 	if len(changes) == 0 {
-		return uuid.Nil, tx.Commit(ctx)
+		// No inconsistencies — but the onboarding notification (PRD §4.9) is
+		// independent of resource changes and must still be considered.
+		return uuid.Nil, commitWithOnboarding(ctx, tx, jobID, snapshot.GroupID)
 	}
 	status := "disabled"
 	if emailEnabled {
@@ -128,7 +158,59 @@ func (r *Repo) SaveAudit(ctx context.Context, jobID int64, snapshot audit.Snapsh
 	if !emailEnabled {
 		notificationID = uuid.Nil
 	}
-	return notificationID, tx.Commit(ctx)
+	changeDetail, err := json.Marshal(changes)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("marshal audit changes: %w", err)
+	}
+	severity := "info"
+	for _, change := range changes {
+		if change.After != "ok" {
+			severity = "warning"
+			break
+		}
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO notifications (group_id, kind, severity, title, detail, dedupe_key)
+		VALUES ($1, 'audit_inconsistency', $2, 'Resource audit detected changes', $3, $4)
+		ON CONFLICT (dedupe_key) DO NOTHING`, snapshot.GroupID, severity, string(changeDetail), fmt.Sprintf("group_audit:%d", jobID))
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("insert audit notification: %w", err)
+	}
+	return notificationID, commitWithOnboarding(ctx, tx, jobID, snapshot.GroupID)
+}
+
+// commitWithOnboarding emits the PRD §4.9 "incomplete student onboarding"
+// notification for audits that run at or after the group start date with
+// students still pending, then commits. Aggregate counts only — student
+// emails never enter the notification (PII-safe).
+func commitWithOnboarding(ctx context.Context, tx pgx.Tx, jobID int64, groupID uuid.UUID) error {
+	var startDate time.Time
+	var expected, joined int
+	err := tx.QueryRow(ctx, `
+		SELECT g.start_date,
+		       count(m.id),
+		       count(m.id) FILTER (WHERE m.onboarding_status IN ('joined_slack','complete'))
+		FROM groups g LEFT JOIN group_members m ON m.group_id = g.id AND m.member_role='student'
+		WHERE g.id = $1
+		GROUP BY g.start_date`, groupID).Scan(&startDate, &expected, &joined)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return tx.Commit(ctx) // group vanished mid-audit; audit row remains
+	}
+	if err != nil {
+		return fmt.Errorf("onboarding summary for notification: %w", err)
+	}
+	if expected == 0 || joined >= expected || startDate.After(time.Now()) {
+		return tx.Commit(ctx)
+	}
+	detail := fmt.Sprintf("%d of %d students have not joined Slack (group started %s)",
+		expected-joined, expected, startDate.Format("2006-01-02"))
+	_, err = tx.Exec(ctx, `INSERT INTO notifications (group_id, kind, severity, title, detail, dedupe_key)
+		VALUES ($1, 'onboarding_incomplete', 'warning', 'Incomplete student onboarding', $2, $3)
+		ON CONFLICT (dedupe_key) DO NOTHING`,
+		groupID, detail, fmt.Sprintf("group_audit:%d:onboarding", jobID))
+	if err != nil {
+		return fmt.Errorf("insert onboarding notification: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repo) RecentAudits(ctx context.Context, groupID uuid.UUID) ([]audit.Snapshot, error) {

@@ -18,6 +18,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"launchpad/internal/config"
+	"launchpad/internal/core/auth"
 	"launchpad/internal/core/groups"
 	"launchpad/internal/core/integrations"
 	"launchpad/internal/dbmigrate"
@@ -83,8 +84,25 @@ func run() error {
 	// before the job is queued, so the UI always sees the current state.
 	launcher := &jobs.RiverLauncher{Client: queue, ResultStore: repo}
 
-	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping,
-		transport.GroupProvisioning{Launch: launch, GroupLauncher: launcher, LaunchStatus: repo, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, Audit: audit, AuditNotifications: repo, Announcements: announcements, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
+	// Multi-role authentication (PRD §3, §7.4). The bootstrap admin is
+	// created only when no admin exists and both values are configured.
+	authSvc := auth.NewService(repo, cfg.SessionTTLOrDefault())
+	bootstrapEmail, bootstrapPassword := os.Getenv("ADMIN_EMAIL"), os.Getenv("ADMIN_INITIAL_PASSWORD")
+	if created, err := authSvc.BootstrapAdmin(context.Background(), bootstrapEmail, bootstrapPassword); err != nil {
+		return fmt.Errorf("bootstrap admin: %w", err)
+	} else if created {
+		logger.Info("bootstrap admin account created", "email", bootstrapEmail)
+	}
+
+	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, authSvc, pool.Ping,
+		transport.GroupProvisioning{
+			Launch: launch, GroupLauncher: launcher, LaunchStatus: repo,
+			Classroom: classroom, Drive: drive, Forms: forms,
+			Delivery: delivery, Audit: audit, AuditNotifications: repo, Announcements: announcements,
+			DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled,
+			Notifications:   repo, Templates: repo, StaffAssignments: repo,
+			Membership: repo, AssignedGroups: repo, StaffAdmin: repo, GroupResources: repo,
+		})
 
 	// 5. Serve with graceful shutdown.
 	servers := []*http.Server{{

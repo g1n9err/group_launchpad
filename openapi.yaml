@@ -13,9 +13,361 @@ servers:
     description: local development
 tags:
   - name: system
+  - name: auth
+  - name: admin
   - name: groups
   - name: integrations
 paths:
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Exchange email and password for a bearer session token
+      description: >
+        Multi-role authentication (PRD §7.4). The response token travels in
+        the Authorization: Bearer header only — never in URLs — and expires.
+        Only the SHA-256 hash of the token is stored server-side. Failed
+        logins are indistinguishable (no user enumeration).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: authenticated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      security:
+        - BearerAuth: []
+      summary: Revoke the presented bearer session
+      responses:
+        "200":
+          description: session revoked
+        "401":
+          description: no valid bearer token was presented
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/auth/me:
+    get:
+      tags: [auth]
+      operationId: getAuthMe
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Return the authenticated identity and role
+      responses:
+        "200":
+          description: the caller's identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshToken
+      security:
+        - BearerAuth: []
+      summary: Rotate the bearer token (token refresh, PRD §7.4)
+      description: >
+        Revokes the presented session and issues a fresh one. Revoked or
+        expired tokens cannot be refreshed — clients must log in again.
+      responses:
+        "200":
+          description: a new session token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: the presented token is missing, expired, or revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/admin/users:
+    get:
+      tags: [admin]
+      operationId: listAdminUsers
+      security:
+        - BearerAuth: []
+      summary: List user accounts (admin only, PRD §3.2)
+      responses:
+        "200":
+          description: user accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUser"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [admin]
+      operationId: createAdminUser
+      security:
+        - BearerAuth: []
+      summary: Create a user account with a role and initial password (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserInput"
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: a user with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/admin/users/{userId}/password:
+    put:
+      tags: [admin]
+      operationId: resetAdminUserPassword
+      security:
+        - BearerAuth: []
+      summary: Reset a user's password (admin only)
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetInput"
+      responses:
+        "200":
+          description: password replaced
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: unknown user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/admin/users/{userId}:
+    delete:
+      tags: [admin]
+      operationId: deleteAdminUser
+      security:
+        - BearerAuth: []
+      summary: Delete a user account (admin only; own account excluded)
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "204":
+          description: deleted
+        "400":
+          description: admins cannot delete their own account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: unknown user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/admin/staff:
+    get:
+      tags: [admin]
+      operationId: listPredefinedStaff
+      security:
+        - BearerAuth: []
+      summary: List the predefined staff members (admin only, PRD §3.2, §4.2)
+      responses:
+        "200":
+          description: predefined staff
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PredefinedStaff"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [admin]
+      operationId: createPredefinedStaff
+      security:
+        - BearerAuth: []
+      summary: Add a predefined staff member (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredefinedStaffInput"
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredefinedStaff"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: the staff member already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/admin/staff/{staffId}:
+    delete:
+      tags: [admin]
+      operationId: deletePredefinedStaff
+      security:
+        - BearerAuth: []
+      summary: Remove a predefined staff member (admin only)
+      parameters:
+        - name: staffId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: deleted
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: unknown predefined staff member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /health:
     get:
       tags: [system]
@@ -50,7 +402,14 @@ paths:
     get:
       tags: [groups]
       operationId: listGroups
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
       summary: List groups (newest first)
+      description: >
+        Role-scoped listing: coordinators and administrators see every group;
+        lecturers and teaching assistants see only the groups they participate
+        in; students are not authorized (the PRD gives students no API access).
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
@@ -61,9 +420,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GroupsPage"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: the authenticated role may not list groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       tags: [groups]
       operationId: createGroup
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
       summary: Create a group (starts in draft; launch is a separate operation)
       requestBody:
         required: true
@@ -78,6 +452,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Group"
+        "401":
+          description: coordinator or admin credentials are required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: the authenticated role may not create groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: a group with this name already exists
           content:
@@ -94,7 +480,13 @@ paths:
     get:
       tags: [groups]
       operationId: getGroup
-      summary: Get one group
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Get one group (group-scoped)
+      description: >
+        Coordinators and administrators may read any group. Lecturers and
+        teaching assistants may read only groups they participate in.
       parameters:
         - $ref: "#/components/parameters/GroupId"
       responses:
@@ -104,6 +496,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Group"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: the caller is not a member of this group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: unknown group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/groups/{groupId}/resources:
+    get:
+      tags: [groups]
+      operationId: getGroupResources
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: List the group's external resources (group-scoped)
+      description: >
+        Active Slack channels, the Classroom course, Drive folders, and the
+        intake form URL of one group. Coordinators/administrators see any
+        group; lecturers/TAs only their assigned groups (PRD §3.3, §3.4).
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: the group's external resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GroupResource"
+        "401":
+          description: credentials are missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: the caller is not a member of this group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: unknown group
           content:
@@ -115,6 +560,7 @@ paths:
       tags: [groups]
       operationId: launchGroup
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Queue a unified multi-platform group launch
       description: >
@@ -154,6 +600,7 @@ paths:
       tags: [groups]
       operationId: getGroupLaunchStatus
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Read the unified multi-platform launch result
       description: >
@@ -184,6 +631,7 @@ paths:
       tags: [groups]
       operationId: provisionGroupClassroom
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Create or reuse the Google Classroom course for a group
       parameters:
@@ -218,6 +666,7 @@ paths:
       tags: [groups]
       operationId: provisionGroupDrive
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Create or reuse the group's Google Drive folder tree
       parameters:
@@ -245,6 +694,7 @@ paths:
       operationId: getGroupIntakeForm
       summary: Read a group's saved intake form and questions
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       parameters:
         - $ref: "#/components/parameters/GroupId"
@@ -266,6 +716,7 @@ paths:
       tags: [groups]
       operationId: provisionGroupForm
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Create or reuse an unpublished student intake form
       parameters:
@@ -302,6 +753,7 @@ paths:
       tags: [groups]
       operationId: publishGroupForm
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Publish a completed intake draft and return its responder link
       parameters:
@@ -330,6 +782,7 @@ paths:
       tags: [groups]
       operationId: distributeGroupForm
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Queue the published intake link for the group's saved students
       parameters:
@@ -356,6 +809,7 @@ paths:
       tags: [groups]
       operationId: getGroupFormDeliveries
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Read recipient-level intake delivery results
       parameters:
@@ -378,6 +832,7 @@ paths:
       tags: [groups]
       operationId: importGroupFormResponses
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Import verified intake responses for the group's students
       parameters:
@@ -409,6 +864,7 @@ paths:
       operationId: listGroupAnnouncements
       summary: List up to 100 scheduled Slack announcements and their results
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       responses:
         "200":
@@ -430,6 +886,7 @@ paths:
       operationId: scheduleGroupAnnouncement
       summary: Schedule a Slack announcement in a channel linked to the group
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       requestBody:
         required: true
@@ -462,6 +919,7 @@ paths:
       operationId: getAuditNotifications
       summary: List current issues and recent audit changes for the coordinator
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       responses:
         "200":
@@ -482,6 +940,7 @@ paths:
       operationId: listGroupAudits
       summary: List the most recent group resource audits
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       responses:
         "200":
@@ -503,6 +962,7 @@ paths:
       operationId: queueGroupAudit
       summary: Queue a read-only audit of a group's external resources
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       responses:
         "202":
@@ -545,11 +1005,184 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: List coordinator notifications (PRD §4.9)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "401":
+          description: Coordinator credentials required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "200":
+          description: notification list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPage"
+  /api/notifications/{notificationId}/read:
+    post:
+      tags: [notifications]
+      operationId: markNotificationRead
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Mark a single notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "200":
+          description: marked read
+        "404":
+          description: notification not found
+  /api/notifications/read-all:
+    post:
+      tags: [notifications]
+      operationId: markAllNotificationsRead
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Mark all notifications as read
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "200":
+          description: all marked read
+  /api/announcement-templates:
+    get:
+      tags: [announcements]
+      operationId: listAnnouncementTemplates
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: List announcement templates (PRD §4.8)
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "200":
+          description: template list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnnouncementTemplate"
+    post:
+      tags: [announcements]
+      operationId: createAnnouncementTemplate
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Create an announcement template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementTemplateInput"
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "201":
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnnouncementTemplate"
+        "422":
+          description: validation error
+  /api/announcement-templates/{templateId}:
+    get:
+      tags: [announcements]
+      operationId: getAnnouncementTemplate
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Get one template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "200":
+          description: template
+        "404":
+          description: not found
+    put:
+      tags: [announcements]
+      operationId: updateAnnouncementTemplate
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Update a template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementTemplateInput"
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "200":
+          description: updated
+        "404":
+          description: not found
+    delete:
+      tags: [announcements]
+      operationId: deleteAnnouncementTemplate
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Delete a template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "204":
+          description: deleted
+        "404":
+          description: not found
   /api/integrations/google/connect:
     get:
       tags: [integrations]
       operationId: googleConnect
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Start the Google OAuth flow (redirects the browser to Google consent)
       responses:
@@ -691,6 +1324,7 @@ paths:
       tags: [integrations]
       operationId: provisionGroupSlack
       security:
+        - BearerAuth: []
         - CoordinatorBasic: []
       summary: Idempotently provision the group's Slack channels, invitations, and welcome messages
       description: >
@@ -741,7 +1375,15 @@ components:
     CoordinatorBasic:
       type: http
       scheme: basic
-      description: Use the coordinator username and the server-configured password over HTTPS outside local development.
+      description: Legacy shared coordinator account (username "coordinator" + COORDINATOR_PASSWORD). Preserved for compatibility; maps to the coordinator role.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: >
+        Session token issued by POST /api/auth/login (multi-role). Sent as
+        "Authorization: Bearer <token>" — never in URLs. Stored server-side
+        as a SHA-256 hash; expires and can be revoked or refreshed.
 
   parameters:
     Limit:
@@ -768,7 +1410,146 @@ components:
       schema:
         type: string
         format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
+    UserRole:
+      type: string
+      description: PRD §3 role model. Students authenticate but have no API access.
+      enum: [admin, coordinator, lecturer, ta, student]
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+    AuthUser:
+      type: object
+      required: [role]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: absent for the shared Basic coordinator account
+        email:
+          type: string
+          format: email
+          description: the account email; absent for the shared Basic coordinator identity
+        role:
+          $ref: "#/components/schemas/UserRole"
+        viaBasic:
+          type: boolean
+          description: true when authenticated through the legacy coordinator Basic flow
+    AuthSession:
+      type: object
+      required: [token, expiresAt, user]
+      properties:
+        token:
+          type: string
+          description: bearer token — shown exactly once; never persisted in plaintext
+        expiresAt:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/AuthUser"
+    AdminUser:
+      type: object
+      required: [userId, email, fullName, role, createdAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        role:
+          $ref: "#/components/schemas/UserRole"
+        createdAt:
+          type: string
+          format: date-time
+    AdminUserInput:
+      type: object
+      required: [email, fullName, role, password]
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        role:
+          $ref: "#/components/schemas/UserRole"
+        password:
+          type: string
+          minLength: 12
+          maxLength: 72
+          description: bcrypt's hard input limit is 72 bytes
+    PasswordResetInput:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 12
+          maxLength: 72
+          description: bcrypt's hard input limit is 72 bytes
+    PredefinedStaff:
+      type: object
+      required: [staffId, email, fullName, createdAt]
+      properties:
+        staffId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    PredefinedStaffInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+          maxLength: 200
+          default: ""
+    GroupResource:
+      type: object
+      required: [provider, kind, name, ref, status]
+      properties:
+        provider:
+          type: string
+          enum: [slack, google_classroom, google_drive, google_forms]
+        kind:
+          type: string
+          enum: [channel, course, folder, form]
+        name:
+          type: string
+        ref:
+          type: string
+          description: external resource ID (or responder URL for forms)
+        status:
+          type: string
+          enum: [pending, active, error, deleted]
     IntakeFormQuestion:
       type: object
       required: [title, type, required]
@@ -842,7 +1623,7 @@ components:
           type: string
     AnnouncementSchedule:
       type: object
-      required: [requestId, channelName, type, message, scheduledAt]
+      required: [requestId, channelName, type, scheduledAt]
       properties:
         requestId:
           type: string
@@ -853,6 +1634,13 @@ components:
         type:
           type: string
           enum: [welcome, staff_intro, rules, reminder, general]
+        templateId:
+          type: string
+          format: uuid
+          description: >
+            Optional template reference (PRD §4.8). When provided, the
+            template's body is used as the announcement message, overriding
+            any inline message content.
         message:
           type: string
         scheduledAt:
@@ -1143,7 +1931,7 @@ components:
           format: date-time
     GroupCreate:
       type: object
-      required: [name, courseName, startDate]
+      required: [name, courseName, startDate, staffEmails, lecturerEmails]
       properties:
         name:
           type: string
@@ -1168,6 +1956,27 @@ components:
             silently discarded. Existing users are reused by normalized
             email; new 'student' users are created and enrolled as pending
             group members atomically with the group.
+        staffEmails:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: email
+          description: Teaching staff assigned to this group (PRD 4.1).
+        lecturerEmails:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: email
+          description: Lecturers assigned to this group (PRD 4.1).
+        taEmails:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: email
+          description: Teaching assistants assigned to this group (PRD 4.1, optional).
     Page:
       type: object
       required: [limit, offset, total]
@@ -1188,6 +1997,85 @@ components:
             $ref: "#/components/schemas/Group"
         page:
           $ref: "#/components/schemas/Page"
+    NotificationPage:
+      type: object
+      required: [data, page, unreadCount]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        page:
+          $ref: "#/components/schemas/Page"
+        unreadCount:
+          type: integer
+          minimum: 0
+          description: Total number of unread notifications, independent of pagination.
+    Notification:
+      type: object
+      required: [id, kind, severity, title, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+          description: optional group context
+        kind:
+          type: string
+          enum: [launch_completed, launch_partially_failed, launch_failed,
+                 invite_failure, classroom_failure, drive_failure,
+                 forms_failure, onboarding_incomplete, audit_inconsistency,
+                 announcement_delivered, announcement_failed]
+        severity:
+          type: string
+          enum: [info, warning, error]
+        title:
+          type: string
+        detail:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    AnnouncementTemplate:
+      type: object
+      required: [id, name, body, kind, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        body:
+          type: string
+        kind:
+          type: string
+          enum: [welcome, staff_intro, rules, reminder, general]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AnnouncementTemplateInput:
+      type: object
+      required: [name, body]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+        kind:
+          type: string
+          enum: [welcome, staff_intro, rules, reminder, general]
+          default: general
     Health:
       type: object
       required: [status]

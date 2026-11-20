@@ -53,14 +53,25 @@ type CreateInput struct {
 	// normalized (lower/trim) here — the same canonical form used by the
 	// Slack identity linker (core/integrations.NormalizeEmail).
 	StudentEmails []string
+
+	// StaffEmails: per-group teaching staff (PRD §4.1 Multi-select Required).
+	// LecturerEmails: per-group lecturers (PRD §4.1 Multi-select Required).
+	// TAEmails: per-group teaching assistants (PRD §4.1 Multi-select Optional).
+	// All normalized like StudentEmails.
+	StaffEmails    []string
+	LecturerEmails []string
+	TAEmails       []string
 }
 
 // CreateParams is the validated command handed to the Repository.
 type CreateParams struct {
-	Name          string
-	CourseName    string
-	StartDate     time.Time
-	StudentEmails []string // normalized (lower/trim)
+	Name           string
+	CourseName     string
+	StartDate      time.Time
+	StudentEmails  []string // normalized (lower/trim)
+	StaffEmails    []string // teaching staff (PRD §4.1)
+	LecturerEmails []string // lecturers (PRD §4.1)
+	TAEmails       []string // TAs (PRD §4.1, optional)
 }
 
 // Repository is the persistence port for groups, implemented by internal/store.
@@ -93,20 +104,101 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Group, error) {
 	if emailErr != "" {
 		fieldErrors["studentEmails"] = emailErr
 	}
+	staffEmails, _ := normalizeStaffEmails(in.StaffEmails, fieldErrors, "staffEmails")
+	lecturerEmails, _ := normalizeStaffEmails(in.LecturerEmails, fieldErrors, "lecturerEmails")
+	taEmails, _ := normalizeStaffEmails(in.TAEmails, fieldErrors, "taEmails")
+
+	// PRD §4.1: teaching staff and lecturers are Required, TAs are optional.
+	if len(in.StaffEmails) == 0 && len(fieldErrors["staffEmails"]) == 0 {
+		fieldErrors["staffEmails"] = "is required (PRD 4.1)"
+	}
+	if len(in.LecturerEmails) == 0 && len(fieldErrors["lecturerEmails"]) == 0 {
+		fieldErrors["lecturerEmails"] = "is required (PRD 4.1)"
+	}
+
+	// Cross-category duplicates: the same person in multiple staff roles is
+	// rejected — the DB stores one role per email per group (UNIQUE
+	// constraint). Categories are scanned in a FIXED order (never a map —
+	// map iteration would make the reported field non-deterministic), and
+	// the duplicate is always reported against the LATER category.
+	seenRoles := make(map[string]string) // email → first category
+	for _, cat := range []string{"staffEmails", "lecturerEmails", "taEmails"} {
+		var emails []string
+		switch cat {
+		case "staffEmails":
+			emails = staffEmails
+		case "lecturerEmails":
+			emails = lecturerEmails
+		case "taEmails":
+			emails = taEmails
+		}
+		for _, e := range emails {
+			if prevCat, dup := seenRoles[e]; dup {
+				if fieldErrors[cat] == "" {
+					fieldErrors[cat] = fmt.Sprintf("%s already assigned as %s", e, prevCat)
+				}
+			} else {
+				seenRoles[e] = cat
+			}
+		}
+	}
+
 	if len(fieldErrors) > 0 {
 		return Group{}, core.Validation("invalid group data", fieldErrors)
 	}
 
 	g, err := s.repo.Create(ctx, CreateParams{
-		Name:          name,
-		CourseName:    course,
-		StartDate:     startDate,
-		StudentEmails: studentEmails,
+		Name:           name,
+		CourseName:     course,
+		StartDate:      startDate,
+		StudentEmails:  studentEmails,
+		StaffEmails:    staffEmails,
+		LecturerEmails: lecturerEmails,
+		TAEmails:       taEmails,
 	})
 	if err != nil {
 		return Group{}, err
 	}
 	return g, nil
+}
+
+// normalizeStaffEmails canonicalizes staff/lecturer/TA emails using the same
+// normalization as students. Validation errors go into fieldErrors under the
+// given field name. TA emails are optional and can be empty.
+func normalizeStaffEmails(raw []string, fieldErrors map[string]string, field string) ([]string, string) {
+	if len(raw) == 0 {
+		return nil, ""
+	}
+	if len(raw) > maxStudentEmails {
+		fieldErrors[field] = fmt.Sprintf("too many emails (max %d)", maxStudentEmails)
+		return nil, ""
+	}
+	seen := map[string]bool{}
+	var invalid []string
+	var duplicates []string
+	out := make([]string, 0, len(raw))
+	for _, r := range raw {
+		n := integrations.NormalizeEmail(r)
+		if n == "" || !emailPattern.MatchString(n) {
+			invalid = append(invalid, strings.TrimSpace(r))
+			continue
+		}
+		if seen[n] {
+			duplicates = append(duplicates, n)
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	switch {
+	case len(invalid) > 0:
+		fieldErrors[field] = "invalid email format: " + strings.Join(invalid, ", ")
+		return nil, ""
+	case len(duplicates) > 0:
+		fieldErrors[field] = "duplicate email addresses: " + strings.Join(duplicates, ", ")
+		return nil, ""
+	}
+	return out, ""
 }
 
 // validateGroupBasics checks name/course/date; returns the parsed date and

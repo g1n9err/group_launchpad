@@ -16,7 +16,7 @@ type AuditNotificationReader interface {
 }
 
 func (h *Handlers) GetAuditNotifications(c echo.Context) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	if h.auditNotifications == nil {

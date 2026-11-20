@@ -4,14 +4,17 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"launchpad/internal/core/auth"
 	"launchpad/internal/core/integrations"
 	gen "launchpad/internal/transport/gen"
 )
 
 func (h *Handlers) GetGroupIntakeForm(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	id, err := h.requireGroupRead(c, uuid.UUID(groupID))
+	if err != nil {
 		return err
 	}
 	if h.forms == nil {
@@ -25,7 +28,10 @@ func (h *Handlers) GetGroupIntakeForm(c echo.Context, groupID gen.GroupId) error
 		Status: form.Status, VerifiedEmail: form.VerifiedSince != nil,
 		Questions: make([]gen.IntakeFormQuestion, 0, len(form.Questions)),
 	}
-	if form.ID != "" {
+	// The edit URL is an operator capability (modify the form) — restricted
+	// to coordinator/admin. Members receive the responder URL only.
+	staff := id.Role == auth.RoleCoordinator || id.Role == auth.RoleAdmin
+	if staff && form.ID != "" {
 		editURL := "https://docs.google.com/forms/d/" + url.PathEscape(form.ID) + "/edit"
 		result.EditUrl = &editURL
 	}
@@ -43,7 +49,7 @@ func (h *Handlers) GetGroupIntakeForm(c echo.Context, groupID gen.GroupId) error
 }
 
 func (h *Handlers) ProvisionGroupForm(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.forms == nil {
@@ -80,7 +86,7 @@ func (h *Handlers) ProvisionGroupForm(c echo.Context, groupID gen.GroupId) error
 }
 
 func (h *Handlers) PublishGroupForm(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.forms == nil {
@@ -94,7 +100,7 @@ func (h *Handlers) PublishGroupForm(c echo.Context, groupID gen.GroupId) error {
 }
 
 func (h *Handlers) ImportGroupFormResponses(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.forms == nil {

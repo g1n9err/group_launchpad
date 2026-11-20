@@ -28,6 +28,11 @@ services:
       LOG_LEVEL: info
       MIGRATE_ON_BOOT: "true"
       COORDINATOR_PASSWORD: ${COORDINATOR_PASSWORD:-}
+      # Multi-role auth (PRD §3, §7.4): session TTL + one-time admin
+      # bootstrap (created only when no admin exists).
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-12h}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
       GMAIL_ENABLED: ${GMAIL_ENABLED:-false}
       # Slack — bot token interpolated from the project-root .env. Empty

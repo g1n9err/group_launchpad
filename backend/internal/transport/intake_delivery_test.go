@@ -49,12 +49,12 @@ func TestIntakeDeliveryQueuesRosterAndRetriesOnlyRejectedMail(t *testing.T) {
 	}
 	delivery := &jobs.IntakeDeliveryService{Queue: repo, River: producer}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
 		transport.GroupProvisioning{Delivery: delivery, DeliveryEnabled: true})
 	srv := httptestNew(app, t)
 
 	code, group := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Delivery Group","courseName":"Go","startDate":"2026-12-01","studentEmails":["sent@example.test","retry@example.test","unknown@example.test"]}`)
+		`{"name":"Delivery Group","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],"studentEmails":["sent@example.test","retry@example.test","unknown@example.test"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create group: %d %v", code, group)
 	}

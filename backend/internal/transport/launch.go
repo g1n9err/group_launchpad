@@ -28,7 +28,7 @@ type GroupLauncher interface {
 // multi-platform launch: Slack channels, Classroom course + enrollment,
 // Drive folders + permissions, Forms intake. Each step is idempotent.
 func (h *Handlers) LaunchGroup(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 
@@ -69,7 +69,7 @@ type LaunchStatusReader interface {
 }
 
 func (h *Handlers) GetGroupLaunchStatus(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupRead(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	ctx := c.Request().Context()

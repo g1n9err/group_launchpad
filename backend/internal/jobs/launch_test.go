@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,10 +17,12 @@ type fakeSlackProvisioner struct {
 	Calls  int
 	Err    error
 	Result integrations.ProvisionResult
+	Input  integrations.ProvisionInput
 }
 
 func (f *fakeSlackProvisioner) Provision(ctx context.Context, in integrations.ProvisionInput) (integrations.ProvisionResult, error) {
 	f.Calls++
+	f.Input = in
 	return f.Result, f.Err
 }
 
@@ -78,6 +81,59 @@ func TestLaunchSlackReportsInviteFailures(t *testing.T) {
 	}
 	if step.Detail == "" {
 		t.Error("expected non-empty detail about invite failures")
+	}
+}
+
+func TestLaunchSlackInvitesStaffAndStudentsOnce(t *testing.T) {
+	data := testData()
+	data.StudentEmails = []string{"student@example.com", "STAFF@example.com"}
+	slack := &fakeSlackProvisioner{Result: integrations.ProvisionResult{
+		Channels: []integrations.ChannelResult{{Name: "test", Status: "created"}},
+	}}
+	worker := &jobs.GroupLaunchWorker{
+		Logger: testLogger(), SlackProvisioner: slack, SlackConfigured: true,
+		StaffEmails: []string{"staff@example.com", "teacher@example.com"},
+	}
+
+	step := worker.ProvisionSlackForTest(context.Background(), data)
+	if step.Status != jobs.StepSucceeded {
+		t.Fatalf("Slack step: %+v", step)
+	}
+	want := []string{"staff@example.com", "teacher@example.com", "student@example.com"}
+	if !reflect.DeepEqual(slack.Input.InviteEmails, want) {
+		t.Errorf("invite emails = %v, want %v", slack.Input.InviteEmails, want)
+	}
+}
+
+func TestLaunchSlackReportsChannelAndWelcomeFailures(t *testing.T) {
+	slack := &fakeSlackProvisioner{Result: integrations.ProvisionResult{
+		Channels: []integrations.ChannelResult{
+			{Name: "general", Status: integrations.ChannelFailed},
+			{Name: "questions", Status: "created"},
+		},
+		Welcomes: []integrations.WelcomeResult{{ChannelName: "questions", Status: integrations.WelcomeFailed}},
+	}}
+	worker := &jobs.GroupLaunchWorker{Logger: testLogger(), SlackProvisioner: slack, SlackConfigured: true}
+	step := worker.ProvisionSlackForTest(context.Background(), testData())
+	if step.Status != jobs.StepPartiallyFailed {
+		t.Fatalf("Slack step = %+v, want partially_failed", step)
+	}
+	if step.Detail != "1 channel, 0 invite, 1 welcome failures" {
+		t.Errorf("detail = %q", step.Detail)
+	}
+}
+
+func TestLaunchSlackFailsWhenEveryChannelFails(t *testing.T) {
+	slack := &fakeSlackProvisioner{Result: integrations.ProvisionResult{
+		Channels: []integrations.ChannelResult{
+			{Name: "general", Status: integrations.ChannelFailed},
+			{Name: "questions", Status: integrations.ChannelFailed},
+		},
+	}}
+	worker := &jobs.GroupLaunchWorker{Logger: testLogger(), SlackProvisioner: slack, SlackConfigured: true}
+	step := worker.ProvisionSlackForTest(context.Background(), testData())
+	if step.Status != jobs.StepFailed {
+		t.Fatalf("Slack step = %+v, want failed", step)
 	}
 }
 

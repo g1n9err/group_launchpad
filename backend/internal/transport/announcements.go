@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -17,7 +18,7 @@ type AnnouncementService interface {
 }
 
 func (h *Handlers) ScheduleGroupAnnouncement(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.announcements == nil || !h.slackChannels.Configured() {
@@ -31,9 +32,33 @@ func (h *Handlers) ScheduleGroupAnnouncement(c echo.Context, groupID gen.GroupId
 	if err := c.Bind(&body); err != nil {
 		return errBadRequest("invalid announcement schedule")
 	}
+
+	// Template reference (PRD §4.8): when a templateId is provided,
+	// load the template body and use it as the message.
+	var message string
+	if body.Message != nil {
+		message = *body.Message
+	}
+	if body.TemplateId != nil && *body.TemplateId != uuid.Nil {
+		if h.templates == nil {
+			return errNotReady("announcement templates are unavailable")
+		}
+		template, err := h.templates.GetTemplate(ctx, *body.TemplateId)
+		if err != nil {
+			if errors.Is(err, ErrTemplateNotFound) {
+				return errNotFound("template")
+			}
+			return err
+		}
+		message = template.Body
+	}
+	if message == "" {
+		return errBadRequest("message or templateId is required")
+	}
+
 	item, err := h.announcements.Schedule(ctx, groupID, announcements.Schedule{
 		RequestID: body.RequestId, ChannelName: body.ChannelName, Type: string(body.Type),
-		Message: body.Message, ScheduledAt: body.ScheduledAt,
+		Message: message, ScheduledAt: body.ScheduledAt,
 	})
 	if err != nil {
 		return err
@@ -42,7 +67,7 @@ func (h *Handlers) ScheduleGroupAnnouncement(c echo.Context, groupID gen.GroupId
 }
 
 func (h *Handlers) ListGroupAnnouncements(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupRead(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.announcements == nil {
@@ -64,12 +89,13 @@ func (h *Handlers) ListGroupAnnouncements(c echo.Context, groupID gen.GroupId) e
 }
 
 func toAnnouncement(item announcements.Announcement) gen.ScheduledAnnouncement {
+	msg := item.Message
 	result := gen.ScheduledAnnouncement{
 		Id: item.ID, GroupId: item.GroupID, Status: gen.ScheduledAnnouncementStatus(item.Status),
 		PublishedAt: item.PublishedAt,
 		Schedule: gen.AnnouncementSchedule{
 			RequestId: item.RequestID, ChannelName: item.ChannelName, Type: gen.AnnouncementScheduleType(item.Type),
-			Message: item.Message, ScheduledAt: item.ScheduledAt,
+			Message: &msg, ScheduledAt: item.ScheduledAt,
 		},
 	}
 	if item.ExternalMessageID != "" {

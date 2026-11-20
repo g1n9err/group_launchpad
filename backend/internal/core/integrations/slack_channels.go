@@ -58,8 +58,8 @@ func ChannelName(groupName, suffix string) (string, error) {
 }
 
 // ProvisionInput carries everything needed to provision a group's Slack
-// presence. InviteEmails come from the CALLER (the launch wizard in later
-// stages) — staff emails are data, never hardcoded.
+// presence. InviteEmails come from the launch workflow — staff and student
+// addresses are configured or stored data, never hardcoded in the adapter.
 type ProvisionInput struct {
 	GroupID         uuid.UUID
 	GroupName       string

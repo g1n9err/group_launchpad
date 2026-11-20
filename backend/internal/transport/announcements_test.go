@@ -18,6 +18,63 @@ import (
 	"launchpad/internal/transport"
 )
 
+type failingTemplateStore struct{ err error }
+
+func (s failingTemplateStore) CreateTemplate(context.Context, string, string, string) (transport.TemplateRow, error) {
+	return transport.TemplateRow{}, s.err
+}
+func (s failingTemplateStore) ListTemplates(context.Context) ([]transport.TemplateRow, error) {
+	return nil, s.err
+}
+func (s failingTemplateStore) GetTemplate(context.Context, uuid.UUID) (transport.TemplateRow, error) {
+	return transport.TemplateRow{}, s.err
+}
+func (s failingTemplateStore) UpdateTemplate(context.Context, uuid.UUID, string, string, string) error {
+	return s.err
+}
+func (s failingTemplateStore) DeleteTemplate(context.Context, uuid.UUID) (bool, error) {
+	return false, s.err
+}
+
+func TestScheduleAnnouncementDistinguishesMissingTemplateFromStoreFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "missing template", err: transport.ErrTemplateNotFound, want: http.StatusNotFound},
+		{name: "store failure", err: errors.New("database unavailable"), want: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := newTestPool(t)
+			truncate(t, pool, "groups", "river_job")
+			repo := store.New(pool)
+			producer, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
+				slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
+				transport.GroupProvisioning{
+					Announcements: &jobs.AnnouncementService{Store: repo, River: producer},
+					Templates:     failingTemplateStore{err: tc.err},
+				})
+			srv := httptestNew(app, t)
+			code, group := doJSON(t, srv, http.MethodPost, "/api/groups",
+				`{"name":"Template Error Group","courseName":"Go","startDate":"2026-12-01","staffEmails":["staff@test.example"],"lecturerEmails":["lecturer@test.example"]}`)
+			if code != http.StatusCreated {
+				t.Fatalf("create group: %d %v", code, group)
+			}
+			body := fmt.Sprintf(`{"requestId":%q,"channelName":"announcements","type":"general","templateId":%q,"scheduledAt":%q}`,
+				uuid.NewString(), uuid.NewString(), time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+			code, response := doJSON(t, srv, http.MethodPost, "/api/groups/"+group["id"].(string)+"/announcements", body)
+			if code != tc.want {
+				t.Fatalf("schedule status=%d body=%v; want %d", code, response, tc.want)
+			}
+		})
+	}
+}
+
 type fixtureAnnouncementPublisher struct {
 	mu    sync.Mutex
 	times map[string][]time.Time
@@ -45,11 +102,11 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
 		transport.GroupProvisioning{Announcements: &jobs.AnnouncementService{Store: repo, River: producer}})
 	srv := httptestNew(app, t)
 	code, group := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Announcements Group","courseName":"Go","startDate":"2026-12-01"}`)
+		`{"name":"Announcements Group","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create group: %d %v", code, group)
 	}
@@ -155,5 +212,13 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 		if len(calls) != 1 || calls[0].Before(when) {
 			t.Fatalf("message %q posted at %v, want one post at or after %v", message, calls, when)
 		}
+	}
+	var delivered, failed int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FILTER (WHERE kind='announcement_delivered'),
+		count(*) FILTER (WHERE kind='announcement_failed') FROM notifications`).Scan(&delivered, &failed); err != nil {
+		t.Fatal("read announcement notifications:", err)
+	}
+	if delivered != 1 || failed != 1 {
+		t.Fatalf("announcement notifications: delivered=%d failed=%d; want one each", delivered, failed)
 	}
 }

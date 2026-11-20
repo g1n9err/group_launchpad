@@ -54,12 +54,12 @@ func TestSlackEventsHTTPFlow(t *testing.T) {
 	repo := store.New(pool)
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		slackServiceForTest(pool), slackChannelsServiceForTest(pool),
-		integrations.NewSlackEventsService(slackEventsVerifierForTest(), repo, nil, testClock, true), pool.Ping)
+		integrations.NewSlackEventsService(slackEventsVerifierForTest(), repo, nil, testClock, true), nil, pool.Ping)
 	srv := httptestNew(app, t)
 
 	// Seed: group ← channel resource, user with slack id, member pending.
 	_, created := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Python Backend 13","courseName":"Python","startDate":"2026-12-01"}`)
+		`{"name":"Python Backend 13","courseName":"Python","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	groupID := created["id"].(string)
 	seedStmts := []string{
 		`INSERT INTO group_resources (group_id, provider, resource_type, external_resource_id, resource_name, status)
@@ -201,7 +201,7 @@ func TestSlackEventsUnconfigured503(t *testing.T) {
 	truncate(t, pool, "slack_events")
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		slackServiceForTest(pool), slackChannelsServiceForTest(pool),
-		integrations.NewSlackEventsService(nil, store.New(pool), nil, testClock, false), pool.Ping)
+		integrations.NewSlackEventsService(nil, store.New(pool), nil, testClock, false), nil, pool.Ping)
 	srv := httptestNew(app, t)
 
 	code, body := doJSON(t, srv, http.MethodPost, "/api/integrations/slack/events", `{"type":"url_verification","challenge":"x"}`)

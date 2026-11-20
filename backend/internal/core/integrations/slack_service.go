@@ -37,6 +37,23 @@ func NewSlackAuthService(repo SlackRepository, gateway SlackGateway, configured 
 // Configured reports whether the Slack bot token is present.
 func (s *SlackAuthService) Configured() bool { return s.configured }
 
+// StoredStatus returns the persisted connection state — no live Slack call,
+// no writes. Used for the public (stripped) status projection.
+func (s *SlackAuthService) StoredStatus(ctx context.Context) (SlackStatus, error) {
+	if !s.configured {
+		return SlackStatus{}, &core.AppError{Code: core.CodeNotReady, Message: "slack is not configured on the server"}
+	}
+	stored, ok := s.repo.(slackStatusReader)
+	if !ok {
+		return SlackStatus{Status: StatusDisconnected}, nil
+	}
+	return stored.StoredSlackStatus(ctx)
+}
+
+type slackStatusReader interface {
+	StoredSlackStatus(context.Context) (SlackStatus, error)
+}
+
 // CheckConnection verifies the bot token against Slack (auth.test), records
 // the operation, and upserts the integration row:
 //

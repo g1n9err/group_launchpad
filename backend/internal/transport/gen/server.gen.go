@@ -15,25 +15,79 @@ import (
 
 // Defines values for AnnouncementScheduleType.
 const (
-	General    AnnouncementScheduleType = "general"
-	Reminder   AnnouncementScheduleType = "reminder"
-	Rules      AnnouncementScheduleType = "rules"
-	StaffIntro AnnouncementScheduleType = "staff_intro"
-	Welcome    AnnouncementScheduleType = "welcome"
+	AnnouncementScheduleTypeGeneral    AnnouncementScheduleType = "general"
+	AnnouncementScheduleTypeReminder   AnnouncementScheduleType = "reminder"
+	AnnouncementScheduleTypeRules      AnnouncementScheduleType = "rules"
+	AnnouncementScheduleTypeStaffIntro AnnouncementScheduleType = "staff_intro"
+	AnnouncementScheduleTypeWelcome    AnnouncementScheduleType = "welcome"
 )
 
 // Valid indicates whether the value is a known member of the AnnouncementScheduleType enum.
 func (e AnnouncementScheduleType) Valid() bool {
 	switch e {
-	case General:
+	case AnnouncementScheduleTypeGeneral:
 		return true
-	case Reminder:
+	case AnnouncementScheduleTypeReminder:
 		return true
-	case Rules:
+	case AnnouncementScheduleTypeRules:
 		return true
-	case StaffIntro:
+	case AnnouncementScheduleTypeStaffIntro:
 		return true
-	case Welcome:
+	case AnnouncementScheduleTypeWelcome:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AnnouncementTemplateKind.
+const (
+	AnnouncementTemplateKindGeneral    AnnouncementTemplateKind = "general"
+	AnnouncementTemplateKindReminder   AnnouncementTemplateKind = "reminder"
+	AnnouncementTemplateKindRules      AnnouncementTemplateKind = "rules"
+	AnnouncementTemplateKindStaffIntro AnnouncementTemplateKind = "staff_intro"
+	AnnouncementTemplateKindWelcome    AnnouncementTemplateKind = "welcome"
+)
+
+// Valid indicates whether the value is a known member of the AnnouncementTemplateKind enum.
+func (e AnnouncementTemplateKind) Valid() bool {
+	switch e {
+	case AnnouncementTemplateKindGeneral:
+		return true
+	case AnnouncementTemplateKindReminder:
+		return true
+	case AnnouncementTemplateKindRules:
+		return true
+	case AnnouncementTemplateKindStaffIntro:
+		return true
+	case AnnouncementTemplateKindWelcome:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AnnouncementTemplateInputKind.
+const (
+	AnnouncementTemplateInputKindGeneral    AnnouncementTemplateInputKind = "general"
+	AnnouncementTemplateInputKindReminder   AnnouncementTemplateInputKind = "reminder"
+	AnnouncementTemplateInputKindRules      AnnouncementTemplateInputKind = "rules"
+	AnnouncementTemplateInputKindStaffIntro AnnouncementTemplateInputKind = "staff_intro"
+	AnnouncementTemplateInputKindWelcome    AnnouncementTemplateInputKind = "welcome"
+)
+
+// Valid indicates whether the value is a known member of the AnnouncementTemplateInputKind enum.
+func (e AnnouncementTemplateInputKind) Valid() bool {
+	switch e {
+	case AnnouncementTemplateInputKindGeneral:
+		return true
+	case AnnouncementTemplateInputKindReminder:
+		return true
+	case AnnouncementTemplateInputKindRules:
+		return true
+	case AnnouncementTemplateInputKindStaffIntro:
+		return true
+	case AnnouncementTemplateInputKindWelcome:
 		return true
 	default:
 		return false
@@ -196,6 +250,78 @@ func (e GroupOnboardingStudentOnboardingStatus) Valid() bool {
 	}
 }
 
+// Defines values for GroupResourceKind.
+const (
+	Channel GroupResourceKind = "channel"
+	Course  GroupResourceKind = "course"
+	Folder  GroupResourceKind = "folder"
+	Form    GroupResourceKind = "form"
+)
+
+// Valid indicates whether the value is a known member of the GroupResourceKind enum.
+func (e GroupResourceKind) Valid() bool {
+	switch e {
+	case Channel:
+		return true
+	case Course:
+		return true
+	case Folder:
+		return true
+	case Form:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupResourceProvider.
+const (
+	GroupResourceProviderGoogleClassroom GroupResourceProvider = "google_classroom"
+	GroupResourceProviderGoogleDrive     GroupResourceProvider = "google_drive"
+	GroupResourceProviderGoogleForms     GroupResourceProvider = "google_forms"
+	GroupResourceProviderSlack           GroupResourceProvider = "slack"
+)
+
+// Valid indicates whether the value is a known member of the GroupResourceProvider enum.
+func (e GroupResourceProvider) Valid() bool {
+	switch e {
+	case GroupResourceProviderGoogleClassroom:
+		return true
+	case GroupResourceProviderGoogleDrive:
+		return true
+	case GroupResourceProviderGoogleForms:
+		return true
+	case GroupResourceProviderSlack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupResourceStatus.
+const (
+	GroupResourceStatusActive  GroupResourceStatus = "active"
+	GroupResourceStatusDeleted GroupResourceStatus = "deleted"
+	GroupResourceStatusError   GroupResourceStatus = "error"
+	GroupResourceStatusPending GroupResourceStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the GroupResourceStatus enum.
+func (e GroupResourceStatus) Valid() bool {
+	switch e {
+	case GroupResourceStatusActive:
+		return true
+	case GroupResourceStatusDeleted:
+		return true
+	case GroupResourceStatusError:
+		return true
+	case GroupResourceStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupStatus.
 const (
 	GroupStatusArchived        GroupStatus = "archived"
@@ -291,25 +417,25 @@ func (e LaunchQueuedStatus) Valid() bool {
 
 // Defines values for LaunchStepPlatform.
 const (
-	Classroom LaunchStepPlatform = "classroom"
-	Drive     LaunchStepPlatform = "drive"
-	Forms     LaunchStepPlatform = "forms"
-	Roster    LaunchStepPlatform = "roster"
-	Slack     LaunchStepPlatform = "slack"
+	LaunchStepPlatformClassroom LaunchStepPlatform = "classroom"
+	LaunchStepPlatformDrive     LaunchStepPlatform = "drive"
+	LaunchStepPlatformForms     LaunchStepPlatform = "forms"
+	LaunchStepPlatformRoster    LaunchStepPlatform = "roster"
+	LaunchStepPlatformSlack     LaunchStepPlatform = "slack"
 )
 
 // Valid indicates whether the value is a known member of the LaunchStepPlatform enum.
 func (e LaunchStepPlatform) Valid() bool {
 	switch e {
-	case Classroom:
+	case LaunchStepPlatformClassroom:
 		return true
-	case Drive:
+	case LaunchStepPlatformDrive:
 		return true
-	case Forms:
+	case LaunchStepPlatformForms:
 		return true
-	case Roster:
+	case LaunchStepPlatformRoster:
 		return true
-	case Slack:
+	case LaunchStepPlatformSlack:
 		return true
 	default:
 		return false
@@ -334,6 +460,72 @@ func (e LaunchStepStatus) Valid() bool {
 	case LaunchStepStatusSkipped:
 		return true
 	case LaunchStepStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationKind.
+const (
+	AnnouncementDelivered NotificationKind = "announcement_delivered"
+	AnnouncementFailed    NotificationKind = "announcement_failed"
+	AuditInconsistency    NotificationKind = "audit_inconsistency"
+	ClassroomFailure      NotificationKind = "classroom_failure"
+	DriveFailure          NotificationKind = "drive_failure"
+	FormsFailure          NotificationKind = "forms_failure"
+	InviteFailure         NotificationKind = "invite_failure"
+	LaunchCompleted       NotificationKind = "launch_completed"
+	LaunchFailed          NotificationKind = "launch_failed"
+	LaunchPartiallyFailed NotificationKind = "launch_partially_failed"
+	OnboardingIncomplete  NotificationKind = "onboarding_incomplete"
+)
+
+// Valid indicates whether the value is a known member of the NotificationKind enum.
+func (e NotificationKind) Valid() bool {
+	switch e {
+	case AnnouncementDelivered:
+		return true
+	case AnnouncementFailed:
+		return true
+	case AuditInconsistency:
+		return true
+	case ClassroomFailure:
+		return true
+	case DriveFailure:
+		return true
+	case FormsFailure:
+		return true
+	case InviteFailure:
+		return true
+	case LaunchCompleted:
+		return true
+	case LaunchFailed:
+		return true
+	case LaunchPartiallyFailed:
+		return true
+	case OnboardingIncomplete:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationSeverity.
+const (
+	NotificationSeverityError   NotificationSeverity = "error"
+	NotificationSeverityInfo    NotificationSeverity = "info"
+	NotificationSeverityWarning NotificationSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the NotificationSeverity enum.
+func (e NotificationSeverity) Valid() bool {
+	switch e {
+	case NotificationSeverityError:
+		return true
+	case NotificationSeverityInfo:
+		return true
+	case NotificationSeverityWarning:
 		return true
 	default:
 		return false
@@ -484,19 +676,95 @@ func (e SlackWelcomeResultStatus) Valid() bool {
 	}
 }
 
+// Defines values for UserRole.
+const (
+	Admin       UserRole = "admin"
+	Coordinator UserRole = "coordinator"
+	Lecturer    UserRole = "lecturer"
+	Student     UserRole = "student"
+	Ta          UserRole = "ta"
+)
+
+// Valid indicates whether the value is a known member of the UserRole enum.
+func (e UserRole) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case Coordinator:
+		return true
+	case Lecturer:
+		return true
+	case Student:
+		return true
+	case Ta:
+		return true
+	default:
+		return false
+	}
+}
+
+// AdminUser defines model for AdminUser.
+type AdminUser struct {
+	CreatedAt time.Time           `json:"createdAt"`
+	Email     openapi_types.Email `json:"email"`
+	FullName  string              `json:"fullName"`
+
+	// Role PRD §3 role model. Students authenticate but have no API access.
+	Role   UserRole           `json:"role"`
+	UserId openapi_types.UUID `json:"userId"`
+}
+
+// AdminUserInput defines model for AdminUserInput.
+type AdminUserInput struct {
+	Email    openapi_types.Email `json:"email"`
+	FullName string              `json:"fullName"`
+
+	// Password bcrypt's hard input limit is 72 bytes
+	Password string `json:"password"`
+
+	// Role PRD §3 role model. Students authenticate but have no API access.
+	Role UserRole `json:"role"`
+}
+
 // AnnouncementSchedule defines model for AnnouncementSchedule.
 type AnnouncementSchedule struct {
-	ChannelName string `json:"channelName"`
-	Message     string `json:"message"`
+	ChannelName string  `json:"channelName"`
+	Message     *string `json:"message,omitempty"`
 
 	// RequestId Reuse the same request ID when retrying the same announcement.
-	RequestId   openapi_types.UUID       `json:"requestId"`
-	ScheduledAt time.Time                `json:"scheduledAt"`
-	Type        AnnouncementScheduleType `json:"type"`
+	RequestId   openapi_types.UUID `json:"requestId"`
+	ScheduledAt time.Time          `json:"scheduledAt"`
+
+	// TemplateId Optional template reference (PRD §4.8). When provided, the template's body is used as the announcement message, overriding any inline message content.
+	TemplateId *openapi_types.UUID      `json:"templateId,omitempty"`
+	Type       AnnouncementScheduleType `json:"type"`
 }
 
 // AnnouncementScheduleType defines model for AnnouncementSchedule.Type.
 type AnnouncementScheduleType string
+
+// AnnouncementTemplate defines model for AnnouncementTemplate.
+type AnnouncementTemplate struct {
+	Body      string                   `json:"body"`
+	CreatedAt time.Time                `json:"createdAt"`
+	Id        openapi_types.UUID       `json:"id"`
+	Kind      AnnouncementTemplateKind `json:"kind"`
+	Name      string                   `json:"name"`
+	UpdatedAt time.Time                `json:"updatedAt"`
+}
+
+// AnnouncementTemplateKind defines model for AnnouncementTemplate.Kind.
+type AnnouncementTemplateKind string
+
+// AnnouncementTemplateInput defines model for AnnouncementTemplateInput.
+type AnnouncementTemplateInput struct {
+	Body string                         `json:"body"`
+	Kind *AnnouncementTemplateInputKind `json:"kind,omitempty"`
+	Name string                         `json:"name"`
+}
+
+// AnnouncementTemplateInputKind defines model for AnnouncementTemplateInput.Kind.
+type AnnouncementTemplateInputKind string
 
 // AuditChange defines model for AuditChange.
 type AuditChange struct {
@@ -525,6 +793,30 @@ type AuditNotificationEmailStatus string
 type AuditNotifications struct {
 	Notifications []AuditNotification `json:"notifications"`
 	OpenIssues    []OpenAuditIssues   `json:"openIssues"`
+}
+
+// AuthSession defines model for AuthSession.
+type AuthSession struct {
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	// Token bearer token — shown exactly once; never persisted in plaintext
+	Token string   `json:"token"`
+	User  AuthUser `json:"user"`
+}
+
+// AuthUser defines model for AuthUser.
+type AuthUser struct {
+	// Email the account email; absent for the shared Basic coordinator identity
+	Email *openapi_types.Email `json:"email,omitempty"`
+
+	// Role PRD §3 role model. Students authenticate but have no API access.
+	Role UserRole `json:"role"`
+
+	// UserId absent for the shared Basic coordinator account
+	UserId *openapi_types.UUID `json:"userId,omitempty"`
+
+	// ViaBasic true when authenticated through the legacy coordinator Basic flow
+	ViaBasic *bool `json:"viaBasic,omitempty"`
 }
 
 // ClassroomCourse defines model for ClassroomCourse.
@@ -639,13 +931,22 @@ type GroupAuditResourceStatus string
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
 	CourseName string `json:"courseName"`
-	Name       string `json:"name"`
+
+	// LecturerEmails Lecturers assigned to this group (PRD 4.1).
+	LecturerEmails []openapi_types.Email `json:"lecturerEmails"`
+	Name           string                `json:"name"`
+
+	// StaffEmails Teaching staff assigned to this group (PRD 4.1).
+	StaffEmails []openapi_types.Email `json:"staffEmails"`
 
 	// StartDate ISO 8601 calendar date (YYYY-MM-DD)
 	StartDate Date `json:"startDate"`
 
 	// StudentEmails Optional student roster (PRD 4.1). Emails are normalized (trimmed, lowercased); invalid entries and post-normalization duplicates are rejected with the offending values — never silently discarded. Existing users are reused by normalized email; new 'student' users are created and enrolled as pending group members atomically with the group.
 	StudentEmails *[]openapi_types.Email `json:"studentEmails,omitempty"`
+
+	// TaEmails Teaching assistants assigned to this group (PRD 4.1, optional).
+	TaEmails *[]openapi_types.Email `json:"taEmails,omitempty"`
 }
 
 // GroupLaunchResult defines model for GroupLaunchResult.
@@ -681,6 +982,26 @@ type GroupOnboardingStudent struct {
 
 // GroupOnboardingStudentOnboardingStatus defines model for GroupOnboardingStudent.OnboardingStatus.
 type GroupOnboardingStudentOnboardingStatus string
+
+// GroupResource defines model for GroupResource.
+type GroupResource struct {
+	Kind     GroupResourceKind     `json:"kind"`
+	Name     string                `json:"name"`
+	Provider GroupResourceProvider `json:"provider"`
+
+	// Ref external resource ID (or responder URL for forms)
+	Ref    string              `json:"ref"`
+	Status GroupResourceStatus `json:"status"`
+}
+
+// GroupResourceKind defines model for GroupResource.Kind.
+type GroupResourceKind string
+
+// GroupResourceProvider defines model for GroupResource.Provider.
+type GroupResourceProvider string
+
+// GroupResourceStatus defines model for GroupResource.Status.
+type GroupResourceStatus string
 
 // GroupStatus group lifecycle state
 type GroupStatus string
@@ -777,6 +1098,41 @@ type LaunchStepPlatform string
 // LaunchStepStatus defines model for LaunchStep.Status.
 type LaunchStepStatus string
 
+// LoginInput defines model for LoginInput.
+type LoginInput struct {
+	Email    openapi_types.Email `json:"email"`
+	Password string              `json:"password"`
+}
+
+// Notification defines model for Notification.
+type Notification struct {
+	CreatedAt time.Time `json:"createdAt"`
+	Detail    *string   `json:"detail,omitempty"`
+
+	// GroupId optional group context
+	GroupId  *openapi_types.UUID  `json:"groupId,omitempty"`
+	Id       openapi_types.UUID   `json:"id"`
+	Kind     NotificationKind     `json:"kind"`
+	ReadAt   *time.Time           `json:"readAt,omitempty"`
+	Severity NotificationSeverity `json:"severity"`
+	Title    string               `json:"title"`
+}
+
+// NotificationKind defines model for Notification.Kind.
+type NotificationKind string
+
+// NotificationSeverity defines model for Notification.Severity.
+type NotificationSeverity string
+
+// NotificationPage defines model for NotificationPage.
+type NotificationPage struct {
+	Data []Notification `json:"data"`
+	Page Page           `json:"page"`
+
+	// UnreadCount Total number of unread notifications, independent of pagination.
+	UnreadCount int `json:"unreadCount"`
+}
+
 // OpenAuditIssues defines model for OpenAuditIssues.
 type OpenAuditIssues struct {
 	CheckedAt time.Time            `json:"checkedAt"`
@@ -790,6 +1146,26 @@ type Page struct {
 	Limit  int `json:"limit"`
 	Offset int `json:"offset"`
 	Total  int `json:"total"`
+}
+
+// PasswordResetInput defines model for PasswordResetInput.
+type PasswordResetInput struct {
+	// Password bcrypt's hard input limit is 72 bytes
+	Password string `json:"password"`
+}
+
+// PredefinedStaff defines model for PredefinedStaff.
+type PredefinedStaff struct {
+	CreatedAt time.Time           `json:"createdAt"`
+	Email     openapi_types.Email `json:"email"`
+	FullName  string              `json:"fullName"`
+	StaffId   openapi_types.UUID  `json:"staffId"`
+}
+
+// PredefinedStaffInput defines model for PredefinedStaffInput.
+type PredefinedStaffInput struct {
+	Email    openapi_types.Email `json:"email"`
+	FullName *string             `json:"fullName,omitempty"`
 }
 
 // PublishedIntakeForm defines model for PublishedIntakeForm.
@@ -889,6 +1265,9 @@ type SlackWelcomeResult struct {
 // SlackWelcomeResultStatus defines model for SlackWelcomeResult.Status.
 type SlackWelcomeResultStatus string
 
+// UserRole PRD §3 role model. Students authenticate but have no API access.
+type UserRole string
+
 // GroupId defines model for GroupId.
 type GroupId = openapi_types.UUID
 
@@ -897,6 +1276,9 @@ type Limit = int
 
 // Offset defines model for Offset.
 type Offset = int
+
+// UserId defines model for UserId.
+type UserId = openapi_types.UUID
 
 // ListGroupsParams defines parameters for ListGroups.
 type ListGroupsParams struct {
@@ -920,6 +1302,33 @@ type GoogleCallbackParams struct {
 // SlackEventsJSONBody defines parameters for SlackEvents.
 type SlackEventsJSONBody = map[string]interface{}
 
+// ListNotificationsParams defines parameters for ListNotifications.
+type ListNotificationsParams struct {
+	// Limit page size
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Offset page offset
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// CreatePredefinedStaffJSONRequestBody defines body for CreatePredefinedStaff for application/json ContentType.
+type CreatePredefinedStaffJSONRequestBody = PredefinedStaffInput
+
+// CreateAdminUserJSONRequestBody defines body for CreateAdminUser for application/json ContentType.
+type CreateAdminUserJSONRequestBody = AdminUserInput
+
+// ResetAdminUserPasswordJSONRequestBody defines body for ResetAdminUserPassword for application/json ContentType.
+type ResetAdminUserPasswordJSONRequestBody = PasswordResetInput
+
+// CreateAnnouncementTemplateJSONRequestBody defines body for CreateAnnouncementTemplate for application/json ContentType.
+type CreateAnnouncementTemplateJSONRequestBody = AnnouncementTemplateInput
+
+// UpdateAnnouncementTemplateJSONRequestBody defines body for UpdateAnnouncementTemplate for application/json ContentType.
+type UpdateAnnouncementTemplateJSONRequestBody = AnnouncementTemplateInput
+
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginInput
+
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = GroupCreate
 
@@ -937,16 +1346,64 @@ type SlackEventsJSONRequestBody = SlackEventsJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListPredefinedStaff List the predefined staff members (admin only, PRD §3.2, §4.2)
+	// (GET /api/admin/staff)
+	ListPredefinedStaff(ctx echo.Context) error
+	// CreatePredefinedStaff Add a predefined staff member (admin only)
+	// (POST /api/admin/staff)
+	CreatePredefinedStaff(ctx echo.Context) error
+	// DeletePredefinedStaff Remove a predefined staff member (admin only)
+	// (DELETE /api/admin/staff/{staffId})
+	DeletePredefinedStaff(ctx echo.Context, staffId openapi_types.UUID) error
+	// ListAdminUsers List user accounts (admin only, PRD §3.2)
+	// (GET /api/admin/users)
+	ListAdminUsers(ctx echo.Context) error
+	// CreateAdminUser Create a user account with a role and initial password (admin only)
+	// (POST /api/admin/users)
+	CreateAdminUser(ctx echo.Context) error
+	// DeleteAdminUser Delete a user account (admin only; own account excluded)
+	// (DELETE /api/admin/users/{userId})
+	DeleteAdminUser(ctx echo.Context, userId UserId) error
+	// ResetAdminUserPassword Reset a user's password (admin only)
+	// (PUT /api/admin/users/{userId}/password)
+	ResetAdminUserPassword(ctx echo.Context, userId UserId) error
+	// ListAnnouncementTemplates List announcement templates (PRD §4.8)
+	// (GET /api/announcement-templates)
+	ListAnnouncementTemplates(ctx echo.Context) error
+	// CreateAnnouncementTemplate Create an announcement template
+	// (POST /api/announcement-templates)
+	CreateAnnouncementTemplate(ctx echo.Context) error
+	// DeleteAnnouncementTemplate Delete a template
+	// (DELETE /api/announcement-templates/{templateId})
+	DeleteAnnouncementTemplate(ctx echo.Context, templateId openapi_types.UUID) error
+	// GetAnnouncementTemplate Get one template
+	// (GET /api/announcement-templates/{templateId})
+	GetAnnouncementTemplate(ctx echo.Context, templateId openapi_types.UUID) error
+	// UpdateAnnouncementTemplate Update a template
+	// (PUT /api/announcement-templates/{templateId})
+	UpdateAnnouncementTemplate(ctx echo.Context, templateId openapi_types.UUID) error
 	// GetAuditNotifications List current issues and recent audit changes for the coordinator
 	// (GET /api/audit-notifications)
 	GetAuditNotifications(ctx echo.Context) error
+	// Login Exchange email and password for a bearer session token
+	// (POST /api/auth/login)
+	Login(ctx echo.Context) error
+	// Logout Revoke the presented bearer session
+	// (POST /api/auth/logout)
+	Logout(ctx echo.Context) error
+	// GetAuthMe Return the authenticated identity and role
+	// (GET /api/auth/me)
+	GetAuthMe(ctx echo.Context) error
+	// RefreshToken Rotate the bearer token (token refresh, PRD §7.4)
+	// (POST /api/auth/refresh)
+	RefreshToken(ctx echo.Context) error
 	// ListGroups List groups (newest first)
 	// (GET /api/groups)
 	ListGroups(ctx echo.Context, params ListGroupsParams) error
 	// CreateGroup Create a group (starts in draft; launch is a separate operation)
 	// (POST /api/groups)
 	CreateGroup(ctx echo.Context) error
-	// GetGroup Get one group
+	// GetGroup Get one group (group-scoped)
 	// (GET /api/groups/{groupId})
 	GetGroup(ctx echo.Context, groupId GroupId) error
 	// ListGroupAnnouncements List up to 100 scheduled Slack announcements and their results
@@ -991,6 +1448,9 @@ type ServerInterface interface {
 	// GetGroupOnboarding Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
 	// (GET /api/groups/{groupId}/onboarding)
 	GetGroupOnboarding(ctx echo.Context, groupId GroupId) error
+	// GetGroupResources List the group's external resources (group-scoped)
+	// (GET /api/groups/{groupId}/resources)
+	GetGroupResources(ctx echo.Context, groupId GroupId) error
 	// ProvisionGroupSlack Idempotently provision the group's Slack channels, invitations, and welcome messages
 	// (POST /api/groups/{groupId}/slack/provision)
 	ProvisionGroupSlack(ctx echo.Context, groupId GroupId) error
@@ -1012,6 +1472,15 @@ type ServerInterface interface {
 	// SlackStatus Slack connection status (verifies the bot token, never exposes it)
 	// (GET /api/integrations/slack/status)
 	SlackStatus(ctx echo.Context) error
+	// ListNotifications List coordinator notifications (PRD §4.9)
+	// (GET /api/notifications)
+	ListNotifications(ctx echo.Context, params ListNotificationsParams) error
+	// MarkAllNotificationsRead Mark all notifications as read
+	// (POST /api/notifications/read-all)
+	MarkAllNotificationsRead(ctx echo.Context) error
+	// MarkNotificationRead Mark a single notification as read
+	// (POST /api/notifications/{notificationId}/read)
+	MarkNotificationRead(ctx echo.Context, notificationId openapi_types.UUID) error
 	// GetHealth Liveness probe
 	// (GET /health)
 	GetHealth(ctx echo.Context) error
@@ -1025,12 +1494,198 @@ type ServerInterfaceWrapper struct {
 	Handler ServerInterface
 }
 
+// ListPredefinedStaff converts echo context to params.
+func (w *ServerInterfaceWrapper) ListPredefinedStaff(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListPredefinedStaff(ctx)
+	return err
+}
+
+// CreatePredefinedStaff converts echo context to params.
+func (w *ServerInterfaceWrapper) CreatePredefinedStaff(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CreatePredefinedStaff(ctx)
+	return err
+}
+
+// DeletePredefinedStaff converts echo context to params.
+func (w *ServerInterfaceWrapper) DeletePredefinedStaff(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "staffId" -------------
+	var staffId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "staffId", ctx.Param("staffId"), &staffId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter staffId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeletePredefinedStaff(ctx, staffId)
+	return err
+}
+
+// ListAdminUsers converts echo context to params.
+func (w *ServerInterfaceWrapper) ListAdminUsers(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListAdminUsers(ctx)
+	return err
+}
+
+// CreateAdminUser converts echo context to params.
+func (w *ServerInterfaceWrapper) CreateAdminUser(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CreateAdminUser(ctx)
+	return err
+}
+
+// DeleteAdminUser converts echo context to params.
+func (w *ServerInterfaceWrapper) DeleteAdminUser(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "userId" -------------
+	var userId UserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", ctx.Param("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter userId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeleteAdminUser(ctx, userId)
+	return err
+}
+
+// ResetAdminUserPassword converts echo context to params.
+func (w *ServerInterfaceWrapper) ResetAdminUserPassword(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "userId" -------------
+	var userId UserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", ctx.Param("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter userId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ResetAdminUserPassword(ctx, userId)
+	return err
+}
+
+// ListAnnouncementTemplates converts echo context to params.
+func (w *ServerInterfaceWrapper) ListAnnouncementTemplates(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListAnnouncementTemplates(ctx)
+	return err
+}
+
+// CreateAnnouncementTemplate converts echo context to params.
+func (w *ServerInterfaceWrapper) CreateAnnouncementTemplate(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CreateAnnouncementTemplate(ctx)
+	return err
+}
+
+// DeleteAnnouncementTemplate converts echo context to params.
+func (w *ServerInterfaceWrapper) DeleteAnnouncementTemplate(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "templateId" -------------
+	var templateId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateId", ctx.Param("templateId"), &templateId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter templateId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeleteAnnouncementTemplate(ctx, templateId)
+	return err
+}
+
+// GetAnnouncementTemplate converts echo context to params.
+func (w *ServerInterfaceWrapper) GetAnnouncementTemplate(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "templateId" -------------
+	var templateId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateId", ctx.Param("templateId"), &templateId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter templateId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetAnnouncementTemplate(ctx, templateId)
+	return err
+}
+
+// UpdateAnnouncementTemplate converts echo context to params.
+func (w *ServerInterfaceWrapper) UpdateAnnouncementTemplate(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "templateId" -------------
+	var templateId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateId", ctx.Param("templateId"), &templateId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter templateId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.UpdateAnnouncementTemplate(ctx, templateId)
+	return err
+}
+
 // GetAuditNotifications converts echo context to params.
 func (w *ServerInterfaceWrapper) GetAuditNotifications(ctx echo.Context) error {
 	var err error
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GetAuditNotifications(ctx)
+	return err
+}
+
+// Login converts echo context to params.
+func (w *ServerInterfaceWrapper) Login(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.Login(ctx)
+	return err
+}
+
+// Logout converts echo context to params.
+func (w *ServerInterfaceWrapper) Logout(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.Logout(ctx)
+	return err
+}
+
+// GetAuthMe converts echo context to params.
+func (w *ServerInterfaceWrapper) GetAuthMe(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetAuthMe(ctx)
+	return err
+}
+
+// RefreshToken converts echo context to params.
+func (w *ServerInterfaceWrapper) RefreshToken(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.RefreshToken(ctx)
 	return err
 }
 
@@ -1308,6 +1963,22 @@ func (w *ServerInterfaceWrapper) GetGroupOnboarding(ctx echo.Context) error {
 	return err
 }
 
+// GetGroupResources converts echo context to params.
+func (w *ServerInterfaceWrapper) GetGroupResources(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetGroupResources(ctx, groupId)
+	return err
+}
+
 // ProvisionGroupSlack converts echo context to params.
 func (w *ServerInterfaceWrapper) ProvisionGroupSlack(ctx echo.Context) error {
 	var err error
@@ -1408,6 +2079,56 @@ func (w *ServerInterfaceWrapper) SlackStatus(ctx echo.Context) error {
 	return err
 }
 
+// ListNotifications converts echo context to params.
+func (w *ServerInterfaceWrapper) ListNotifications(ctx echo.Context) error {
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListNotificationsParams
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", ctx.QueryParams(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter limit: %s", err))
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", ctx.QueryParams(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter offset: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListNotifications(ctx, params)
+	return err
+}
+
+// MarkAllNotificationsRead converts echo context to params.
+func (w *ServerInterfaceWrapper) MarkAllNotificationsRead(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.MarkAllNotificationsRead(ctx)
+	return err
+}
+
+// MarkNotificationRead converts echo context to params.
+func (w *ServerInterfaceWrapper) MarkNotificationRead(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "notificationId" -------------
+	var notificationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "notificationId", ctx.Param("notificationId"), &notificationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter notificationId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.MarkNotificationRead(ctx, notificationId)
+	return err
+}
+
 // GetHealth converts echo context to params.
 func (w *ServerInterfaceWrapper) GetHealth(ctx echo.Context) error {
 	var err error
@@ -1473,11 +2194,23 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 		Handler: si,
 	}
 
+	router.POST(options.BaseURL+"/api/auth/login", wrapper.Login, options.OperationMiddlewares["login"]...)
+	router.POST(options.BaseURL+"/api/auth/logout", wrapper.Logout, options.OperationMiddlewares["logout"]...)
+	router.GET(options.BaseURL+"/api/auth/me", wrapper.GetAuthMe, options.OperationMiddlewares["getAuthMe"]...)
+	router.POST(options.BaseURL+"/api/auth/refresh", wrapper.RefreshToken, options.OperationMiddlewares["refreshToken"]...)
+	router.GET(options.BaseURL+"/api/admin/users", wrapper.ListAdminUsers, options.OperationMiddlewares["listAdminUsers"]...)
+	router.POST(options.BaseURL+"/api/admin/users", wrapper.CreateAdminUser, options.OperationMiddlewares["createAdminUser"]...)
+	router.PUT(options.BaseURL+"/api/admin/users/:userId/password", wrapper.ResetAdminUserPassword, options.OperationMiddlewares["resetAdminUserPassword"]...)
+	router.DELETE(options.BaseURL+"/api/admin/users/:userId", wrapper.DeleteAdminUser, options.OperationMiddlewares["deleteAdminUser"]...)
+	router.GET(options.BaseURL+"/api/admin/staff", wrapper.ListPredefinedStaff, options.OperationMiddlewares["listPredefinedStaff"]...)
+	router.POST(options.BaseURL+"/api/admin/staff", wrapper.CreatePredefinedStaff, options.OperationMiddlewares["createPredefinedStaff"]...)
+	router.DELETE(options.BaseURL+"/api/admin/staff/:staffId", wrapper.DeletePredefinedStaff, options.OperationMiddlewares["deletePredefinedStaff"]...)
 	router.GET(options.BaseURL+"/health", wrapper.GetHealth, options.OperationMiddlewares["getHealth"]...)
 	router.GET(options.BaseURL+"/readyz", wrapper.GetReadiness, options.OperationMiddlewares["getReadiness"]...)
 	router.GET(options.BaseURL+"/api/groups", wrapper.ListGroups, options.OperationMiddlewares["listGroups"]...)
 	router.POST(options.BaseURL+"/api/groups", wrapper.CreateGroup, options.OperationMiddlewares["createGroup"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId", wrapper.GetGroup, options.OperationMiddlewares["getGroup"]...)
+	router.GET(options.BaseURL+"/api/groups/:groupId/resources", wrapper.GetGroupResources, options.OperationMiddlewares["getGroupResources"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/launch", wrapper.LaunchGroup, options.OperationMiddlewares["launchGroup"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/status", wrapper.GetGroupLaunchStatus, options.OperationMiddlewares["getGroupLaunchStatus"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/classroom/provision", wrapper.ProvisionGroupClassroom, options.OperationMiddlewares["provisionGroupClassroom"]...)
@@ -1494,6 +2227,14 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/api/groups/:groupId/audits", wrapper.ListGroupAudits, options.OperationMiddlewares["listGroupAudits"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/audits", wrapper.QueueGroupAudit, options.OperationMiddlewares["queueGroupAudit"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
+	router.GET(options.BaseURL+"/api/notifications", wrapper.ListNotifications, options.OperationMiddlewares["listNotifications"]...)
+	router.POST(options.BaseURL+"/api/notifications/:notificationId/read", wrapper.MarkNotificationRead, options.OperationMiddlewares["markNotificationRead"]...)
+	router.POST(options.BaseURL+"/api/notifications/read-all", wrapper.MarkAllNotificationsRead, options.OperationMiddlewares["markAllNotificationsRead"]...)
+	router.GET(options.BaseURL+"/api/announcement-templates", wrapper.ListAnnouncementTemplates, options.OperationMiddlewares["listAnnouncementTemplates"]...)
+	router.POST(options.BaseURL+"/api/announcement-templates", wrapper.CreateAnnouncementTemplate, options.OperationMiddlewares["createAnnouncementTemplate"]...)
+	router.DELETE(options.BaseURL+"/api/announcement-templates/:templateId", wrapper.DeleteAnnouncementTemplate, options.OperationMiddlewares["deleteAnnouncementTemplate"]...)
+	router.GET(options.BaseURL+"/api/announcement-templates/:templateId", wrapper.GetAnnouncementTemplate, options.OperationMiddlewares["getAnnouncementTemplate"]...)
+	router.PUT(options.BaseURL+"/api/announcement-templates/:templateId", wrapper.UpdateAnnouncementTemplate, options.OperationMiddlewares["updateAnnouncementTemplate"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/connect", wrapper.GoogleConnect, options.OperationMiddlewares["googleConnect"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/callback", wrapper.GoogleCallback, options.OperationMiddlewares["googleCallback"]...)
 	router.GET(options.BaseURL+"/api/integrations/google/status", wrapper.GoogleStatus, options.OperationMiddlewares["googleStatus"]...)

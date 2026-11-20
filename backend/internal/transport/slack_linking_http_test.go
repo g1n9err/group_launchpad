@@ -24,13 +24,13 @@ func TestSlackEventLinksUnlinkedUserEndToEnd(t *testing.T) {
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		integrations.NewSlackAuthService(repo, fakeWS, true),
 		integrations.NewSlackChannelsService(fakeWS, repo, repo, true),
-		integrations.NewSlackEventsService(slackEventsVerifierForTest(), repo, linker, testClock, true), pool.Ping)
+		integrations.NewSlackEventsService(slackEventsVerifierForTest(), repo, linker, testClock, true), nil, pool.Ping)
 	srv := httptestNew(app, t)
 
 	// Group + channel resource + member whose email is on file but has NO
 	// slack_user_id. The fake Slack knows the joining user's email.
 	_, created := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Linkers 1","courseName":"Onboarding","startDate":"2026-12-01"}`)
+		`{"name":"Linkers 1","courseName":"Onboarding","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	groupID := created["id"].(string)
 	fakeWS.emails["linker@x.example"] = "UNEWDUDE"
 	stmts := []string{

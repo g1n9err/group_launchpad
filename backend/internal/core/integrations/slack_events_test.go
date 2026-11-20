@@ -66,19 +66,29 @@ func (r *fakeEventRepo) CompleteSlackEvent(_ context.Context, eventID, status, r
 	return nil
 }
 
-func (r *fakeEventRepo) SlackBotUserID(context.Context) (string, error) { return r.botID, nil }
+func (r *fakeEventRepo) SlackBotUserID(context.Context) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.botID, nil
+}
 
 func (r *fakeEventRepo) FindGroupIDBySlackChannel(_ context.Context, channelID string) (uuid.UUID, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	g, ok := r.channels[channelID]
 	return g, ok, nil
 }
 
 func (r *fakeEventRepo) FindUserIDBySlack(_ context.Context, slackUserID string) (uuid.UUID, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	u, ok := r.users[slackUserID]
 	return u, ok, nil
 }
 
 func (r *fakeEventRepo) FindGroupMember(_ context.Context, groupID, userID uuid.UUID) (uuid.UUID, string, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	m, ok := r.membership[[2]uuid.UUID{groupID, userID}]
 	if !ok {
 		return uuid.Nil, "", false, nil

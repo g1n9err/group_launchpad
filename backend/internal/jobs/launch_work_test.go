@@ -108,7 +108,9 @@ func TestGroupLaunchWorkOrchestration(t *testing.T) {
 	// Create a group with a mix of good and bad students.
 	group, err := groupsSvc.Create(context.Background(), groups.CreateInput{
 		Name: "Orchestration Test", CourseName: "Test Course", StartDate: "2026-12-01",
-		StudentEmails: []string{"good@test.example", "bad@test.example"},
+		StudentEmails:  []string{"good@test.example", "bad@test.example"},
+		StaffEmails:    []string{"staff@test.example"},
+		LecturerEmails: []string{"lecturer@test.example"},
 	})
 	if err != nil {
 		t.Fatalf("create group: %v", err)

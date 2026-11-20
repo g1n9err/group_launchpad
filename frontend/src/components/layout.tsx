@@ -2,11 +2,11 @@
 // header and footer are isolated components, easy to modify or remove.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "../i18n";
 import { useRoute } from "../lib/router";
 import { api } from "../lib/api";
-import { isUnlocked, onAuthChange } from "../lib/auth";
+import { isUnlocked, onAuthChange, useAuthUser } from "../lib/auth";
 import { CoordinatorSessionControl, useCoordinatorLock } from "./auth";
 import {
   IconAnnouncements,
@@ -48,6 +48,7 @@ const NAV_SECTIONS: { key: Parameters<ReturnType<typeof useSettings>["t"]>[0]; p
 function Navigation({ mobile = false }: { mobile?: boolean }) {
   const { t } = useSettings();
   const route = useRoute();
+  const user = useAuthUser();
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -68,9 +69,12 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
   }, [mobile]);
 
   const query = mobile ? "" : search.trim().toLocaleLowerCase();
-  const matchingPages = NAV.filter(({ key }) => t(key).toLocaleLowerCase().includes(query));
+  const isStaff = user?.role === "admin" || user?.role === "coordinator";
+  const visibleNav = isStaff ? NAV : user?.role === "lecturer" || user?.role === "ta"
+    ? NAV.filter(({ page }) => page === "groups") : [];
+  const matchingPages = visibleNav.filter(({ key }) => t(key).toLocaleLowerCase().includes(query));
   const sections = mobile
-    ? [{ key: "nav.workspace" as const, pages: NAV.map(({ page }) => page) }]
+    ? [{ key: "nav.workspace" as const, pages: visibleNav.map(({ page }) => page) }]
     : NAV_SECTIONS;
 
   return (
@@ -90,7 +94,7 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
         </>
       )}
       {sections.map((section) => {
-        const items = (section.pages.map((page) => NAV.find((item) => item.page === page)!).filter(Boolean))
+        const items = (section.pages.map((page) => visibleNav.find((item) => item.page === page)!).filter(Boolean))
           .filter(({ key }) => !query || t(key).toLocaleLowerCase().includes(query));
         if (!items.length) return null;
         return <div key={section.key} className={mobile ? "contents" : "mb-5"}>
@@ -116,11 +120,12 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
 
 function SidebarAccount() {
   const { t } = useSettings();
+  const user = useAuthUser();
   return (
     <a href="#/account" className="app-sidebar-account mx-4 mb-4 flex items-center gap-3 border-t border-border px-2 pt-4 transition-colors hover:text-primary" aria-label={t("nav.accountPage")}>
-      <span aria-hidden="true" className="app-account-avatar">C</span>
+      <span aria-hidden="true" className="app-account-avatar">{(user?.email?.[0] ?? "G").toLocaleUpperCase()}</span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-rail-text">{t("nav.coordinator")}</span>
+        <span className="block truncate text-sm font-semibold text-rail-text">{user?.email ?? t("nav.coordinator")}</span>
         <span className="block text-xs text-rail-muted">{t("nav.account")}</span>
       </span>
     </a>
@@ -187,30 +192,100 @@ function Header() {
 }
 
 function NotificationControl() {
-  const { t } = useSettings();
+  const { t, lang } = useSettings();
+  const user = useAuthUser();
+  const canReadNotifications = user?.role === "admin" || user?.role === "coordinator";
   const [unlocked, setUnlocked] = useState(isUnlocked());
-  useEffect(() => onAuthChange(() => setUnlocked(isUnlocked())), []);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  useEffect(() => onAuthChange(() => {
+    const access = isUnlocked();
+    setUnlocked(access);
+    if (!access) setOpen(false);
+  }), []);
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
   const feed = useQuery({
-    queryKey: ["header-audit-notifications"],
-    enabled: unlocked,
+    queryKey: ["coordinator-notifications"],
+    enabled: unlocked && canReadNotifications,
     retry: false,
     refetchInterval: 60_000,
     queryFn: async () => {
-      const { data, error } = await api.GET("/api/audit-notifications");
+      const { data, error } = await api.GET("/api/notifications", { params: { query: { limit: 10, offset: 0 } } });
       if (!data) throw error ?? new Error("Could not load notifications");
       return data;
     },
   });
-  const hasNotifications = !!feed.data && (feed.data.openIssues.length > 0 || feed.data.notifications.length > 0);
+  const markRead = useMutation({
+    mutationFn: async (id: string) => {
+      const { error, response } = await api.POST("/api/notifications/{notificationId}/read", {
+        params: { path: { notificationId: id } },
+      });
+      if (!response.ok) throw error ?? new Error("Could not mark notification as read");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["coordinator-notifications"] }),
+  });
+  const markAllRead = useMutation({
+    mutationFn: async () => {
+      const { error, response } = await api.POST("/api/notifications/read-all");
+      if (!response.ok) throw error ?? new Error("Could not mark notifications as read");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["coordinator-notifications"] }),
+  });
+  const unreadCount = feed.data?.unreadCount ?? 0;
+
+  if (user?.role !== "admin" && user?.role !== "coordinator") return null;
 
   return (
-    <a href="#/automation" className="app-header-control app-notification-control shrink-0">
-      <span className="app-notification-icon">
-        <IconBell className="h-4 w-4" />
-        {hasNotifications && <span className="app-notification-dot" aria-label={t("notifications.available")} title={t("notifications.available")} />}
-      </span>
-      <span>{t("nav.notifications")}</span>
-    </a>
+    <div ref={menuRef} className="relative shrink-0">
+      <button type="button" className="app-header-control app-notification-control"
+        aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((value) => !value)}>
+        <span className="app-notification-icon">
+          <IconBell className="h-4 w-4" />
+          {unreadCount > 0 && <span className="app-notification-dot" aria-label={t("notifications.available")} title={t("notifications.available")} />}
+        </span>
+        <span>{t("nav.notifications")}</span>
+      </button>
+      {open && (
+        <section role="dialog" aria-label={t("nav.notifications")}
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold text-text">{t("nav.notifications")}</h2>
+            {unreadCount > 0 && <button type="button" disabled={markAllRead.isPending}
+              className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+              onClick={() => markAllRead.mutate()}>{t("notifications.markAllRead")}</button>}
+          </div>
+          {!unlocked && <p className="px-4 py-5 text-sm text-muted">{t("notifications.unlockNeeded")}</p>}
+          {unlocked && feed.isPending && <p className="px-4 py-5 text-sm text-muted">{t("notifications.loading")}</p>}
+          {unlocked && feed.isError && <p role="alert" className="px-4 py-5 text-sm text-danger-text">{t("notifications.loadFailed")}</p>}
+          {unlocked && feed.data?.data.length === 0 && <p className="px-4 py-5 text-sm text-muted">{t("notifications.empty")}</p>}
+          {feed.data?.data.map((notification) => (
+            <button key={notification.id} type="button" disabled={!!notification.readAt || markRead.isPending}
+              onClick={() => markRead.mutate(notification.id)}
+              className={`block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-surface-muted disabled:cursor-default ${notification.readAt ? "opacity-70" : ""}`}>
+              <span className="flex items-start justify-between gap-3">
+                <span className="text-sm font-semibold text-text">{notification.title}</span>
+                {!notification.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label={t("notifications.unread")} />}
+              </span>
+              {notification.detail && <span className="mt-1 block line-clamp-2 text-xs text-muted">{notification.detail}</span>}
+              <span className="mt-1 block text-[0.7rem] text-muted">{new Date(notification.createdAt).toLocaleString(lang)}</span>
+            </button>
+          ))}
+        </section>
+      )}
+    </div>
   );
 }
 

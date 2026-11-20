@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, Chip, PageTitle } from "../components/ui";
 import { IntakeQuestions } from "../components/IntakeQuestions";
 import { editableQuestion, intakeActionClass, intakeButtonClass, intakeInputClass, toIntakeQuestions } from "../lib/intakeForm";
@@ -7,6 +7,7 @@ import type { TranslationKey } from "../i18n/en";
 import { api } from "../lib/api";
 import { useIntakeGroups } from "../lib/queries";
 import type { components } from "../lib/schema";
+import { fireLock, getAuthHeader, useAuthUser } from "../lib/auth";
 
 type FormState = components["schemas"]["IntakeFormState"];
 type Delivery = components["schemas"]["IntakeDelivery"];
@@ -15,43 +16,17 @@ type Action = "draft" | "publish" | "distribute" | "import" | "refresh";
 
 export function IntakeFormsPage() {
   const { t } = useSettings();
-  const [password, setPassword] = useState("");
-  const [authorization, setAuthorization] = useState("");
+  const user = useAuthUser();
+  const authorization = user ? getAuthHeader().Authorization ?? "" : "";
   const [groupId, setGroupId] = useState("");
-  const [invalid, setInvalid] = useState(false);
   const groups = useIntakeGroups(Boolean(authorization));
-
-  function unlock(event: FormEvent) {
-    event.preventDefault();
-    const bytes = new TextEncoder().encode("coordinator:" + password);
-    setAuthorization("Basic " + btoa(String.fromCharCode(...bytes)));
-    setPassword("");
-    setInvalid(false);
-  }
-
-  const lock = useCallback((rejected = false) => {
-    setAuthorization("");
-    setGroupId("");
-    setInvalid(rejected);
-  }, []);
-  const onUnauthorized = useCallback(() => lock(true), [lock]);
+  const onUnauthorized = useCallback(() => fireLock(), []);
 
   return (
     <div className="space-y-5">
       <PageTitle title={t("nav.intakeForms")} />
       <Card className="p-5">
-        {!authorization ? (
-          <form className="flex flex-wrap items-end gap-3" onSubmit={unlock}>
-            <label className="text-sm font-medium text-text">
-              {t("audit.password")}
-              <input type="password" autoComplete="current-password" required maxLength={256}
-                className={`mt-1 block w-64 max-w-full ${intakeInputClass}`}
-                value={password} onChange={(event) => setPassword(event.target.value)} />
-            </label>
-            <button type="submit" className={intakeActionClass}>{t("intake.open")}</button>
-            {invalid && <p role="alert" className="text-sm text-danger-text">{t("audit.invalidPassword")}</p>}
-          </form>
-        ) : (
+        {authorization ? (
           <div className="flex flex-wrap items-end gap-3">
             <label className="w-72 max-w-full text-sm font-medium text-text">
               {t("intake.group")}
@@ -62,10 +37,9 @@ export function IntakeFormsPage() {
                 ))}
               </select>
             </label>
-            <button type="button" className={intakeButtonClass} onClick={() => lock()}>{t("audit.lock")}</button>
             {groups.isError && <p role="alert" className="text-sm text-danger-text">{t("intake.loadFailed")}</p>}
           </div>
-        )}
+        ) : <a href="#/login" className="app-action">{t("auth.signIn")}</a>}
       </Card>
       {authorization && groupId && <IntakeWorkflow key={groupId} groupId={groupId} authorization={authorization} onUnauthorized={onUnauthorized} />}
     </div>
@@ -178,8 +152,11 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
           <>
             <div className="flex flex-wrap items-center gap-3">
               <Chip tone={published ? "success" : "info"}>{t(published ? "intake.live" : ready ? "intake.draft" : "intake.pending")}</Chip>
-              {form.editUrl && <a className="text-sm font-medium text-primary underline" href={form.editUrl} target="_blank" rel="noreferrer">{t("intake.preview")}</a>}
-              {form.responderUrl && <a className="text-sm font-medium text-primary underline" href={form.responderUrl} target="_blank" rel="noreferrer">{t("intake.responder")}</a>}
+              {/* Links render only for https URLs — any other scheme (e.g. a
+                  compromised API response) is shown as plain text, never
+                  navigated. */}
+              {form.editUrl?.startsWith("https://") && <a className="text-sm font-medium text-primary underline" href={form.editUrl} target="_blank" rel="noreferrer">{t("intake.preview")}</a>}
+              {form.responderUrl?.startsWith("https://") && <a className="text-sm font-medium text-primary underline" href={form.responderUrl} target="_blank" rel="noreferrer">{t("intake.responder")}</a>}
             </div>
             <ol className="list-decimal space-y-2 pl-5 text-sm">
               {form.questions.map((question, index) => (

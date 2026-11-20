@@ -144,6 +144,23 @@ func (r *Repo) MarkSlackError(ctx context.Context) error {
 	return nil
 }
 
+// StoredSlackStatus returns the persisted Slack connection state without
+// contacting Slack — used for the public (stripped) status projection.
+func (r *Repo) StoredSlackStatus(ctx context.Context) (coreintegrations.SlackStatus, error) {
+	var status coreintegrations.SlackStatus
+	err := r.pool.QueryRow(ctx,
+		`SELECT connection_status, account_identifier, created_at FROM integrations
+		 WHERE provider='slack' ORDER BY created_at DESC LIMIT 1`).
+		Scan(&status.Status, &status.TeamID, &status.ConnectedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return coreintegrations.SlackStatus{Status: coreintegrations.StatusDisconnected}, nil
+	}
+	if err != nil {
+		return coreintegrations.SlackStatus{}, fmt.Errorf("store: stored slack status: %w", err)
+	}
+	return status, nil
+}
+
 func (r *Repo) RecordExternalOperation(ctx context.Context, op coreintegrations.ExternalOperation) error {
 	var errCategory *string
 	if op.Error != "" {

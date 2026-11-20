@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { fireLock, isUnlocked, onAuthChange } from "../lib/auth";
 import { navigate } from "../lib/router";
 import { useSettings } from "../i18n";
+import { api } from "../lib/api";
 
 export function useCoordinatorLock() {
   const queryClient = useQueryClient();
@@ -18,6 +19,7 @@ export function useCoordinatorLock() {
 export function CoordinatorSessionControl() {
   const { t } = useSettings();
   const [unlocked, setUnlocked] = useState(isUnlocked());
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => onAuthChange(() => setUnlocked(isUnlocked())), []);
 
@@ -30,11 +32,15 @@ export function CoordinatorSessionControl() {
   }
 
   return (
-    <button type="button" onClick={() => {
-      fireLock();
-      navigate("login");
+    <button type="button" disabled={loggingOut} onClick={async () => {
+      setLoggingOut(true);
+      try { await api.POST("/api/auth/logout"); } catch { /* clear local access even if the API is offline */ } finally {
+        fireLock();
+        setLoggingOut(false);
+        navigate("login");
+      }
     }} className="app-header-control app-header-danger">
-      {t("auth.lock")}
+      {t(loggingOut ? "login.working" : "auth.lock")}
     </button>
   );
 }

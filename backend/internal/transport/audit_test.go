@@ -39,6 +39,34 @@ func (f fixtureAuditMailer) SendMessage(_ context.Context, recipient, subject, b
 	return false, nil
 }
 
+// fixtureMemberChecker is a deterministic audit.MemberChecker: it reports the
+// configured status per role and proves expected members are passed through.
+type fixtureMemberChecker struct {
+	statusByRole map[string]string
+	seenRoles    []string
+}
+
+func (f *fixtureMemberChecker) CheckMembers(_ context.Context, channels []audit.Resource, expected []audit.ExpectedMember) []audit.Result {
+	seen := map[string]bool{}
+	var out []audit.Result
+	for _, m := range expected {
+		if seen[m.Role] {
+			continue
+		}
+		seen[m.Role] = true
+		f.seenRoles = append(f.seenRoles, m.Role)
+		status := f.statusByRole[m.Role]
+		if status == "" {
+			status = "unavailable"
+		}
+		out = append(out, audit.Result{
+			Resource: audit.Resource{Provider: "slack", Kind: "membership", Key: m.Role},
+			Status:   status,
+		})
+	}
+	return out
+}
+
 func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 	pool := newTestPool(t)
 	truncate(t, pool, "groups", "river_job")
@@ -49,14 +77,14 @@ func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 	}
 	audits := &jobs.AuditService{Store: repo, River: producer}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
 		transport.GroupProvisioning{Audit: audits, AuditNotifications: repo})
 	srv := httptestNew(app, t)
-	code, group := doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Audit Test","courseName":"Go","startDate":"2026-12-01"}`)
+	code, group := doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Audit Test","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create group: %d %v", code, group)
 	}
-	code, _ = doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Unused Draft","courseName":"Go","startDate":"2026-12-01"}`)
+	code, _ = doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Unused Draft","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create draft: %d", code)
 	}
@@ -86,9 +114,11 @@ func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 	}
 
 	workers := river.NewWorkers()
+	members := &fixtureMemberChecker{statusByRole: map[string]string{"teaching_staff": "ok", "lecturer": "missing_or_inaccessible"}}
 	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo,
-		Slack:  fixtureAuditChecker{"archived-channel": "archived"},
-		Google: fixtureAuditChecker{"classroom-course": "inactive", "root-folder": "ok", "child": "ok"}}, EmailEnabled: true})
+		Slack:   fixtureAuditChecker{"archived-channel": "archived"},
+		Google:  fixtureAuditChecker{"classroom-course": "inactive", "root-folder": "ok", "child": "ok"},
+		Members: members}, EmailEnabled: true})
 	river.AddWorker(workers, &jobs.DailyAuditWorker{Groups: repo})
 	mailer := fixtureAuditMailer{messages: make(chan string, 2)}
 	river.AddWorker(workers, &jobs.AuditEmailWorker{Store: repo, Mailer: mailer, Recipient: "coordinator@example.test"})
@@ -141,9 +171,11 @@ func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 				for _, result := range run.Results {
 					status[result.Key] = result.Status
 				}
-				if len(run.Results) != 12 || len(run.Issues) != 10 || status["course"] != "inactive" ||
+				if len(run.Results) != 15 || len(run.Issues) != 12 || status["course"] != "inactive" ||
 					status["intake"] != "unavailable" || status["audit-test-general"] != "archived" ||
-					status["root/General"] != "ok" || status["root/Student Data"] != "unlinked" {
+					status["root/General"] != "ok" || status["root/Student Data"] != "unlinked" ||
+					status["teaching_staff"] != "ok" || status["lecturer"] != "missing_or_inaccessible" ||
+					status["students"] != "unlinked" {
 					t.Fatalf("unexpected audit results: %+v", run)
 				}
 			}
@@ -221,5 +253,13 @@ func TestAuditNotificationsTrackChangesAndResolutions(t *testing.T) {
 			rows[i].EmailStatus != "disabled" {
 			t.Fatalf("unexpected notification: %+v", rows[i])
 		}
+	}
+	var persistentCount int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM notifications
+		WHERE group_id=$1 AND kind='audit_inconsistency'`, group.ID).Scan(&persistentCount); err != nil {
+		t.Fatal(err)
+	}
+	if persistentCount != 3 {
+		t.Fatalf("persistent audit notifications=%d, want 3 changed snapshots", persistentCount)
 	}
 }

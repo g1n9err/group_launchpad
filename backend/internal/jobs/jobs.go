@@ -1,8 +1,5 @@
-// Package jobs defines River workers for the automation engine (PRD §4.7,
-// §4.8, §8). This file contains the infrastructure: the queue client,
-// registration, and a reference job that proves the pipeline works.
-// Business-specific workers (launch, audit, announcements) are added in
-// later phases on top of this foundation.
+// Package jobs defines the River queue infrastructure and workers for group
+// launches, audits, announcements, and intake delivery (PRD §4.7, §4.8, §8).
 package jobs
 
 import (
@@ -36,9 +33,8 @@ type Config struct {
 // DefaultMaxWorkers is the number of concurrent workers for the default queue.
 const DefaultMaxWorkers = 10
 
-// NewWorkers returns the Workers registry with all job types registered.
-// This is the composition root for the job layer — business workers are
-// added in later phases via additional AddWorker calls.
+// NewWorkers returns the base Workers registry with the diagnostic ping job.
+// Production workers are registered by the API and worker composition roots.
 func NewWorkers(logger *slog.Logger) *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &PingWorker{Logger: logger})
@@ -56,7 +52,9 @@ func NewLaunchWorkers(
 	forms *integrations.FormsService,
 	groupsSvc *groups.Service,
 	staffEmails []string,
+	staffAssignments StaffAssignmentReader,
 	resultStore LaunchResultStore,
+	notifications NotificationCreator,
 ) *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &PingWorker{Logger: logger})
@@ -69,7 +67,9 @@ func NewLaunchWorkers(
 		FormsService:     forms,
 		GroupsService:    groupsSvc,
 		StaffEmails:      staffEmails,
+		StaffAssignments: staffAssignments,
 		ResultStore:      resultStore,
+		Notifications:    notifications,
 	})
 	return workers
 }

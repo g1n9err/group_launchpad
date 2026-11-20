@@ -100,8 +100,8 @@ export function groupOnboardingOptions(groupId: string | undefined) {
   };
 }
 
-export function useGroupOnboarding(groupId: string | undefined) {
-  return useQuery(groupOnboardingOptions(groupId));
+export function useGroupOnboarding(groupId: string | undefined, enabled = true) {
+  return useQuery({ ...groupOnboardingOptions(groupId), enabled: enabled && groupId !== undefined });
 }
 
 // Browser-navigation URL that starts the Google OAuth flow on the API origin.

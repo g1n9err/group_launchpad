@@ -134,7 +134,7 @@ func TestReadyz(t *testing.T) {
 func TestCreateGroupHappyPath(t *testing.T) {
 	srv := newApp(t)
 	status, body := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Python Backend 13","courseName":"Go/Python Full Stack","startDate":"2026-12-01"}`)
+		`{"name":"Python Backend 13","courseName":"Go/Python Full Stack","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if status != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (body %v)", status, body)
 	}
@@ -157,7 +157,7 @@ func TestCreateGroupHappyPath(t *testing.T) {
 
 func TestCreateGroupDuplicateNameRejected(t *testing.T) {
 	srv := newApp(t)
-	payload := `{"name":"Python Backend 13","courseName":"Go","startDate":"2026-12-01"}`
+	payload := `{"name":"Python Backend 13","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`
 	if status, _ := doJSON(t, srv, http.MethodPost, "/api/groups", payload); status != http.StatusCreated {
 		t.Fatalf("first create failed with %d", status)
 	}
@@ -176,9 +176,9 @@ func TestCreateGroupValidationErrors(t *testing.T) {
 		payload string
 		field   string
 	}{
-		{"missing name", `{"courseName":"Go","startDate":"2026-12-01"}`, "name"},
-		{"empty course", `{"name":"X","courseName":"","startDate":"2026-12-01"}`, "courseName"},
-		{"bad date", `{"name":"X","courseName":"Go","startDate":"2026-02-30"}`, "startDate"},
+		{"missing name", `{"courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`, "name"},
+		{"empty course", `{"name":"X","courseName":"","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`, "courseName"},
+		{"bad date", `{"name":"X","courseName":"Go","startDate":"2026-02-30", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`, "startDate"},
 		{"missing date", `{"name":"X","courseName":"Go"}`, "startDate"},
 	}
 	for _, tc := range tests {
@@ -214,7 +214,7 @@ func TestCreateGroupMalformedJSON(t *testing.T) {
 func TestGetGroupRoundTrip(t *testing.T) {
 	srv := newApp(t)
 	_, created := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Python Backend 13","courseName":"Go","startDate":"2026-12-01"}`)
+		`{"name":"Python Backend 13","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	id := created["id"].(string)
 
 	status, body := doJSON(t, srv, http.MethodGet, "/api/groups/"+id, "")
@@ -240,7 +240,7 @@ func TestGetGroupUnknownID(t *testing.T) {
 func TestListGroupsPagination(t *testing.T) {
 	srv := newApp(t)
 	for i := 1; i <= 3; i++ {
-		payload := fmt.Sprintf(`{"name":"Group %d","courseName":"Go","startDate":"2026-12-01"}`, i)
+		payload := fmt.Sprintf(`{"name":"Group %d","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`, i)
 		if status, _ := doJSON(t, srv, http.MethodPost, "/api/groups", payload); status != http.StatusCreated {
 			t.Fatalf("seed %d failed", i)
 		}

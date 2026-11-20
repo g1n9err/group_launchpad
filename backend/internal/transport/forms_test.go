@@ -62,11 +62,11 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	gateway := &fakeForms{}
 	service := &integrations.FormsService{Tokens: gateway, Gateway: gateway, Store: repo, Operations: repo}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
 		transport.GroupProvisioning{Forms: service})
 	srv := httptestNew(app, t)
 
-	code, group := doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Forms Provision","courseName":"Go","startDate":"2026-12-01"}`)
+	code, group := doJSON(t, srv, http.MethodPost, "/api/groups", `{"name":"Forms Provision","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create group: %d %v", code, group)
 	}
@@ -141,7 +141,7 @@ func TestImportFormsResponsesMatchesVerifiedRosterOnce(t *testing.T) {
 	}}
 	service := &integrations.FormsService{Tokens: gateway, Gateway: gateway, Store: repo, Operations: repo}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
 		transport.GroupProvisioning{Forms: service})
 	srv := httptestNew(app, t)
 	id := createGroupWithRoster(t, srv, "Forms Response Roster", []string{"first@example.test", "second@example.test", "third@example.test"})

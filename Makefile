@@ -42,7 +42,7 @@ api: ## run the API on :8080 (needs dev-up first)
 	cd backend && $(GO) run ./cmd/api
 
 .PHONY: worker
-worker: ## run the background worker (heartbeat until Day 2 River wiring)
+worker: ## run the River background worker (launches, audits, announcements, and delivery)
 	cd backend && $(GO) run ./cmd/worker
 
 .PHONY: fe
@@ -83,3 +83,7 @@ test: ## all backend tests (race) + frontend production build
 .PHONY: test-backend
 test-backend: ## backend tests only (needs dev-up)
 	cd backend && $(GO) test -race ./...
+
+.PHONY: e2e
+e2e: ## browser E2E: disposable Postgres + API + built SPA (no external services)
+	@bash scripts/e2e.sh

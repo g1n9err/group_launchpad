@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,18 +60,31 @@ type LaunchResultStore interface {
 	SaveLaunchResult(ctx context.Context, groupID uuid.UUID, status string, steps []LaunchStep) error
 }
 
+// StaffAssignmentReader reads per-group staff assignments (PRD §4.1).
+type StaffAssignmentReader interface {
+	StaffEmailsFor(ctx context.Context, groupID uuid.UUID) ([]string, error)
+}
+
+// GroupLaunchWorker coordinates all platforms for one group.
 type GroupLaunchWorker struct {
 	river.WorkerDefaults[GroupLaunchArgs]
 
 	SlackProvisioner SlackProvisioner
-	SlackConfigured  bool // true when SLACK_BOT_TOKEN is set
+	SlackConfigured  bool
 	ClassroomService *integrations.ClassroomService
 	DriveService     *integrations.DriveService
 	FormsService     *integrations.FormsService
 	GroupsService    *groups.Service
-	StaffEmails      []string
+	StaffEmails      []string              // global fallback (STAFF_EMAILS env)
+	StaffAssignments StaffAssignmentReader // per-group staff (overrides global)
 	ResultStore      LaunchResultStore
+	Notifications    NotificationCreator // creates coordinator notifications (PRD §4.9)
 	Logger           *slog.Logger
+}
+
+// NotificationCreator creates persistent coordinator notifications.
+type NotificationCreator interface {
+	InsertNotificationOnce(ctx context.Context, groupID *uuid.UUID, kind, severity, title, detail, dedupeKey string) error
 }
 
 // GroupData carries the group info needed by each provisioning step.
@@ -80,6 +94,7 @@ type GroupData struct {
 	CourseName    string
 	StartDate     string
 	StudentEmails []string // from roster
+	StaffEmails   []string // per-group staff+lecturers+TAs (PRD §4.1)
 }
 
 // GroupDataSource provides group info to the launch worker.
@@ -113,9 +128,34 @@ func (w *GroupLaunchWorker) Work(ctx context.Context, job *river.Job[GroupLaunch
 	for _, s := range roster.Students {
 		studentEmails = append(studentEmails, s.Email)
 	}
+
+	// Build GroupData: staff defaults to the worker's global STAFF_EMAILS;
+	// per-group staff_assignments override when present (PRD §4.1).
 	data := GroupData{
 		ID: groupID, Name: group.Name, CourseName: group.CourseName,
-		StartDate: group.StartDate.Format("2006-01-02"), StudentEmails: studentEmails,
+		StartDate:     group.StartDate.Format("2006-01-02"),
+		StudentEmails: studentEmails,
+		StaffEmails:   w.StaffEmails,
+	}
+	// Load per-group staff assignments (PRD §4.1). If reading fails, the
+	// launch fails — we do NOT silently fall back to global STAFF_EMAILS,
+	// because that could grant Drive/Classroom access to the wrong people.
+	if w.StaffAssignments != nil {
+		staff, err := w.StaffAssignments.StaffEmailsFor(ctx, groupID)
+		if err != nil {
+			logger.Error("group_launch: staff assignment read failed", "err", err.Error())
+			if w.ResultStore != nil {
+				_ = w.ResultStore.SaveLaunchResult(ctx, groupID, "failed", []LaunchStep{
+					{Platform: "staff", Status: StepFailed, Detail: "failed to read staff assignments: " + err.Error()},
+				})
+			}
+			return err // River retries
+		}
+		if len(staff) > 0 {
+			data.StaffEmails = staff
+		}
+		// If len(staff) == 0, keep the worker's global fallback — this is
+		// the intended legacy path when no per-group staff are configured.
 	}
 
 	result := LaunchResult{GroupID: groupID, Status: "running", Steps: make([]LaunchStep, 0, 4)}
@@ -127,19 +167,12 @@ func (w *GroupLaunchWorker) Work(ctx context.Context, job *river.Job[GroupLaunch
 	}
 
 	// ── Steps in order: Slack → Classroom → Drive → Forms ─────────────
-	steps := []struct {
-		name string
-		fn   func(context.Context, GroupData) LaunchStep
-	}{
-		{"slack", w.provisionSlackStep},
-		{"classroom", w.provisionClassroomStep},
-		{"drive", w.provisionDriveStep},
-		{"forms", w.provisionFormsStep},
-	}
-	for _, s := range steps {
-		step := s.fn(ctx, data)
-		result.Steps = append(result.Steps, step)
-		if step.Status == StepFailed {
+	outcomes := make(map[string]stepOutcome, 4)
+	for _, s := range launchSteps(w) {
+		outcome := s.fn(ctx, data)
+		outcomes[s.platform] = outcome
+		result.Steps = append(result.Steps, outcome.step)
+		if outcome.step.Status == StepFailed {
 			failed++
 		}
 	}
@@ -163,15 +196,139 @@ func (w *GroupLaunchWorker) Work(ctx context.Context, job *river.Job[GroupLaunch
 	logger.Info("group_launch finished", "status", result.Status, "failed_steps", failed)
 
 	// Persist the outcome for the coordinator's status endpoint.
-	// A persistence failure IS a job failure — River retries, ensuring
-	// the coordinator never sees a stale or missing status.
 	if w.ResultStore != nil {
 		if err := w.ResultStore.SaveLaunchResult(ctx, groupID, result.Status, result.Steps); err != nil {
 			logger.Error("group_launch: failed to persist result", "err", err.Error())
-			return err // River will retry the job
+			return err
 		}
 	}
+
+	// Create a coordinator notification (PRD §4.9).
+	if w.Notifications != nil {
+		kind := "launch_" + result.Status
+		if result.Status == "completed" {
+			kind = "launch_completed"
+		} else if result.Status == "partially_failed" {
+			kind = "launch_partially_failed"
+		} else {
+			kind = "launch_failed"
+		}
+		severity := "info"
+		if result.Status == "partially_failed" {
+			severity = "warning"
+		} else if result.Status == "failed" {
+			severity = "error"
+		}
+		title := fmt.Sprintf("Group launch %s", result.Status)
+		detail := ""
+		for _, s := range result.Steps {
+			if s.Status == StepFailed || s.Status == StepPartiallyFailed {
+				detail += s.Platform + ": " + s.Detail + "; "
+			}
+		}
+		dedupeKey := fmt.Sprintf("group_launch:%d", job.ID)
+		if err := w.Notifications.InsertNotificationOnce(ctx, &groupID, kind, severity, title, detail, dedupeKey); err != nil {
+			logger.Error("group_launch: failed to create coordinator notification", "err", err.Error())
+			return err // River retries instead of silently losing the notification.
+		}
+
+		// Per-platform failure notifications (PRD §4.9: "Slack invitation
+		// failure", "Classroom or Drive creation failure"). Details carry
+		// counts only — never student or staff email addresses. Dedupe keys
+		// are scoped to this River job, so retries never duplicate rows.
+		for _, note := range platformFailureNotifications(outcomes) {
+			key := fmt.Sprintf("group_launch:%d:%s", job.ID, note.kind)
+			if err := w.Notifications.InsertNotificationOnce(ctx, &groupID, note.kind, note.severity, note.title, note.detail, key); err != nil {
+				logger.Error("group_launch: failed to create platform notification", "kind", note.kind, "err", err.Error())
+				return err
+			}
+		}
+	}
+
 	return nil
+}
+
+// stepOutcome pairs a launch step with the extra breakdown its notification
+// needs (currently only Slack invite failures).
+type stepOutcome struct {
+	step        LaunchStep
+	inviteFails int
+}
+
+// launchStepRunner runs one platform step and records its platform name.
+type launchStepRunner struct {
+	platform string
+	fn       func(context.Context, GroupData) stepOutcome
+}
+
+func launchSteps(w *GroupLaunchWorker) []launchStepRunner {
+	return []launchStepRunner{
+		{"slack", func(ctx context.Context, d GroupData) stepOutcome {
+			step, invites := w.provisionSlackStepDetailed(ctx, d)
+			return stepOutcome{step: step, inviteFails: invites}
+		}},
+		{"classroom", func(ctx context.Context, d GroupData) stepOutcome {
+			return stepOutcome{step: w.provisionClassroomStep(ctx, d)}
+		}},
+		{"drive", func(ctx context.Context, d GroupData) stepOutcome {
+			return stepOutcome{step: w.provisionDriveStep(ctx, d)}
+		}},
+		{"forms", func(ctx context.Context, d GroupData) stepOutcome {
+			return stepOutcome{step: w.provisionFormsStep(ctx, d)}
+		}},
+	}
+}
+
+// platformFailureNotifications maps failed steps to PRD §4.9 notification
+// kinds. Slack invitation failures are reported separately from channel
+// creation problems; everything is PII-safe (counts, no addresses).
+type platformNotification struct {
+	kind, severity, title, detail string
+}
+
+func platformFailureNotifications(outcomes map[string]stepOutcome) []platformNotification {
+	var notes []platformNotification
+	slack, ok := outcomes["slack"]
+	if ok && slack.inviteFails > 0 {
+		severity := "warning"
+		if slack.step.Status == StepFailed {
+			severity = "error"
+		}
+		notes = append(notes, platformNotification{
+			kind: "invite_failure", severity: severity,
+			title:  "Slack invitation failure",
+			detail: fmt.Sprintf("%d Slack invitation(s) failed during group launch", slack.inviteFails),
+		})
+	}
+	classroom, ok := outcomes["classroom"]
+	if ok && (classroom.step.Status == StepFailed || classroom.step.Status == StepPartiallyFailed) {
+		notes = append(notes, platformNotification{
+			kind: "classroom_failure", severity: severityOf(classroom.step),
+			title: "Classroom provisioning failure", detail: classroom.step.Detail,
+		})
+	}
+	drive, ok := outcomes["drive"]
+	if ok && (drive.step.Status == StepFailed || drive.step.Status == StepPartiallyFailed) {
+		notes = append(notes, platformNotification{
+			kind: "drive_failure", severity: severityOf(drive.step),
+			title: "Drive provisioning failure", detail: drive.step.Detail,
+		})
+	}
+	forms, ok := outcomes["forms"]
+	if ok && forms.step.Status == StepFailed {
+		notes = append(notes, platformNotification{
+			kind: "forms_failure", severity: "error",
+			title: "Intake form provisioning failure", detail: forms.step.Detail,
+		})
+	}
+	return notes
+}
+
+func severityOf(step LaunchStep) string {
+	if step.Status == StepFailed {
+		return "error"
+	}
+	return "warning"
 }
 
 // ProvisionSlackForTest exposes the Slack step for unit testing.
@@ -197,29 +354,77 @@ func (w *GroupLaunchWorker) ProvisionFormsForTest(ctx context.Context, data Grou
 // ── Per-platform provisioning steps ────────────────────────────────────────
 
 func (w *GroupLaunchWorker) provisionSlackStep(ctx context.Context, data GroupData) LaunchStep {
+	step, _ := w.provisionSlackStepDetailed(ctx, data)
+	return step
+}
+
+// provisionSlackStepDetailed additionally reports the invitation failure
+// count so the notification layer can emit invite_failure (PRD §4.9).
+func (w *GroupLaunchWorker) provisionSlackStepDetailed(ctx context.Context, data GroupData) (LaunchStep, int) {
 	if w.SlackProvisioner == nil || !w.SlackConfigured {
-		return LaunchStep{Platform: "slack", Status: StepSkipped, Detail: "not configured"}
+		return LaunchStep{Platform: "slack", Status: StepSkipped, Detail: "not configured"}, 0
 	}
 	result, err := w.SlackProvisioner.Provision(ctx, integrations.ProvisionInput{
-		GroupID:    data.ID,
-		GroupName:  data.Name,
-		CourseName: data.CourseName,
-		StartDate:  data.StartDate,
+		GroupID:      data.ID,
+		GroupName:    data.Name,
+		CourseName:   data.CourseName,
+		StartDate:    data.StartDate,
+		InviteEmails: launchInviteEmails(w.effectiveStaff(data), data.StudentEmails),
 	})
 	if err != nil {
-		return LaunchStep{Platform: "slack", Status: StepFailed, Detail: err.Error()}
+		return LaunchStep{Platform: "slack", Status: StepFailed, Detail: err.Error()}, 0
 	}
-	var failCount int
-	for _, inv := range result.Invites {
-		if inv.Status == "failed" {
-			failCount++
+	var channelFailures, inviteFailures, welcomeFailures int
+	for _, channel := range result.Channels {
+		if channel.Status == integrations.ChannelFailed {
+			channelFailures++
 		}
 	}
-	if failCount > 0 {
-		return LaunchStep{Platform: "slack", Status: StepPartiallyFailed,
-			Detail: fmt.Sprintf("channels ok, %d invite failures", failCount)}
+	for _, inv := range result.Invites {
+		if inv.Status == integrations.InviteFailed {
+			inviteFailures++
+		}
 	}
-	return LaunchStep{Platform: "slack", Status: StepSucceeded}
+	for _, welcome := range result.Welcomes {
+		if welcome.Status == integrations.WelcomeFailed {
+			welcomeFailures++
+		}
+	}
+	if len(result.Channels) == 0 || channelFailures == len(result.Channels) {
+		return LaunchStep{Platform: "slack", Status: StepFailed, Detail: "all Slack channels failed"}, inviteFailures
+	}
+	if channelFailures+inviteFailures+welcomeFailures > 0 {
+		return LaunchStep{Platform: "slack", Status: StepPartiallyFailed,
+			Detail: fmt.Sprintf("%d channel, %d invite, %d welcome failures", channelFailures, inviteFailures, welcomeFailures)}, inviteFailures
+	}
+	return LaunchStep{Platform: "slack", Status: StepSucceeded}, 0
+}
+
+// effectiveStaff returns per-group staff when available, falling back to
+// the worker's global STAFF_EMAILS. Used by every step so the fallback
+// is applied consistently regardless of how the step is invoked.
+func (w *GroupLaunchWorker) effectiveStaff(data GroupData) []string {
+	if len(data.StaffEmails) > 0 {
+		return data.StaffEmails
+	}
+	return w.StaffEmails
+}
+
+func launchInviteEmails(staff, students []string) []string {
+	seen := make(map[string]struct{}, len(staff)+len(students))
+	combined := make([]string, 0, len(staff)+len(students))
+	for _, email := range append(append([]string(nil), staff...), students...) {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email == "" {
+			continue
+		}
+		if _, exists := seen[email]; exists {
+			continue
+		}
+		seen[email] = struct{}{}
+		combined = append(combined, email)
+	}
+	return combined
 }
 
 func (w *GroupLaunchWorker) provisionClassroomStep(ctx context.Context, data GroupData) LaunchStep {
@@ -244,8 +449,8 @@ func (w *GroupLaunchWorker) provisionClassroomStep(ctx context.Context, data Gro
 		}
 	}
 	// Assign teachers/staff (PRD §4.3).
-	if len(w.StaffEmails) > 0 {
-		teacherResults := w.ClassroomService.AssignTeachers(ctx, data.ID, courseID, w.StaffEmails)
+	if len(w.effectiveStaff(data)) > 0 {
+		teacherResults := w.ClassroomService.AssignTeachers(ctx, data.ID, courseID, w.effectiveStaff(data))
 		var teacherFail int
 		for _, r := range teacherResults {
 			if r.Err != nil {
@@ -269,7 +474,7 @@ func (w *GroupLaunchWorker) provisionDriveStep(ctx context.Context, data GroupDa
 		return LaunchStep{Platform: "drive", Status: StepFailed, Detail: err.Error()}
 	}
 	if err := w.DriveService.ApplyAccessRules(ctx, data.ID, folders, integrations.DriveAccessRules{
-		StaffEmails:   w.StaffEmails,
+		StaffEmails:   w.effectiveStaff(data),
 		StudentEmails: data.StudentEmails,
 	}); err != nil {
 		return LaunchStep{Platform: "drive", Status: StepPartiallyFailed,

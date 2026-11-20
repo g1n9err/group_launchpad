@@ -39,12 +39,12 @@ func TestClassroomProvisionReusesPersistedCourse(t *testing.T) {
 	fake := &fakeClassroom{}
 	service := &integrations.ClassroomService{Tokens: fake, Gateway: fake, Store: repo, Operations: repo}
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping,
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping,
 		transport.GroupProvisioning{Classroom: service})
 	srv := httptestNew(app, t)
 
 	code, group := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Classroom Provision","courseName":"Go","startDate":"2026-12-01"}`)
+		`{"name":"Classroom Provision","courseName":"Go","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create group: %d %v", code, group)
 	}

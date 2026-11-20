@@ -16,8 +16,9 @@ type IntakeDeliveryService interface {
 	Status(context.Context, uuid.UUID) ([]integrations.IntakeDelivery, error)
 }
 
+// DistributeGroupForm POST — coordinator/admin (writes + PII recipients).
 func (h *Handlers) DistributeGroupForm(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.delivery == nil || !h.deliveryEnabled {
@@ -30,8 +31,10 @@ func (h *Handlers) DistributeGroupForm(c echo.Context, groupID gen.GroupId) erro
 	return c.JSON(http.StatusAccepted, toIntakeDeliveries(deliveries))
 }
 
+// GetGroupFormDeliveries GET — recipient emails are student PII:
+// coordinator/admin only.
 func (h *Handlers) GetGroupFormDeliveries(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	if h.delivery == nil {

@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"launchpad/internal/core"
 	"launchpad/internal/core/announcements"
@@ -110,11 +112,76 @@ func (r *Repo) StartAnnouncement(ctx context.Context, id uuid.UUID) (announcemen
 }
 
 func (r *Repo) FinishAnnouncement(ctx context.Context, id uuid.UUID, status, externalID, message string) error {
-	_, err := r.pool.Exec(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var groupID uuid.UUID
+	err = tx.QueryRow(ctx, `
 		UPDATE scheduled_announcements
 		SET status=$2, external_message_id=NULLIF($3,''), error_message=NULLIF($4,''),
 		    published_at=CASE WHEN $2='published' THEN now() END, updated_at=now()
 		WHERE id=$1 AND status='publishing'
-	`, id, status, externalID, message)
-	return err
+		RETURNING group_id
+	`, id, status, externalID, message).Scan(&groupID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return tx.Commit(ctx) // already finished; don't create a duplicate notification
+	}
+	if err != nil {
+		return err
+	}
+	err = insertAnnouncementNotification(ctx, tx, groupID, id, status, message)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+type announcementNotificationExecutor interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertAnnouncementNotification(ctx context.Context, exec announcementNotificationExecutor, groupID, id uuid.UUID, status, message string) error {
+	kind, severity, title, detail := "announcement_failed", "error", "Announcement delivery failed", message
+	if status == "published" {
+		kind, severity, title, detail = "announcement_delivered", "info", "Announcement delivered", "Announcement was published to Slack."
+	} else if status == "unknown" {
+		severity, title = "warning", "Announcement delivery outcome unknown"
+	}
+	_, err := exec.Exec(ctx, `INSERT INTO notifications (group_id, kind, severity, title, detail, dedupe_key)
+		VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (dedupe_key) DO NOTHING`,
+		groupID, kind, severity, title, detail, "announcement:"+id.String())
+	if err != nil {
+		return fmt.Errorf("store: insert announcement notification: %w", err)
+	}
+	return nil
+}
+
+// EnsureAnnouncementNotification repairs the notification side effect when a
+// previous worker attempt finished the announcement but failed before River
+// acknowledged the job.
+func (r *Repo) EnsureAnnouncementNotification(ctx context.Context, id uuid.UUID) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var groupID uuid.UUID
+	var status, message string
+	err = tx.QueryRow(ctx, `SELECT group_id,
+		CASE WHEN status='publishing' AND updated_at < now() - interval '2 minutes' THEN 'unknown' ELSE status END,
+		CASE WHEN status='publishing' AND updated_at < now() - interval '2 minutes'
+		     THEN 'publication was interrupted; Slack acceptance is unknown' ELSE COALESCE(error_message, '') END
+		FROM scheduled_announcements WHERE id=$1`, id).Scan(&groupID, &status, &message)
+	if err != nil {
+		return err
+	}
+	if status != "published" && status != "failed" && status != "unknown" {
+		return tx.Commit(ctx)
+	}
+	if err := insertAnnouncementNotification(ctx, tx, groupID, id, status, message); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

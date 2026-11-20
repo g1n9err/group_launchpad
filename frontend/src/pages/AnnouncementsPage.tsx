@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { intakeActionClass, intakeButtonClass, intakeInputClass } from "../lib/intakeForm";
 import { useIntakeGroups } from "../lib/queries";
 import type { components } from "../lib/schema";
+import { fireLock, getAuthHeader, useAuthUser } from "../lib/auth";
 
 type Schedule = components["schemas"]["AnnouncementSchedule"];
 type Announcement = components["schemas"]["ScheduledAnnouncement"];
@@ -14,26 +15,11 @@ const types = ["welcome", "staff_intro", "rules", "reminder", "general"] as cons
 
 export function AnnouncementsPage() {
   const { t } = useSettings();
-  const [password, setPassword] = useState("");
-  const [authorization, setAuthorization] = useState("");
+  const user = useAuthUser();
+  const authorization = user ? getAuthHeader().Authorization ?? "" : "";
   const [groupId, setGroupId] = useState("");
-  const [rejected, setRejected] = useState(false);
   const groups = useIntakeGroups(Boolean(authorization));
-
-  const lock = useCallback((invalid: boolean) => {
-    setAuthorization("");
-    setGroupId("");
-    setRejected(invalid);
-  }, []);
-  const onUnauthorized = useCallback(() => lock(true), [lock]);
-
-  function unlock(event: FormEvent) {
-    event.preventDefault();
-    const bytes = new TextEncoder().encode("coordinator:" + password);
-    setAuthorization("Basic " + btoa(String.fromCharCode(...bytes)));
-    setPassword("");
-    setRejected(false);
-  }
+  const onUnauthorized = useCallback(() => fireLock(), []);
 
   return (
     <div className="space-y-5">
@@ -48,23 +34,11 @@ export function AnnouncementsPage() {
                 {groups.data?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
               </select>
             </label>
-            <button type="button" className={intakeButtonClass} onClick={() => lock(false)}>{t("audit.lock")}</button>
             {groups.isPending && <p role="status">{t("list.loading")}</p>}
             {groups.isError && <p role="alert">{t("intake.loadFailed")}</p>}
             {groups.data?.length === 0 && <p role="status">{t("list.empty")}</p>}
           </div>
-        ) : (
-          <form className="flex flex-wrap items-end gap-3" onSubmit={unlock}>
-            <label className="text-sm font-medium text-text">
-              {t("audit.password")}
-              <input type="password" autoComplete="current-password" required maxLength={256}
-                className={`mt-1 block w-64 max-w-full ${intakeInputClass}`}
-                value={password} onChange={(event) => setPassword(event.target.value)} />
-            </label>
-            <button type="submit" className={intakeActionClass}>{t("announcements.open")}</button>
-            {rejected && <p role="alert" className="text-sm text-danger-text">{t("audit.invalidPassword")}</p>}
-          </form>
-        )}
+        ) : <a href="#/login" className="app-action">{t("auth.signIn")}</a>}
       </Card>
       {authorization && groupId && (
         <GroupAnnouncements key={groupId} {...{ groupId, authorization, onUnauthorized }} />

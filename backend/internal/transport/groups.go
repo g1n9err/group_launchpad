@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"launchpad/internal/core/auth"
 	"launchpad/internal/core/groups"
 	gen "launchpad/internal/transport/gen"
 )
@@ -34,28 +36,65 @@ func (h *Handlers) GetReadiness(c echo.Context) error {
 
 // ── groups ────────────────────────────────────────────────────────────────
 
-// ListGroups GET /api/groups
+// ListGroups GET /api/groups — authenticated. Coordinator/admin see every
+// group; lecturers/TAs only the groups they participate in (PRD §3.3, §3.4);
+// students and anonymous callers are rejected.
 func (h *Handlers) ListGroups(c echo.Context, params gen.ListGroupsParams) error {
-	limit, offset := 50, 0 // spec defaults
+	id, err := h.resolveIdentity(c)
+	if err != nil {
+		return err
+	}
+	switch id.Role {
+	case auth.RoleCoordinator, auth.RoleAdmin:
+		items, total, err := h.groups.List(c.Request().Context(), limitOf(params.Limit), offsetOf(params.Offset))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, gen.GroupsPage{Data: toAPIGroups(items), Page: pageOf(params, total)})
+	case auth.RoleLecturer, auth.RoleTA:
+		if h.assignedGroups == nil {
+			return errForbidden() // cannot scope the listing → fail closed
+		}
+		items, total, err := h.assignedGroups.ListAssignedGroups(c.Request().Context(), id.UserID, normalizeEmailForAuthz(id.Email), limitOf(params.Limit), offsetOf(params.Offset))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, gen.GroupsPage{Data: toAPIGroups(items), Page: pageOf(params, total)})
+	case "":
+		return errUnauthorized(c)
+	default: // student — the PRD grants students no API surface
+		return errForbidden()
+	}
+}
+
+func limitOf(v *int) int {
+	if v != nil && *v > 0 {
+		return *v
+	}
+	return 50
+}
+
+func offsetOf(v *int) int {
+	if v != nil && *v > 0 {
+		return *v
+	}
+	return 0
+}
+
+func pageOf(params gen.ListGroupsParams, total int) gen.Page {
+	limit, offset := 50, 0
 	if params.Limit != nil {
 		limit = *params.Limit
 	}
 	if params.Offset != nil {
 		offset = *params.Offset
 	}
-	items, total, err := h.groups.List(c.Request().Context(), limit, offset)
-	if err != nil {
-		return err
-	}
-	return c.JSON(http.StatusOK, gen.GroupsPage{
-		Data: toAPIGroups(items),
-		Page: gen.Page{Limit: limit, Offset: offset, Total: total},
-	})
+	return gen.Page{Limit: limit, Offset: offset, Total: total}
 }
 
-// CreateGroup POST /api/groups
+// CreateGroup POST /api/groups — coordinator/admin.
 func (h *Handlers) CreateGroup(c echo.Context) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	var body gen.GroupCreate
@@ -63,10 +102,13 @@ func (h *Handlers) CreateGroup(c echo.Context) error {
 		return errBadRequest("invalid request body: " + err.Error())
 	}
 	g, err := h.groups.Create(c.Request().Context(), groups.CreateInput{
-		Name:          body.Name,
-		CourseName:    body.CourseName,
-		StartDate:     body.StartDate, // Date is a string alias; the service parses it
-		StudentEmails: derefEmails(body.StudentEmails),
+		Name:           body.Name,
+		CourseName:     body.CourseName,
+		StartDate:      body.StartDate,
+		StudentEmails:  derefEmails(body.StudentEmails),
+		StaffEmails:    derefEmails(&body.StaffEmails),
+		LecturerEmails: derefEmails(&body.LecturerEmails),
+		TAEmails:       derefEmails(body.TaEmails),
 	})
 	if err != nil {
 		return err
@@ -74,8 +116,12 @@ func (h *Handlers) CreateGroup(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toAPIGroup(g))
 }
 
-// GetGroup GET /api/groups/{groupId}
+// GetGroup GET /api/groups/{groupId} — group-scoped read: coordinator/admin
+// for any group; lecturer/TA only for groups they participate in.
 func (h *Handlers) GetGroup(c echo.Context, groupId gen.GroupId) error {
+	if _, err := h.requireGroupRead(c, uuid.UUID(groupId)); err != nil {
+		return err
+	}
 	g, err := h.groups.Get(c.Request().Context(), groupId.String())
 	if err != nil {
 		return err
@@ -84,9 +130,10 @@ func (h *Handlers) GetGroup(c echo.Context, groupId gen.GroupId) error {
 }
 
 // GetGroupOnboarding GET /api/groups/{groupId}/onboarding — exposes student
-// names and emails (PRD 4.6): coordinator-only.
+// names and emails (PRD 4.6): coordinator/admin only. Lecturers and TAs do
+// not receive roster access (PRD §9.2 restricted student data).
 func (h *Handlers) GetGroupOnboarding(c echo.Context, groupId gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	report, err := h.groups.Onboarding(c.Request().Context(), groupId.String())

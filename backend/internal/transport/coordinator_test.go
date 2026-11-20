@@ -9,7 +9,7 @@ import (
 
 func TestCoordinatorRoutesRejectUnauthorizedRequests(t *testing.T) {
 	cfg := testConfig()
-	srv := httptestNew(transport.New(cfg, discardLogger(), nil, nil, nil, nil, nil, nil), t)
+	srv := httptestNew(transport.New(cfg, discardLogger(), nil, nil, nil, nil, nil, nil, nil), t)
 	group := "/api/groups/00000000-0000-0000-0000-000000000001"
 	routes := []struct {
 		method string
@@ -26,6 +26,9 @@ func TestCoordinatorRoutesRejectUnauthorizedRequests(t *testing.T) {
 		{http.MethodPost, group + "/audits"},
 		{http.MethodGet, group + "/audits"},
 		{http.MethodGet, "/api/audit-notifications"},
+		{http.MethodGet, "/api/notifications"},
+		{http.MethodPost, "/api/notifications/00000000-0000-0000-0000-000000000001/read"},
+		{http.MethodPost, "/api/notifications/read-all"},
 		{http.MethodGet, group + "/announcements"},
 		{http.MethodPost, group + "/announcements"},
 		{http.MethodPost, group + "/forms/responses/import"},
@@ -59,7 +62,7 @@ func TestCoordinatorRoutesRejectUnauthorizedRequests(t *testing.T) {
 }
 
 func TestCoordinatorRoutesRejectCrossOriginWrites(t *testing.T) {
-	srv := httptestNew(transport.New(testConfig(), discardLogger(), nil, nil, nil, nil, nil, nil), t)
+	srv := httptestNew(transport.New(testConfig(), discardLogger(), nil, nil, nil, nil, nil, nil, nil), t)
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/groups/00000000-0000-0000-0000-000000000001/launch", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +82,7 @@ func TestCoordinatorRoutesRejectCrossOriginWrites(t *testing.T) {
 func TestCoordinatorAccessFailsClosed(t *testing.T) {
 	cfg := testConfig()
 	cfg.CoordinatorPassword = ""
-	srv := httptestNew(transport.New(cfg, discardLogger(), nil, nil, nil, nil, nil, nil), t)
+	srv := httptestNew(transport.New(cfg, discardLogger(), nil, nil, nil, nil, nil, nil, nil), t)
 	code, body := doJSON(t, srv, http.MethodPost, "/api/groups/00000000-0000-0000-0000-000000000001/launch", "")
 	if code != http.StatusServiceUnavailable || errCode(t, body) != "NOT_READY" {
 		t.Fatalf("status=%d body=%v; want coordinator access unavailable", code, body)

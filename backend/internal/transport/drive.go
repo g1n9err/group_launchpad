@@ -3,14 +3,16 @@ package transport
 import (
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"launchpad/internal/core"
 	"launchpad/internal/core/integrations"
 	gen "launchpad/internal/transport/gen"
 )
 
 func (h *Handlers) ProvisionGroupDrive(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.drive == nil {
@@ -36,8 +38,19 @@ func (h *Handlers) ProvisionGroupDrive(c echo.Context, groupID gen.GroupId) erro
 	for _, s := range roster.Students {
 		studentEmails = append(studentEmails, s.Email)
 	}
+	// Use per-group staff assignments (PRD §4.1), falling back to global.
+	staffEmails := h.staffEmails
+	if h.staffAssignmentReader != nil {
+		perGroup, err := h.staffAssignmentReader.StaffEmailsFor(ctx, group.ID)
+		if err != nil {
+			return &core.AppError{Code: core.CodeUpstream, Message: "failed to read staff assignments"}
+		}
+		if len(perGroup) > 0 {
+			staffEmails = perGroup
+		}
+	}
 	if err := h.drive.ApplyAccessRules(ctx, group.ID, folders, integrations.DriveAccessRules{
-		StaffEmails:   h.staffEmails, // from config/coordinator setup
+		StaffEmails:   staffEmails,
 		StudentEmails: studentEmails,
 	}); err != nil {
 		// Permissions failure doesn't fail provisioning — folders exist.

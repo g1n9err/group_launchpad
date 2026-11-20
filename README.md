@@ -49,6 +49,15 @@ Without a password these routes return HTTP 503. For a browser-based OAuth
 connection, open the Google Connect URL and enter the coordinator credentials
 when prompted. Use HTTPS for coordinator traffic outside local development.
 
+Multi-role authentication (PRD §3, §7.4) adds per-user accounts — admin,
+coordinator, lecturer, TA, student — via `POST /api/auth/login` (bcrypt
+credentials, expiring hashed bearer sessions, refresh and logout). Lecturers
+and TAs get read-only, group-scoped access to their assigned groups; students
+have no API surface (they use Google Forms and Slack directly). Set
+`ADMIN_EMAIL` + `ADMIN_INITIAL_PASSWORD` once to bootstrap the first admin,
+then manage accounts through the admin API. The full route-by-role
+authorization matrix is documented in [`backend/AUTH.md`](backend/AUTH.md).
+
 **Never commit `.env`** — it is git-ignored.
 
 ### 2. Start PostgreSQL
@@ -131,6 +140,23 @@ provider accepted it.
 ```bash
 cd frontend && npm run build   # TypeScript type-check + Vite production build
 ```
+
+### Browser E2E (login, logout, role-based navigation, scoped groups)
+
+A Playwright suite drives real Chromium against a disposable stack — a
+throwaway PostgreSQL container, the API with fake throwaway credentials
+(Slack/Google disabled, no external service is contacted), and the production
+SPA build served by `vite preview`:
+
+```bash
+make e2e          # from the repo root; runs the full disposable stack + tests
+```
+
+It covers: unauthenticated users trigger no protected queries, invalid login,
+Bearer-only-in-memory token storage, coordinator navigation, the lecturer's
+scoped groups view, URL-hopping to a foreign group (IDOR), student lockdown,
+and logout cache clearing. Requires Docker and a one-time
+`npx playwright install chromium`.
 
 ### Both
 

@@ -97,7 +97,7 @@ func TestSlackStatusInvalidTokenFirstCheckReportsErrorWithoutPersisting(t *testi
 	truncate(t, pool, "integrations", "external_operation_logs")
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		integrations.NewSlackAuthService(store.New(pool), &fakeSlackGateway{err: integrations.ErrSlackAuthRejected}, true),
-		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), pool.Ping)
+		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), nil, pool.Ping)
 	srv := httptestNew(app, t)
 
 	status, body := doJSON(t, srv, http.MethodGet, "/api/integrations/slack/status", "")
@@ -125,7 +125,7 @@ func TestSlackStatusRevokedTokenAfterConnectFlipsRowToError(t *testing.T) {
 	// Phase 1: healthy token — connects and persists the row.
 	healthy := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		integrations.NewSlackAuthService(store.New(pool), &fakeSlackGateway{workspace: integrations.SlackWorkspace{TeamID: "TTESTWS", TeamName: "WS"}}, true),
-		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), pool.Ping)
+		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), nil, pool.Ping)
 	srv1 := httptestNew(healthy, t)
 	if s, body := doJSON(t, srv1, http.MethodGet, "/api/integrations/slack/status", ""); s != http.StatusOK || body["status"] != "connected" {
 		t.Fatalf("phase 1: status=%d body=%v", s, body)
@@ -134,7 +134,7 @@ func TestSlackStatusRevokedTokenAfterConnectFlipsRowToError(t *testing.T) {
 	// Phase 2: token revoked — same workspace, row flips to error.
 	revoked := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		integrations.NewSlackAuthService(store.New(pool), &fakeSlackGateway{err: integrations.ErrSlackAuthRejected}, true),
-		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), pool.Ping)
+		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), nil, pool.Ping)
 	srv2 := httptestNew(revoked, t)
 	s, body := doJSON(t, srv2, http.MethodGet, "/api/integrations/slack/status", "")
 	if s != http.StatusOK || body["status"] != "error" {
@@ -155,7 +155,7 @@ func TestSlackStatusNetworkFailureDoesNotPersistError(t *testing.T) {
 	truncate(t, pool, "integrations", "external_operation_logs")
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		integrations.NewSlackAuthService(store.New(pool), &fakeSlackGateway{err: integrations.ErrSlackUnavailable}, true),
-		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), pool.Ping)
+		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), nil, pool.Ping)
 	srv := httptestNew(app, t)
 
 	status, body := doJSON(t, srv, http.MethodGet, "/api/integrations/slack/status", "")

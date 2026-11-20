@@ -37,7 +37,7 @@ func countRowsSimple(t *testing.T, pool *pgxpool.Pool, query string) int {
 func newAppForPool(t *testing.T, pool *pgxpool.Pool) http.Handler {
 	t.Helper()
 	return transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
-		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping)
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping)
 }
 func TestStudentIngestionEndToEnd(t *testing.T) {
 	pool := newTestPool(t)
@@ -46,7 +46,7 @@ func TestStudentIngestionEndToEnd(t *testing.T) {
 	srv := httptestNew(app, t)
 
 	// ── Create with students (case/whitespace variants on purpose).
-	body := `{"name":"Python Backend 13","courseName":"Full-Stack","startDate":"2026-12-01",
+	body := `{"name":"Python Backend 13","courseName":"Full-Stack","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],
 	          "studentEmails":["  Alice@School.EDU  ","bob@school.edu","CarOL@school.edu"]}`
 	status, resp := doJSON(t, srv, http.MethodPost, "/api/groups", body)
 	if status != http.StatusCreated {
@@ -74,7 +74,7 @@ func TestStudentIngestionEndToEnd(t *testing.T) {
 	}
 
 	// ── Existing-user reuse: second group shares one student — no new user.
-	body2 := `{"name":"Data Science 7","courseName":"ML","startDate":"2027-01-11",
+	body2 := `{"name":"Data Science 7","courseName":"ML","startDate":"2027-01-11", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],
 	           "studentEmails":["alice@school.edu","new@school.edu"]}`
 	if status, _ := doJSON(t, srv, http.MethodPost, "/api/groups", body2); status != http.StatusCreated {
 		t.Fatalf("second create failed: %d", status)
@@ -91,7 +91,7 @@ func TestStudentIngestionEndToEnd(t *testing.T) {
 	if _, err := pool.Exec(ctxbg(), seed); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	body3 := `{"name":"Reuse Test 1","courseName":"X","startDate":"2026-12-01",
+	body3 := `{"name":"Reuse Test 1","courseName":"X","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],
 	           "studentEmails":["old.student@school.edu"]}`
 	if status, _ := doJSON(t, srv, http.MethodPost, "/api/groups", body3); status != http.StatusCreated {
 		t.Fatalf("case-variant create failed: %d", status)
@@ -105,7 +105,7 @@ func TestStudentIngestionEndToEnd(t *testing.T) {
 
 	// ── Duplicate-in-request rejection (422, nothing persisted).
 	before := countRowsSimple(t, pool, `SELECT count(*) FROM users`)
-	dup := `{"name":"Dup Reject","courseName":"X","startDate":"2026-12-01",
+	dup := `{"name":"Dup Reject","courseName":"X","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],
 	         "studentEmails":["same@school.edu","SAME@school.edu"]}`
 	status4, resp4 := doJSON(t, srv, http.MethodPost, "/api/groups", dup)
 	if status4 != http.StatusUnprocessableEntity {
@@ -191,7 +191,7 @@ func TestConcurrentGroupCreationSharesStudents(t *testing.T) {
 func TestGroupCreationWithoutStudentsStillWorks(t *testing.T) {
 	srv := newApp(t)
 	status, _ := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Classic 1","courseName":"C","startDate":"2026-12-01"}`)
+		`{"name":"Classic 1","courseName":"C","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	if status != http.StatusCreated {
 		t.Fatalf("legacy request status = %d", status)
 	}

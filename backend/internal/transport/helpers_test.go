@@ -12,10 +12,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"launchpad/internal/config"
+	"launchpad/internal/core/auth"
 	"launchpad/internal/core/groups"
 	"launchpad/internal/store"
 	"launchpad/internal/transport"
@@ -64,8 +66,67 @@ func newApp(t *testing.T) *httptest.Server {
 	t.Helper()
 	pool := newTestPool(t)
 	truncate(t, pool, "groups", "oauth_states", "integrations", "integration_credentials", "external_operation_logs", "group_resources")
-	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool), slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping)
+	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool), slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping)
 	return httptestNew(app, t)
+}
+
+// newAuthApp builds the app with multi-role token authentication and the
+// group-scoping dependencies wired, for the authorization-matrix tests.
+func newAuthApp(t *testing.T) (*httptest.Server, *auth.Service, *pgxpool.Pool) {
+	t.Helper()
+	pool := newTestPool(t)
+	truncate(t, pool, "groups", "users", "notifications", "predefined_staff", "user_sessions", "user_credentials", "oauth_states", "integrations", "integration_credentials", "external_operation_logs", "group_resources", "staff_assignments")
+	repo := store.New(pool)
+	authSvc := auth.NewService(repo, time.Hour)
+	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
+		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), authSvc, pool.Ping,
+		transport.GroupProvisioning{
+			Membership: repo, AssignedGroups: repo, StaffAdmin: repo, GroupResources: repo, Notifications: repo,
+		})
+	return httptestNew(app, t), authSvc, pool
+}
+
+// bearerClient sends only the given bearer token.
+type bearerClient struct {
+	t     *testing.T
+	token string
+	http.Client
+}
+
+func (b *bearerClient) do(method, url string) (int, map[string]any) {
+	b.t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+b.token)
+	resp, err := b.Client.Do(req)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out
+}
+
+func (b *bearerClient) getRaw(method, url string) (int, []byte) {
+	b.t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+b.token)
+	resp, err := b.Client.Do(req)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	return resp.StatusCode, raw
 }
 
 func httptestNew(handler http.Handler, t *testing.T) *httptest.Server {

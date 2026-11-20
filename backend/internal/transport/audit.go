@@ -17,7 +17,7 @@ type GroupAuditService interface {
 }
 
 func (h *Handlers) QueueGroupAudit(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.audit == nil {
@@ -35,7 +35,7 @@ func (h *Handlers) QueueGroupAudit(c echo.Context, groupID gen.GroupId) error {
 }
 
 func (h *Handlers) ListGroupAudits(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupRead(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.audit == nil {

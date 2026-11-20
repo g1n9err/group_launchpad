@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -16,8 +17,10 @@ import (
 )
 
 // GoogleConnect GET /api/integrations/google/connect — 302 to Google consent.
+// Configuring integrations is an administrator duty (PRD §3.2); the
+// coordinator retains access for compatibility with the deployed flow.
 func (h *Handlers) GoogleConnect(c echo.Context) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	if !h.google.Configured() {
@@ -57,9 +60,9 @@ func deref(s *string) string {
 }
 
 // GoogleStatus GET /api/integrations/google/status — public endpoint that
-// returns the connection state. Coordinator-only metadata (account email,
-// scopes, connected-at) is stripped for anonymous callers; the full status
-// is returned only when valid coordinator credentials are present.
+// returns the connection state. Staff-only metadata (account email,
+// scopes, connected-at) is stripped for non-staff callers; the full status
+// is returned only with valid coordinator/admin credentials.
 func (h *Handlers) GoogleStatus(c echo.Context) error {
 	if !h.google.Configured() {
 		return errNotConfigured("google oauth")
@@ -68,8 +71,8 @@ func (h *Handlers) GoogleStatus(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	// Try coordinator auth — on failure return the safe (public) projection.
-	if authErr := h.coordinator.authorize(c); authErr != nil {
+	// Try staff auth — on failure return the safe (public) projection.
+	if _, authErr := h.requireStaff(c); authErr != nil {
 		return c.JSON(http.StatusOK, gen.GoogleStatus{
 			Status: gen.GoogleStatusStatus(status.Status),
 		})
@@ -79,10 +82,20 @@ func (h *Handlers) GoogleStatus(c echo.Context) error {
 
 // SlackStatus GET /api/integrations/slack/status — verifies the bot token
 // (one auth.test call), persists the outcome, and returns the state. The
-// token itself never crosses this boundary.
+// token itself never crosses this boundary. Anonymous and non-staff callers
+// receive ONLY the persisted connection state (stripped projection, no live
+// call, no writes); the live check and workspace metadata require
+// coordinator/admin credentials.
 func (h *Handlers) SlackStatus(c echo.Context) error {
 	if !h.slack.Configured() {
 		return errNotConfigured("slack")
+	}
+	if _, authErr := h.requireStaff(c); authErr != nil {
+		stored, err := h.slack.StoredStatus(c.Request().Context())
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, gen.SlackStatus{Status: gen.SlackStatusStatus(stored.Status)})
 	}
 	status, err := h.slack.CheckConnection(c.Request().Context())
 	if err != nil {
@@ -96,7 +109,7 @@ func (h *Handlers) SlackStatus(c echo.Context) error {
 // database; invite emails come from the (optional) request body — staff data
 // is never hardcoded.
 func (h *Handlers) ProvisionGroupSlack(c echo.Context, groupId gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupId)); err != nil {
 		return err
 	}
 	if !h.slackChannels.Configured() {

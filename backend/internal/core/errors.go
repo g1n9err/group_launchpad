@@ -13,6 +13,7 @@ const (
 	CodeOAuthExchange = "OAUTH_EXCHANGE_FAILED"
 	CodeUnauthorized  = "UNAUTHORIZED"
 	CodeForbidden     = "FORBIDDEN"
+	CodeRateLimited   = "RATE_LIMITED"
 	CodeInternal      = "INTERNAL"
 )
 

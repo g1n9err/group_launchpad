@@ -61,6 +61,15 @@ func (ns NullRiverJobState) Value() (driver.Value, error) {
 	return string(ns.RiverJobState), nil
 }
 
+type AnnouncementTemplate struct {
+	ID        uuid.UUID
+	Name      string
+	Body      string
+	Kind      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type AuditLog struct {
 	ID            uuid.UUID
 	GroupID       uuid.UUID
@@ -192,6 +201,17 @@ type LaunchResult struct {
 	UpdatedAt time.Time
 }
 
+type Notification struct {
+	ID        uuid.UUID
+	GroupID   pgtype.UUID
+	Kind      string
+	Severity  string
+	Title     string
+	Detail    *string
+	ReadAt    pgtype.Timestamptz
+	CreatedAt time.Time
+}
+
 type OauthState struct {
 	ID              uuid.UUID
 	StateHash       string
@@ -273,6 +293,14 @@ type SlackEvent struct {
 	ProcessedAt      pgtype.Timestamptz
 	ProcessStatus    string
 	UnresolvedReason *string
+}
+
+type StaffAssignment struct {
+	ID        uuid.UUID
+	GroupID   uuid.UUID
+	Email     string
+	Role      string
+	CreatedAt time.Time
 }
 
 type User struct {

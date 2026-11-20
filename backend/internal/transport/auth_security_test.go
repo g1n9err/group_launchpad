@@ -46,7 +46,7 @@ func TestAnonymousCreateGroupRejected(t *testing.T) {
 
 	// Send a TRULY anonymous request (no Authorization header).
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/groups",
-		strings.NewReader(`{"name":"Unauthorized","courseName":"C","startDate":"2026-12-01","studentEmails":["x@y.z"]}`))
+		strings.NewReader(`{"name":"Unauthorized","courseName":"C","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],"studentEmails":["x@y.z"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := srv.Client().Do(req)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestAuthorizedCreateGroupWorks(t *testing.T) {
 	srv := newApp(t)
 
 	status, out := doJSONWithAuthPair(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Authorized Group","courseName":"C","startDate":"2026-12-01","studentEmails":["auth@x.example"]}`,
+		`{"name":"Authorized Group","courseName":"C","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],"studentEmails":["auth@x.example"]}`,
 		coordinatorAuthHeader())
 
 	if status != http.StatusCreated {
@@ -106,7 +106,7 @@ func TestAnonymousOnboardingRejected(t *testing.T) {
 
 	// Create a group first (with auth).
 	_, created := doJSONWithAuthPair(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Onboard Test","courseName":"C","startDate":"2026-12-01","studentEmails":["p@x.example"]}`,
+		`{"name":"Onboard Test","courseName":"C","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"],"studentEmails":["p@x.example"]}`,
 		coordinatorAuthHeader())
 	groupID := created["id"].(string)
 
@@ -202,7 +202,7 @@ func TestInvalidCredentialsRejected(t *testing.T) {
 	srv := newApp(t)
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/groups",
-		strings.NewReader(`{"name":"Bad Auth","courseName":"C","startDate":"2026-12-01"}`))
+		strings.NewReader(`{"name":"Bad Auth","courseName":"C","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("coordinator:wrong-password-0123456789abcdef")))
 
@@ -222,7 +222,7 @@ func TestUnauthorizedOriginRejected(t *testing.T) {
 	srv := newApp(t)
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/groups",
-		strings.NewReader(`{"name":"Origin Test","courseName":"C","startDate":"2026-12-01"}`))
+		strings.NewReader(`{"name":"Origin Test","courseName":"C","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", coordinatorAuthHeader())
 	req.Header.Set("Origin", "https://evil.example.com")

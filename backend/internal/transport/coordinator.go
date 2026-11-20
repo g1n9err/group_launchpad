@@ -39,10 +39,21 @@ func (a coordinatorAuth) authorize(c echo.Context) error {
 		c.Response().Header().Set("WWW-Authenticate", `Basic realm="Group Launchpad coordinator", charset="UTF-8"`)
 		return &core.AppError{Code: core.CodeUnauthorized, Message: "coordinator credentials required"}
 	}
-	if req.Method == http.MethodPost && !a.allowedWriteOrigin(c) {
+	if isMutatingMethod(req.Method) && !a.allowedWriteOrigin(c) {
 		return &core.AppError{Code: core.CodeForbidden, Message: "request origin is not allowed"}
 	}
 	return nil
+}
+
+// isMutatingMethod reports whether the method changes state and therefore
+// needs the cross-origin (CSRF) guard. Read methods are safe with Basic auth
+// (no ambient-state change) and stay unguarded.
+func isMutatingMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	return true
 }
 
 func (a coordinatorAuth) allowedWriteOrigin(c echo.Context) bool {

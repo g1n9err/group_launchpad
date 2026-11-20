@@ -2,12 +2,14 @@ import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "../components/ui";
 import { useSettings } from "../i18n";
-import { basicAuthValue, unlock } from "../lib/auth";
+import { api } from "../lib/api";
+import { storeSession } from "../lib/auth";
 import { navigate } from "../lib/router";
 
 export function LoginPage() {
   const { t } = useSettings();
   const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -16,20 +18,20 @@ export function LoginPage() {
     event.preventDefault();
     setError(false);
     setSubmitting(true);
-    const candidate = basicAuthValue("coordinator", password);
-
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL ?? ""}/api/groups/00000000-0000-0000-0000-000000000000/onboarding`,
-        { headers: { Authorization: candidate } },
-      );
-      if (response.status !== 404) {
+      const { data, response } = await api.POST("/api/auth/login", {
+        body: { email: email.trim(), password },
+      });
+      if (!response.ok || !data) {
         setError(true);
         return;
       }
       queryClient.clear();
-      unlock("coordinator", password);
-      navigate("overview");
+      storeSession(data);
+      setPassword("");
+      if (data.user.role === "lecturer" || data.user.role === "ta") navigate("groups");
+      else if (data.user.role === "student") navigate("account");
+      else navigate("overview");
     } catch {
       setError(true);
     } finally {
@@ -51,14 +53,24 @@ export function LoginPage() {
             <p>{t("login.description")}</p>
           </div>
           <form onSubmit={onSubmit} className="login-form">
-            <label htmlFor="coordinator-password">{t("auth.password")}</label>
+            <label htmlFor="login-email">{t("login.email")}</label>
             <input
-              id="coordinator-password"
+              id="login-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="username"
+              autoFocus
+              required
+              className="login-input"
+            />
+            <label htmlFor="login-password">{t("auth.password")}</label>
+            <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
-              autoFocus
               required
               aria-invalid={error}
               className={error ? "login-input login-input-error" : "login-input"}

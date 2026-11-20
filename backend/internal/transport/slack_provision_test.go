@@ -22,12 +22,12 @@ func TestSlackProvisionCreatesChannelsAndIsIdempotent(t *testing.T) {
 	repo := store.New(pool)
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		integrations.NewSlackAuthService(repo, fakeWS, true),
-		integrations.NewSlackChannelsService(fakeWS, repo, repo, true), slackEventsServiceForTest(pool), pool.Ping)
+		integrations.NewSlackChannelsService(fakeWS, repo, repo, true), slackEventsServiceForTest(pool), nil, pool.Ping)
 	srv := httptestNew(app, t)
 
 	// Create the group via the public API.
 	_, created := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Python Backend 13","courseName":"Full-Stack Python","startDate":"2026-12-01"}`)
+		`{"name":"Python Backend 13","courseName":"Full-Stack Python","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	groupID := created["id"].(string)
 	provisionURL := "/api/groups/" + groupID + "/slack/provision"
 
@@ -129,7 +129,7 @@ func TestSlackProvisionCreatesChannelsAndIsIdempotent(t *testing.T) {
 func TestSlackProvisionEmptyBodyIsAllowed(t *testing.T) {
 	srv := newApp(t)
 	_, created := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Data Science 7","courseName":"ML","startDate":"2027-01-11"}`)
+		`{"name":"Data Science 7","courseName":"ML","startDate":"2027-01-11", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	groupID := created["id"].(string)
 
 	status, body := doJSON(t, srv, http.MethodPost, "/api/groups/"+groupID+"/slack/provision", "")
@@ -156,7 +156,7 @@ func TestSlackProvisionUnknownGroup(t *testing.T) {
 func TestSlackProvisionUnconfigured(t *testing.T) {
 	srv := newAppNoSlack(t)
 	_, created := doJSON(t, srv, http.MethodPost, "/api/groups",
-		`{"name":"Orphan 1","courseName":"X","startDate":"2026-12-01"}`)
+		`{"name":"Orphan 1","courseName":"X","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]}`)
 	id := created["id"].(string)
 	status, body := doJSON(t, srv, http.MethodPost, "/api/groups/"+id+"/slack/provision", "")
 	if status != http.StatusServiceUnavailable {

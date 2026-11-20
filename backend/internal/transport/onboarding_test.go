@@ -31,7 +31,7 @@ func joinFlips(t *testing.T, emails []string) []string {
 // createGroupWithRoster creates a group via the API and returns its id.
 func createGroupWithRoster(t *testing.T, srv *httptest.Server, name string, emails []string) string {
 	t.Helper()
-	payload := fmt.Sprintf(`{"name":%q,"courseName":"C","startDate":"2026-12-01"`, name)
+	payload := fmt.Sprintf(`{"name":%q,"courseName":"C","startDate":"2026-12-01", "staffEmails": ["staff@test.example"], "lecturerEmails": ["lecturer@test.example"]`, name)
 	if emails != nil {
 		list := ""
 		for i, e := range emails {

@@ -65,10 +65,12 @@ func run() error {
 	// Slack
 	slack := integrations.NewSlackChannelsService(nil, repo, repo, false)
 	var slackChecker audit.Checker
+	var memberChecker audit.MemberChecker
 	if cfg.SlackConfigured() {
 		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
 		slack = integrations.NewSlackChannelsService(slackGateway, repo, repo, true)
 		slackChecker = slackGateway
+		memberChecker = slackGateway
 	}
 
 	// Google (Classroom, Drive, Forms share the OAuth token source)
@@ -83,7 +85,7 @@ func run() error {
 	}
 
 	// ── Register workers ──────────────────────────────────────────────
-	workers := jobs.NewLaunchWorkers(logger, slack, cfg.SlackConfigured(), classroomSvc, driveSvc, formsSvc, groupsSvc, staffEmails, repo)
+	workers := jobs.NewLaunchWorkers(logger, slack, cfg.SlackConfigured(), classroomSvc, driveSvc, formsSvc, groupsSvc, staffEmails, repo, repo, repo)
 
 	// Slack-only launch worker (legacy, still needed for older queue entries)
 	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
@@ -130,7 +132,7 @@ func run() error {
 		jobConfig.AuditEmailEnabled = true
 		river.AddWorker(workers, &jobs.AuditEmailWorker{Store: repo, Mailer: mailer, Recipient: cfg.AuditNotificationEmail})
 	}
-	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, Slack: slackChecker, Google: google.NewAuditChecker(auth)}, EmailEnabled: auditEmailEnabled})
+	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, Slack: slackChecker, Google: google.NewAuditChecker(auth), Members: memberChecker}, EmailEnabled: auditEmailEnabled})
 
 	client, err := jobs.NewClient(pool, workers, jobConfig)
 	if err != nil {
@@ -140,10 +142,6 @@ func run() error {
 	if _, err := client.PeriodicJobs().AddSafely(jobs.DailyAuditSchedule()); err != nil {
 		return fmt.Errorf("register daily audit: %w", err)
 	}
-
-	// Expose a launcher for the API process to enqueue unified launches.
-	launcher := &jobs.RiverLauncher{Client: client}
-	_ = launcher // used by the API process; worker doesn't enqueue
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

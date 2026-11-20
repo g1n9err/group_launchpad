@@ -72,10 +72,38 @@ func (r *Repo) Create(ctx context.Context, params groups.CreateParams) (groups.G
 		}
 	}
 
+	// Per-group staff assignments (PRD §4.1) — persisted atomically.
+	for _, email := range params.StaffEmails {
+		if err := insertStaffAssignment(ctx, tx, row.ID, email, "teaching_staff"); err != nil {
+			return groups.Group{}, err
+		}
+	}
+	for _, email := range params.LecturerEmails {
+		if err := insertStaffAssignment(ctx, tx, row.ID, email, "lecturer"); err != nil {
+			return groups.Group{}, err
+		}
+	}
+	for _, email := range params.TAEmails {
+		if err := insertStaffAssignment(ctx, tx, row.ID, email, "ta"); err != nil {
+			return groups.Group{}, err
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return groups.Group{}, fmt.Errorf("store: create group commit: %w", err)
 	}
 	return groupFromRow(row), nil
+}
+
+func insertStaffAssignment(ctx context.Context, tx pgx.Tx, groupID uuid.UUID, email, role string) error {
+	_, err := tx.Exec(ctx,
+		`INSERT INTO staff_assignments (group_id, email, role) VALUES ($1, $2, $3)
+		 ON CONFLICT (group_id, email) DO NOTHING`,
+		groupID, email, role)
+	if err != nil {
+		return fmt.Errorf("store: insert staff assignment: %w", err)
+	}
+	return nil
 }
 
 // upsertStudentUser reuses an existing user matched by normalized email

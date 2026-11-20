@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "../i18n";
 import { api } from "../lib/api";
-import { intakeActionClass, intakeButtonClass, intakeInputClass } from "../lib/intakeForm";
+import { intakeActionClass, intakeButtonClass } from "../lib/intakeForm";
 import type { components } from "../lib/schema";
 import { Card, Chip } from "./ui";
+import { fireLock, getAuthHeader, useAuthUser } from "../lib/auth";
 
 type LaunchResult = components["schemas"]["GroupLaunchResult"];
 type LaunchStep = components["schemas"]["LaunchStep"];
@@ -21,43 +22,19 @@ function inProgress(result: LaunchResult | null | undefined) {
 
 export function GroupLaunch({ groupId }: { groupId: string }) {
   const { t } = useSettings();
-  const [password, setPassword] = useState("");
-  const [authorization, setAuthorization] = useState("");
-  const [rejected, setRejected] = useState(false);
-
-  const onUnauthorized = useCallback(() => {
-    setAuthorization("");
-    setRejected(true);
-  }, []);
-
-  function unlock(event: FormEvent) {
-    event.preventDefault();
-    const bytes = new TextEncoder().encode("coordinator:" + password);
-    setAuthorization("Basic " + btoa(String.fromCharCode(...bytes)));
-    setPassword("");
-    setRejected(false);
-  }
+  const user = useAuthUser();
+  const authorization = user ? getAuthHeader().Authorization ?? "" : "";
+  const onUnauthorized = useCallback(() => fireLock(), []);
 
   return (
     <Card className="space-y-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-text">{t("launch.title")}</h2>
-        {authorization && <button type="button" className={intakeButtonClass}
-          onClick={() => setAuthorization("")}>{t("audit.lock")}</button>}
       </div>
       {authorization ? (
         <LaunchChecklist groupId={groupId} authorization={authorization} onUnauthorized={onUnauthorized} />
       ) : (
-        <form className="flex flex-wrap items-end gap-3" onSubmit={unlock}>
-          <label className="text-sm font-medium text-text">
-            {t("audit.password")}
-            <input type="password" autoComplete="current-password" required maxLength={256}
-              className={`mt-1 block w-64 max-w-full ${intakeInputClass}`}
-              value={password} onChange={(event) => setPassword(event.target.value)} />
-          </label>
-          <button type="submit" className={intakeActionClass}>{t("launch.open")}</button>
-          {rejected && <p role="alert" className="text-sm text-danger-text">{t("audit.invalidPassword")}</p>}
-        </form>
+        <a href="#/login" className="app-action">{t("auth.signIn")}</a>
       )}
     </Card>
   );

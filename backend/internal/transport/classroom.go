@@ -3,13 +3,15 @@ package transport
 import (
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"launchpad/internal/core"
 	gen "launchpad/internal/transport/gen"
 )
 
 func (h *Handlers) ProvisionGroupClassroom(c echo.Context, groupID gen.GroupId) error {
-	if err := h.coordinator.authorize(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.classroom == nil {
@@ -42,9 +44,22 @@ func (h *Handlers) ProvisionGroupClassroom(c echo.Context, groupID gen.GroupId) 
 		}
 	}
 
+	// Use per-group staff assignments (PRD §4.1), falling back to
+	// the handler's global staffEmails when none are configured.
+	staffEmails := h.staffEmails
+	if h.staffAssignmentReader != nil {
+		perGroup, err := h.staffAssignmentReader.StaffEmailsFor(ctx, group.ID)
+		if err != nil {
+			return &core.AppError{Code: core.CodeUpstream, Message: "failed to read staff assignments"}
+		}
+		if len(perGroup) > 0 {
+			staffEmails = perGroup
+		}
+	}
+
 	var teacherResults []gen.ClassroomEnrollment
-	if len(h.staffEmails) > 0 {
-		for _, r := range h.classroom.AssignTeachers(ctx, group.ID, id, h.staffEmails) {
+	if len(staffEmails) > 0 {
+		for _, r := range h.classroom.AssignTeachers(ctx, group.ID, id, staffEmails) {
 			teacherResults = append(teacherResults, gen.ClassroomEnrollment{
 				Email: r.Email, Success: r.Err == nil,
 			})
@@ -52,7 +67,7 @@ func (h *Handlers) ProvisionGroupClassroom(c echo.Context, groupID gen.GroupId) 
 	}
 
 	return c.JSON(http.StatusOK, gen.ClassroomCourse{
-		CourseId:          id,
+		CourseId:           id,
 		StudentEnrollments: &studentResults,
 		TeacherAssignments: &teacherResults,
 	})

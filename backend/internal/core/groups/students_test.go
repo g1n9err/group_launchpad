@@ -28,6 +28,8 @@ func TestCreateStudentEmailsValidation(t *testing.T) {
 			svc, _ := newService()
 			_, err := svc.Create(context.Background(), CreateInput{
 				Name: "G", CourseName: "C", StartDate: "2026-12-01", StudentEmails: tc.emails,
+				StaffEmails:    []string{"staff@test.example"},
+				LecturerEmails: []string{"lecturer@test.example"},
 			})
 			appErr, ok := err.(*core.AppError)
 			if !ok {
@@ -43,10 +45,12 @@ func TestCreateStudentEmailsValidation(t *testing.T) {
 func TestCreateStudentEmailsNormalizedAndForwarded(t *testing.T) {
 	svc, repo := newService()
 	_, err := svc.Create(context.Background(), CreateInput{
-		Name:          "G",
-		CourseName:    "C",
-		StartDate:     "2026-12-01",
-		StudentEmails: []string{"  Mixed.Case@School.EDU ", "other@school.edu"},
+		Name:           "G",
+		CourseName:     "C",
+		StartDate:      "2026-12-01",
+		StudentEmails:  []string{"  Mixed.Case@School.EDU ", "other@school.edu"},
+		StaffEmails:    []string{"staff@test.example"},
+		LecturerEmails: []string{"lecturer@test.example"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -66,6 +70,8 @@ func TestCreateWithoutStudentsIsBackwardCompatible(t *testing.T) {
 	svc, repo := newService()
 	g, err := svc.Create(context.Background(), CreateInput{
 		Name: "Legacy", CourseName: "C", StartDate: "2026-12-01", // no StudentEmails
+		StaffEmails:    []string{"staff@test.example"},
+		LecturerEmails: []string{"lecturer@test.example"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -86,6 +92,8 @@ func TestCreateTooManyStudentsRejected(t *testing.T) {
 	}
 	_, err := svc.Create(context.Background(), CreateInput{
 		Name: "G", CourseName: "C", StartDate: "2026-12-01", StudentEmails: many,
+		StaffEmails:    []string{"staff@test.example"},
+		LecturerEmails: []string{"lecturer@test.example"},
 	})
 	appErr, ok := err.(*core.AppError)
 	if !ok || appErr.FieldErrors["studentEmails"] == "" {

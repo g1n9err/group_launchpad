@@ -2,6 +2,7 @@ package groups
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,9 +13,12 @@ import (
 
 // stubRepo is an in-memory Repository for pure unit tests (no database).
 type stubRepo struct {
-	groups       []Group
-	lastStudents []string
-	lastListArgs struct{ limit, offset int }
+	groups        []Group
+	lastStudents  []string
+	lastStaff     []string
+	lastLecturers []string
+	lastTAs       []string
+	lastListArgs  struct{ limit, offset int }
 }
 
 func (r *stubRepo) Create(_ context.Context, p CreateParams) (Group, error) {
@@ -26,6 +30,9 @@ func (r *stubRepo) Create(_ context.Context, p CreateParams) (Group, error) {
 	g := Group{ID: uuid.New(), Name: p.Name, CourseName: p.CourseName, StartDate: p.StartDate, Status: StatusDraft, CreatedAt: time.Now().UTC()}
 	r.groups = append(r.groups, g)
 	r.lastStudents = p.StudentEmails
+	r.lastStaff = p.StaffEmails
+	r.lastLecturers = p.LecturerEmails
+	r.lastTAs = p.TAEmails
 	return g, nil
 }
 
@@ -56,6 +63,12 @@ func (r *stubRepo) StudentRoster(context.Context, uuid.UUID) ([]Student, error) 
 	return nil, nil
 }
 
+// validStaffFields returns the minimum required staff/lecturer input for
+// group creation (PRD §4.1: teaching staff and lecturers are Required).
+func validStaffFields() (staff, lecturers []string) {
+	return []string{"staff@test.example"}, []string{"lecturer@test.example"}
+}
+
 func newService() (*Service, *stubRepo) {
 	repo := &stubRepo{}
 	return New(repo), repo
@@ -68,13 +81,16 @@ func TestCreateValidation(t *testing.T) {
 		wantField   string // expected entry in FieldErrors
 		wantMessage string
 	}{
-		{"empty name", CreateInput{Name: "", CourseName: "Go", StartDate: "2026-12-01"}, "name", "invalid group data"},
-		{"whitespace name", CreateInput{Name: "   ", CourseName: "Go", StartDate: "2026-12-01"}, "name", "invalid group data"},
-		{"name too long", CreateInput{Name: string(make([]byte, 201)), CourseName: "Go", StartDate: "2026-12-01"}, "name", "invalid group data"},
-		{"empty course", CreateInput{Name: "Python 13", CourseName: "", StartDate: "2026-12-01"}, "courseName", "invalid group data"},
-		{"missing date", CreateInput{Name: "Python 13", CourseName: "Go"}, "startDate", "invalid group data"},
-		{"malformed date", CreateInput{Name: "Python 13", CourseName: "Go", StartDate: "01-12-2026"}, "startDate", "invalid group data"},
-		{"impossible date", CreateInput{Name: "Python 13", CourseName: "Go", StartDate: "2026-02-30"}, "startDate", "invalid group data"},
+		{"empty name", CreateInput{Name: "", CourseName: "Go", StartDate: "2026-12-01", StaffEmails: []string{"s@t.e"}, LecturerEmails: []string{"l@t.e"}}, "name", "invalid group data"},
+		{"whitespace name", CreateInput{Name: "   ", CourseName: "Go", StartDate: "2026-12-01", StaffEmails: []string{"s@t.e"}, LecturerEmails: []string{"l@t.e"}}, "name", "invalid group data"},
+		{"name too long", CreateInput{Name: string(make([]byte, 201)), CourseName: "Go", StartDate: "2026-12-01", StaffEmails: []string{"s@t.e"}, LecturerEmails: []string{"l@t.e"}}, "name", "invalid group data"},
+		{"empty course", CreateInput{Name: "Python 13", CourseName: "", StartDate: "2026-12-01", StaffEmails: []string{"s@t.e"}, LecturerEmails: []string{"l@t.e"}}, "courseName", "invalid group data"},
+		{"missing date", CreateInput{Name: "Python 13", CourseName: "Go", StaffEmails: []string{"s@t.e"}, LecturerEmails: []string{"l@t.e"}}, "startDate", "invalid group data"},
+		{"malformed date", CreateInput{Name: "Python 13", CourseName: "Go", StartDate: "01-12-2026", StaffEmails: []string{"s@t.e"}, LecturerEmails: []string{"l@t.e"}}, "startDate", "invalid group data"},
+		{"impossible date", CreateInput{Name: "Python 13", CourseName: "Go", StartDate: "2026-02-30", StaffEmails: []string{"s@t.e"}, LecturerEmails: []string{"l@t.e"}}, "startDate", "invalid group data"},
+		{"missing staff", CreateInput{Name: "Python 13", CourseName: "Go", StartDate: "2026-12-01", LecturerEmails: []string{"l@t.e"}}, "staffEmails", "invalid group data"},
+		{"missing lecturer", CreateInput{Name: "Python 13", CourseName: "Go", StartDate: "2026-12-01", StaffEmails: []string{"s@t.e"}}, "lecturerEmails", "invalid group data"},
+		{"staff role duplicate", CreateInput{Name: "Python 13", CourseName: "Go", StartDate: "2026-12-01", StaffEmails: []string{"same@t.e"}, LecturerEmails: []string{"SAME@t.e"}}, "lecturerEmails", "invalid group data"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -101,9 +117,11 @@ func TestCreateValidation(t *testing.T) {
 }
 
 func TestCreateHappyPathTrimsAndDefaultsToDraft(t *testing.T) {
-	svc, _ := newService()
+	svc, repo := newService()
 	g, err := svc.Create(context.Background(), CreateInput{
 		Name: "  Python Backend 13  ", CourseName: " Go ", StartDate: "2026-12-01",
+		StaffEmails: []string{" STAFF@Test.Example "}, LecturerEmails: []string{" Lecturer@Test.Example "},
+		TAEmails: []string{" TA@Test.Example "},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -114,6 +132,11 @@ func TestCreateHappyPathTrimsAndDefaultsToDraft(t *testing.T) {
 	if g.Status != StatusDraft {
 		t.Errorf("status = %q, want draft", g.Status)
 	}
+	if !slices.Equal(repo.lastStaff, []string{"staff@test.example"}) ||
+		!slices.Equal(repo.lastLecturers, []string{"lecturer@test.example"}) ||
+		!slices.Equal(repo.lastTAs, []string{"ta@test.example"}) {
+		t.Errorf("staff emails were not normalized/persisted: staff=%v lecturers=%v TAs=%v", repo.lastStaff, repo.lastLecturers, repo.lastTAs)
+	}
 	want := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 	if !g.StartDate.Equal(want) {
 		t.Errorf("startDate = %v, want %v", g.StartDate, want)
@@ -122,7 +145,7 @@ func TestCreateHappyPathTrimsAndDefaultsToDraft(t *testing.T) {
 
 func TestCreateDuplicateName(t *testing.T) {
 	svc, _ := newService()
-	in := CreateInput{Name: "Python Backend 13", CourseName: "Go", StartDate: "2026-12-01"}
+	in := CreateInput{Name: "Python Backend 13", CourseName: "Go", StartDate: "2026-12-01", StaffEmails: []string{"staff@test.example"}, LecturerEmails: []string{"lecturer@test.example"}}
 	if _, err := svc.Create(context.Background(), in); err != nil {
 		t.Fatalf("first create failed: %v", err)
 	}
@@ -179,7 +202,7 @@ func TestListClampsPagination(t *testing.T) {
 			for i := 0; i < 3; i++ {
 				if _, err := svc.Create(context.Background(), CreateInput{
 					Name:       time.Now().Add(time.Duration(i) * time.Second).String(), // unique names
-					CourseName: "Go", StartDate: "2026-12-01",
+					CourseName: "Go", StartDate: "2026-12-01", StaffEmails: []string{"staff@test.example"}, LecturerEmails: []string{"lecturer@test.example"},
 				}); err != nil {
 					t.Fatalf("seed create failed: %v", err)
 				}

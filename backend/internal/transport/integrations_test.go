@@ -22,7 +22,7 @@ func newAppUnconfigured(t *testing.T) *httptest.Server {
 	pool := newTestPool(t)
 	truncate(t, pool, "groups", "oauth_states", "integrations", "integration_credentials", "external_operation_logs", "group_resources")
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool),
-		integrations.NewGoogleAuthService(store.New(pool), nil, nil, false), slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), pool.Ping)
+		integrations.NewGoogleAuthService(store.New(pool), nil, nil, false), slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), nil, pool.Ping)
 	return httptestNew(app, t)
 }
 
@@ -33,7 +33,7 @@ func newAppNoSlack(t *testing.T) *httptest.Server {
 	truncate(t, pool, "groups", "oauth_states", "integrations", "integration_credentials", "external_operation_logs", "group_resources")
 	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
 		integrations.NewSlackAuthService(store.New(pool), nil, false),
-		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), pool.Ping)
+		integrations.NewSlackChannelsService(nil, nil, store.New(pool), false), slackEventsServiceForTest(pool), nil, pool.Ping)
 	return httptestNew(app, t)
 }
 
