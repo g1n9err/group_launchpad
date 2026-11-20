@@ -519,8 +519,8 @@ paths:
         Read-only. "Joined" counts joined_slack and complete. A form submission
         by itself does not count as a Slack join. joinedAt is not tracked yet
         and is deliberately omitted rather than fabricated. Exposes student
-        emails — requires coordinator authentication before production
-        exposure (not yet implemented).
+        emails — requires coordinator authentication (HTTP Basic). Anonymous
+        requests receive 401.
       parameters:
         - $ref: "#/components/parameters/GroupId"
       responses:

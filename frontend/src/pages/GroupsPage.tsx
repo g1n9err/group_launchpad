@@ -3,6 +3,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useCreateGroup, useGroupOnboarding, useAllGroups } from "../lib/queries";
+import { AuthGate } from "../components/AuthGate";
 import { useSettings } from "../i18n";
 import { navigate, useRoute } from "../lib/router";
 import { Card, OnboardingBadge, PageTitle, StatusBadge } from "../components/ui";
@@ -260,7 +261,11 @@ export function GroupsPage() {
   const route = useRoute();
 
   if (route.page === "group-details" && route.id) {
-    return <GroupDetails groupId={route.id} />;
+    return (
+      <AuthGate>
+        <GroupDetails groupId={route.id} />
+      </AuthGate>
+    );
   }
 
   if (route.page === "groups" && route.id === "new") {
@@ -268,16 +273,24 @@ export function GroupsPage() {
       <div className="max-w-4xl space-y-6">
         <PageTitle title={t("form.title")} sub={t("form.subtitle")}
           actions={<a className="text-sm font-semibold text-primary hover:underline" href="#/groups">{t("groups.backToList")}</a>} />
-        <CreateGroupForm />
+        <AuthGate>
+          <CreateGroupForm />
+        </AuthGate>
       </div>
     );
   }
-  if (route.page === "groups" && route.id) return <GroupDetails groupId={route.id} />;
+  if (route.page === "groups" && route.id) return (
+    <AuthGate>
+      <GroupDetails groupId={route.id} />
+    </AuthGate>
+  );
 
   return (
     <div className="space-y-6">
       <PageTitle title={t("nav.groups")} actions={<a className="app-action" href="#/groups/new">{t("form.title")}</a>} />
-      <GroupsList />
+      <AuthGate>
+        <GroupsList />
+      </AuthGate>
     </div>
   );
 }

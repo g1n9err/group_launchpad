@@ -292,6 +292,12 @@ const hy: Dictionary = {
   "settings.prefHint": "Կարգավորումները պահպանվում են այս սարքում և վերականգնվում հաջորդ այցին։",
 
   "footer.copyright": "© 2026 Group Launchpad",
+
+  "auth.lock": "Փակել",
+  "auth.unlock": "Բացել",
+  "auth.password": "Գաղտնաբառ",
+  "auth.required": "Անհրաժեշտ է համակարգողի մուտք՝ ուսանողների տվյալներ տեսնելու և խմբեր ստեղծելու համար։",
+  "auth.invalid": "Սխալ մուտքագրում։",
 };
 
 export default hy;
