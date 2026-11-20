@@ -74,6 +74,34 @@ func (g *DriveGateway) EnsureFolder(ctx context.Context, token, id, name, parent
 	return nil
 }
 
+// GrantAccess gives a user the specified role on a folder via the Drive
+// Permissions API. Idempotent: granting to an already-permitted user
+// returns success. role: "writer" (editor) or "reader" (viewer).
+func (g *DriveGateway) GrantAccess(ctx context.Context, token, folderID, email, role string) error {
+	payload := map[string]any{
+		"role":         role,
+		"type":         "user",
+		"emailAddress": email,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return errors.New("could not encode Google Drive permission")
+	}
+	endpoint := fmt.Sprintf("%s/%s/permissions?sendNotificationEmail=false", g.filesURL, url.PathEscape(folderID))
+	_, err = g.request(ctx, token, http.MethodPost, endpoint, bytes.NewReader(body), &struct{}{})
+	if err != nil {
+		return fmt.Errorf("drive: grant %s to %s: %w", role, email[:min(len(email), 3)]+"***", err) // email partially masked
+	}
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (g *DriveGateway) request(ctx context.Context, token, method, endpoint string, body io.Reader, result any) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
