@@ -16,6 +16,10 @@ var driveSubfolders = []string{"General", "Lectures", "Assignments", "Resources"
 type DriveGateway interface {
 	GenerateFolderID(ctx context.Context, token string) (string, error)
 	EnsureFolder(ctx context.Context, token, id, name, parentID string) error
+	// GrantAccess gives a user the specified role on a folder via the Drive
+	// Permissions API. role: "writer" (editor) or "reader" (viewer).
+	// Sending to an already-permitted user returns success (idempotent).
+	GrantAccess(ctx context.Context, token, folderID, email, role string) error
 }
 
 type DriveFolderStore interface {
@@ -98,6 +102,78 @@ func (s *DriveService) Provision(ctx context.Context, groupID uuid.UUID, groupNa
 		result.Subfolders = append(result.Subfolders, folder)
 	}
 	return result, nil
+}
+
+// DriveAccessRules defines who gets what permission on which folders.
+// Per PRD §4.4: "Configure appropriate access permissions" and "Restricted
+// data is not accessible to unauthorized users."
+//
+// Student Data is the sensitive folder — students NEVER get access.
+// Lectures/Assignments are curriculum material — students read-only.
+// General/Resources are shared — students read-only.
+// Staff (coordinators, lecturers, TAs) get editor on everything.
+type DriveAccessRules struct {
+	// StaffEmails are users who get editor access to ALL folders (including
+	// Student Data).
+	StaffEmails []string
+
+	// StudentEmails are users who get reader access to General/Resources/
+	// Lectures/Assignments — but NEVER Student Data.
+	StudentEmails []string
+}
+
+// driveFolderPermissions maps folder names to which student role can access them.
+// "Student Data" is deliberately absent: students never appear there.
+var driveStudentAccessible = map[string]bool{
+	"General":     true,
+	"Resources":   true,
+	"Lectures":    true,
+	"Assignments": true,
+	// "Student Data": false — intentionally omitted
+}
+
+// ApplyAccessRules grants Drive permissions per the rules after folder
+// creation. Safe to re-run: GrantAccess is idempotent on the Drive API.
+func (s *DriveService) ApplyAccessRules(ctx context.Context, groupID uuid.UUID, folders DriveFolders, rules DriveAccessRules) error {
+	token, err := s.Tokens.AccessToken(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Staff: editor on root + ALL subfolders (including Student Data).
+	for _, email := range rules.StaffEmails {
+		started := time.Now()
+		err := s.Gateway.GrantAccess(ctx, token, folders.Root.ID, email, "writer")
+		s.record(ctx, groupID, "drive.grant_access", started, err)
+		if err != nil {
+			return err
+		}
+		for _, sub := range folders.Subfolders {
+			started := time.Now()
+			err := s.Gateway.GrantAccess(ctx, token, sub.ID, email, "writer")
+			s.record(ctx, groupID, "drive.grant_access", started, err)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Students: reader on accessible folders ONLY — never Student Data.
+	for _, email := range rules.StudentEmails {
+		for _, sub := range folders.Subfolders {
+			if !driveStudentAccessible[sub.Name] {
+				continue // Student Data: skip
+			}
+			started := time.Now()
+			err := s.Gateway.GrantAccess(ctx, token, sub.ID, email, "reader")
+			s.record(ctx, groupID, "drive.grant_access", started, err)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *DriveService) record(ctx context.Context, groupID uuid.UUID, operation string, started time.Time, err error) error {

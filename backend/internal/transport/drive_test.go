@@ -40,6 +40,10 @@ func (f *fakeDrive) EnsureFolder(_ context.Context, _, id, name, parent string) 
 	return nil
 }
 
+func (f *fakeDrive) GrantAccess(context.Context, string, string, string, string) error {
+	return nil // transport tests don't assert permissions
+}
+
 func TestDriveProvisionResumesAfterInterruptedCreate(t *testing.T) {
 	pool := newTestPool(t)
 	truncate(t, pool, "groups")

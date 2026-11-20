@@ -40,6 +40,7 @@ type Handlers struct {
 	audit              GroupAuditService
 	auditNotifications AuditNotificationReader
 	announcements      AnnouncementService
+	staffEmails        []string // coordinator-configured staff with Drive editor access
 	ping               PingFunc
 	logger             *slog.Logger
 }
