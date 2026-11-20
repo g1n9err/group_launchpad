@@ -1,6 +1,27 @@
 import { googleConnectUrl, useGoogleStatus, useSlackStatus } from "../lib/queries";
 import { useSettings } from "../i18n";
 import { Card, PageTitle, StatusBadge } from "../components/ui";
+import { apiUrl } from "../lib/api";
+import { getAuthHeader } from "../lib/auth";
+
+// Google connect/reconnect rides the in-memory Bearer session: fetch the
+// consent URL with Accept: application/json (the API then answers JSON
+// instead of a 302) and navigate the browser there. No Basic-credentials
+// dialog, and the token never lands in a URL.
+async function connectGoogle(onFallback: () => void) {
+  try {
+    const response = await fetch(apiUrl("/api/integrations/google/connect"), {
+      headers: { ...getAuthHeader(), Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(String(response.status));
+    const body = (await response.json()) as { url?: string };
+    if (!body.url) throw new Error("no url");
+    window.location.assign(body.url);
+  } catch {
+    onFallback(); // legacy navigation path (Basic dialog) still works
+  }
+}
 
 function IntegrationCard({
   name,
@@ -63,6 +84,16 @@ export function IntegrationsPage() {
           pending={slack.isPending}
           error={slack.isError}
           errorMessage={loadError(slack.error)}
+          action={
+            <button
+              type="button"
+              disabled={slack.isFetching}
+              onClick={() => void slack.refetch()}
+              className="inline-block rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-text transition-colors hover:bg-surface-muted disabled:opacity-50"
+            >
+              {t("integrations.checkSlack")}
+            </button>
+          }
         />
 
         <IntegrationCard
@@ -74,13 +105,16 @@ export function IntegrationsPage() {
           error={google.isError}
           errorMessage={loadError(google.error)}
           action={
-            google.data?.status !== "connected" && !google.isError && !google.isPending ? (
-              <a
-                href={googleConnectUrl()}
+            !google.isError && !google.isPending ? (
+              <button
+                type="button"
+                onClick={() => void connectGoogle(() => window.location.assign(googleConnectUrl()))}
                 className="inline-block rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary transition-colors hover:bg-primary-hover"
               >
-                {t("integrations.connectGoogle")}
-              </a>
+                {google.data?.status === "connected"
+                  ? t("integrations.reconnectGoogle")
+                  : t("integrations.connectGoogle")}
+              </button>
             ) : undefined
           }
         />

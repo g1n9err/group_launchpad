@@ -7,6 +7,7 @@ package transport
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -16,9 +17,14 @@ import (
 	gen "launchpad/internal/transport/gen"
 )
 
-// GoogleConnect GET /api/integrations/google/connect — 302 to Google consent.
-// Configuring integrations is an administrator duty (PRD §3.2); the
-// coordinator retains access for compatibility with the deployed flow.
+// GoogleConnect GET /api/integrations/google/connect — starts the Google
+// consent flow. Two caller shapes:
+//
+//   - Browser NAVIGATION (no session header): classic 302 to Google. The
+//     legacy Basic coordinator dialog covers this path.
+//   - Authenticated fetch with Accept: application/json (the SPA's button):
+//     returns {"url": ...} so the app can navigate with the in-memory
+//     Bearer session — no Basic dialog, no token in URLs.
 func (h *Handlers) GoogleConnect(c echo.Context) error {
 	if _, err := h.requireStaff(c); err != nil {
 		return err
@@ -29,6 +35,9 @@ func (h *Handlers) GoogleConnect(c echo.Context) error {
 	consentURL, err := h.google.ConnectURL(c.Request().Context())
 	if err != nil {
 		return err
+	}
+	if strings.Contains(c.Request().Header.Get(echo.HeaderAccept), "application/json") {
+		return c.JSON(http.StatusOK, map[string]string{"url": consentURL})
 	}
 	return c.Redirect(http.StatusFound, consentURL)
 }

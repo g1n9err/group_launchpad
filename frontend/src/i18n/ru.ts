@@ -47,6 +47,8 @@ const ru: Dictionary = {
   "integrations.slack": "Slack",
   "integrations.slackDesc": "Бот рабочего пространства",
   "integrations.connectGoogle": "Подключить Google",
+  "integrations.reconnectGoogle": "Переподключить Google",
+  "integrations.checkSlack": "Проверить соединение",
   "integrations.workspace": "Рабочее пространство · {name}",
 
   "form.title": "Новая группа",
@@ -321,6 +323,7 @@ const ru: Dictionary = {
   "announcements.historyDesc": "Опубликованные объявления и результаты доставки.",
   "announcements.open": "Открыть объявления",
   "announcements.channel": "Имя канала Slack",
+  "announcements.noChannels": "Нет активных Slack-каналов этой группы — сначала запусти группу.",
   "announcements.type": "Тип объявления",
   "announcements.message": "Сообщение",
   "announcements.localTime": "Время отправки (местное)",

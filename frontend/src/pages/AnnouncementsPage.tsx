@@ -61,10 +61,21 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<TranslationKey>();
+  const [serverError, setServerError] = useState("");
+  const [channels, setChannels] = useState<string[]>([]);
   const requests = useRef(new Map<string, string>());
   const submission = useRef<AbortController | null>(null);
 
   useEffect(() => () => submission.current?.abort(), []);
+
+  // Prefill the send time to "now + 15 minutes" so the field never starts
+  // empty and the exact date AND time are one click away.
+  useEffect(() => {
+    if (localTime) return;
+    const at = new Date(Date.now() + 15 * 60_000);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    setLocalTime(`${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`);
+  }, [localTime]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,11 +96,38 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
     return () => controller.abort();
   }, [authorization, groupId, onUnauthorized, reload]);
 
+  // Load the group's ACTIVE Slack channels so the coordinator picks one from
+  // a list instead of typing an exact, easy-to-mistype name (dots→dashes!).
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadChannels() {
+      setChannels([]);
+      try {
+        const { data, response } = await api.GET("/api/groups/{groupId}/resources", {
+          headers: { Authorization: authorization }, params: { path: { groupId } }, signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (response.status === 401) { onUnauthorized(); return; }
+        const names = (data ?? [])
+          .filter((resource) => resource.provider === "slack" && resource.kind === "channel")
+          .map((resource) => resource.name)
+          .sort();
+        setChannels(names);
+        setChannel((current) => (current && names.includes(current) ? current : names[0] ?? ""));
+      } catch {
+        /* The channel list is a convenience; submission still validates server-side. */
+      }
+    }
+    void loadChannels();
+    return () => controller.abort();
+  }, [authorization, groupId, onUnauthorized]);
+
   async function schedule(event: FormEvent) {
     event.preventDefault();
     if (submission.current) return;
     setSaved(false);
     setError(undefined);
+    setServerError("");
     const date = new Date(localTime);
     const channelName = channel.trim().replace(/^#/, "");
     if (!channelName || !message.trim() || !Number.isFinite(date.getTime())) {
@@ -105,7 +143,7 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
     submission.current = controller;
     setBusy(true);
     try {
-      const { data, response } = await api.POST("/api/groups/{groupId}/announcements", {
+      const { data, error, response } = await api.POST("/api/groups/{groupId}/announcements", {
         headers: { Authorization: authorization }, params: { path: { groupId } },
         body: { ...draft, requestId }, signal: controller.signal,
       });
@@ -113,11 +151,14 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
       if (response.status === 401) { onUnauthorized(); return; }
       if (!data) {
         setError(response.status === 409 ? "announcements.conflict" : "announcements.saveFailed");
+        // Surface the server's own reason (e.g. "the channel is not active
+        // for this group") so the coordinator knows exactly what to fix.
+        const detail = (error as { error?: { message?: string } } | undefined)?.error?.message;
+        if (detail) setServerError(detail);
         return;
       }
       requests.current.delete(key);
       setMessage("");
-      setLocalTime("");
       setSaved(true);
       setReload((value) => value + 1);
     } catch {
@@ -137,8 +178,14 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
         <form onSubmit={schedule}>
           <fieldset disabled={busy || !items || loadFailed} className="space-y-3 text-sm text-text">
             <label className="block">{t("announcements.channel")}
-              <input className={`mt-1 ${intakeInputClass}`} required maxLength={81} value={channel}
-                onChange={(event) => setChannel(event.target.value)} />
+              <select className={`mt-1 ${intakeInputClass}`} required value={channel}
+                onChange={(event) => setChannel(event.target.value)}>
+                {channels.length === 0 && <option value="">{t("list.loading")}</option>}
+                {channels.map((name) => <option key={name} value={name}>#{name}</option>)}
+              </select>
+              {channels.length === 0 && !loadFailed && items && (
+                <span className="mt-1 block text-xs text-muted">{t("announcements.noChannels")}</span>
+              )}
             </label>
             <label className="block">{t("announcements.type")}
               <select className={`mt-1 ${intakeInputClass}`} value={type}
@@ -156,7 +203,12 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
             </label>
             <button type="submit" className={intakeActionClass}>{t("announcements.submit")}</button>
           </fieldset>
-          {error && <p role="alert" className="mt-3 text-sm text-danger-text">{t(error)}</p>}
+          {error && (
+            <p role="alert" className="mt-3 text-sm text-danger-text">
+              {t(error)}
+              {serverError && <span className="mt-0.5 block text-xs opacity-80">{serverError}</span>}
+            </p>
+          )}
           {saved && <p role="status" className="mt-3 text-sm text-text">{t("announcements.saved")}</p>}
         </form>
       </Card>

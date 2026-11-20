@@ -46,6 +46,8 @@ const en = {
   "integrations.slack": "Slack",
   "integrations.slackDesc": "Workspace bot",
   "integrations.connectGoogle": "Connect Google",
+  "integrations.reconnectGoogle": "Reconnect Google",
+  "integrations.checkSlack": "Check connection",
   "integrations.workspace": "Workspace · {name}",
 
   "form.title": "New group",
@@ -319,7 +321,8 @@ const en = {
   "announcements.history": "History",
   "announcements.historyDesc": "Published announcements and delivery outcomes.",
   "announcements.open": "Open announcements",
-  "announcements.channel": "Slack channel name",
+  "announcements.channel": "Slack channel",
+  "announcements.noChannels": "No active Slack channels for this group — launch the group first.",
   "announcements.type": "Announcement type",
   "announcements.message": "Message",
   "announcements.localTime": "Send at (local time)",

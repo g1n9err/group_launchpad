@@ -47,6 +47,8 @@ const hy: Dictionary = {
   "integrations.slack": "Slack",
   "integrations.slackDesc": "Աշխատանքային տարածքի բոտ",
   "integrations.connectGoogle": "Միացնել Google-ը",
+  "integrations.reconnectGoogle": "Վերամիացնել Google-ը",
+  "integrations.checkSlack": "Ստուգել կապը",
   "integrations.workspace": "Աշխատանքային տարածք · {name}",
 
   "form.title": "Նոր խումբ",
@@ -321,6 +323,7 @@ const hy: Dictionary = {
   "announcements.historyDesc": "Հրապարակված հայտարարություններ և առաքման արդյունքներ։",
   "announcements.open": "Բացել հայտարարությունները",
   "announcements.channel": "Slack ալիքի անունը",
+  "announcements.noChannels": "Այս խմբի ակտիվ Slack ալիք չկա՝ նախ գործարկիր խումբը։",
   "announcements.type": "Հայտարարության տեսակը",
   "announcements.message": "Հաղորդագրություն",
   "announcements.localTime": "Ուղարկել (տեղական ժամով)",
