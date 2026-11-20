@@ -17,3 +17,4 @@ backend/bin/
 .vscode/
 .DS_Store
 backend/worker
+frontend/test-results/
