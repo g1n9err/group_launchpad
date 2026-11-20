@@ -16,3 +16,4 @@ backend/bin/
 .idea/
 .vscode/
 .DS_Store
+backend/worker

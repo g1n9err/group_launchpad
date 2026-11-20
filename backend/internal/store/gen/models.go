@@ -5,11 +5,61 @@
 package gen
 
 import (
+	"database/sql/driver"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type RiverJobState string
+
+const (
+	RiverJobStateAvailable RiverJobState = "available"
+	RiverJobStateCancelled RiverJobState = "cancelled"
+	RiverJobStateCompleted RiverJobState = "completed"
+	RiverJobStateDiscarded RiverJobState = "discarded"
+	RiverJobStatePending   RiverJobState = "pending"
+	RiverJobStateRetryable RiverJobState = "retryable"
+	RiverJobStateRunning   RiverJobState = "running"
+	RiverJobStateScheduled RiverJobState = "scheduled"
+)
+
+func (e *RiverJobState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RiverJobState(s)
+	case string:
+		*e = RiverJobState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RiverJobState: %T", src)
+	}
+	return nil
+}
+
+type NullRiverJobState struct {
+	RiverJobState RiverJobState
+	Valid         bool // Valid is true if RiverJobState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRiverJobState) Scan(value interface{}) error {
+	if value == nil {
+		ns.RiverJobState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RiverJobState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRiverJobState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RiverJobState), nil
+}
 
 type AuditLog struct {
 	ID            uuid.UUID
@@ -19,6 +69,16 @@ type AuditLog struct {
 	ActualState   []byte
 	Differences   []byte
 	CreatedAt     time.Time
+	RiverJobID    *int64
+}
+
+type AuditNotification struct {
+	ID          uuid.UUID
+	AuditID     uuid.UUID
+	Changes     []byte
+	EmailStatus string
+	EmailError  *string
+	UpdatedAt   time.Time
 }
 
 type AutomationJob struct {
@@ -75,12 +135,33 @@ type GroupResource struct {
 }
 
 type IntakeForm struct {
-	ID             uuid.UUID
-	GroupID        uuid.UUID
-	ExternalFormID *string
-	FormUrl        *string
-	Status         string
-	CreatedAt      time.Time
+	ID                     uuid.UUID
+	GroupID                uuid.UUID
+	ExternalFormID         *string
+	FormUrl                *string
+	Status                 string
+	CreatedAt              time.Time
+	Questions              []byte
+	VerifiedResponsesSince pgtype.Timestamptz
+}
+
+type IntakeFormDelivery struct {
+	ID           uuid.UUID
+	IntakeFormID uuid.UUID
+	UserID       uuid.UUID
+	Recipient    string
+	Status       string
+	Attempts     int32
+	ErrorMessage *string
+	UpdatedAt    time.Time
+}
+
+type IntakeFormResponse struct {
+	IntakeFormID       uuid.UUID
+	UserID             uuid.UUID
+	ExternalResponseID string
+	SubmittedAt        time.Time
+	Answers            []byte
 }
 
 type Integration struct {
@@ -102,6 +183,15 @@ type IntegrationCredential struct {
 	RevokedAt       pgtype.Timestamptz
 }
 
+type LaunchResult struct {
+	ID        uuid.UUID
+	GroupID   uuid.UUID
+	Status    string
+	Steps     []byte
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type OauthState struct {
 	ID              uuid.UUID
 	StateHash       string
@@ -112,15 +202,64 @@ type OauthState struct {
 	CreatedAt       time.Time
 }
 
+type RiverJob struct {
+	ID           int64
+	State        RiverJobState
+	Attempt      int16
+	MaxAttempts  int16
+	AttemptedAt  pgtype.Timestamptz
+	CreatedAt    time.Time
+	FinalizedAt  pgtype.Timestamptz
+	ScheduledAt  time.Time
+	Priority     int16
+	Args         []byte
+	AttemptedBy  []string
+	Errors       [][]byte
+	Kind         string
+	Metadata     []byte
+	Queue        string
+	Tags         []string
+	UniqueKey    []byte
+	UniqueStates pgtype.Bits
+}
+
+type RiverLeader struct {
+	ElectedAt time.Time
+	ExpiresAt time.Time
+	LeaderID  string
+	Name      string
+}
+
+type RiverNotification struct {
+	ID        int64
+	CreatedAt time.Time
+	Payload   string
+	Topic     string
+}
+
+type RiverQueue struct {
+	Name      string
+	CreatedAt time.Time
+	Metadata  []byte
+	PausedAt  pgtype.Timestamptz
+	UpdatedAt time.Time
+}
+
 type ScheduledAnnouncement struct {
-	ID             uuid.UUID
-	GroupID        uuid.UUID
-	MessageType    string
-	MessageContent string
-	ScheduledAt    time.Time
-	Status         string
-	PublishedAt    pgtype.Timestamptz
-	CreatedAt      time.Time
+	ID                uuid.UUID
+	GroupID           uuid.UUID
+	MessageType       string
+	MessageContent    string
+	ScheduledAt       time.Time
+	Status            string
+	PublishedAt       pgtype.Timestamptz
+	CreatedAt         time.Time
+	RequestID         pgtype.UUID
+	ChannelID         *string
+	ChannelName       *string
+	ExternalMessageID *string
+	ErrorMessage      *string
+	UpdatedAt         time.Time
 }
 
 type SlackEvent struct {

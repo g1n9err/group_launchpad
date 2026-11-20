@@ -82,7 +82,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Queue the Slack stage of a group launch */
+        /**
+         * Queue a unified multi-platform group launch
+         * @description Enqueues the launch pipeline: Slack channels, Classroom course + enrollment + teacher assignment, Drive folders + permissions, Forms intake. Each step is idempotent. Poll GET /status for the per-platform results.
+         */
         post: operations["launchGroup"];
         delete?: never;
         options?: never;
@@ -97,7 +100,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the Slack stage of a group launch */
+        /**
+         * Read the unified multi-platform launch result
+         * @description Returns the latest launch outcome across all platforms (Slack, Classroom, Drive, Forms). Falls back to Slack-only status when no unified result exists.
+         */
         get: operations["getGroupLaunchStatus"];
         put?: never;
         post?: never;
@@ -576,6 +582,27 @@ export interface components {
             /** @description true if enrolled/assigned, false on failure */
             success: boolean;
         };
+        GroupLaunchResult: {
+            /** Format: uuid */
+            groupId: string;
+            /** @enum {string} */
+            status: "running" | "completed" | "partially_failed" | "failed";
+            steps?: components["schemas"]["LaunchStep"][];
+        };
+        LaunchQueued: {
+            /** @enum {string} */
+            status: "queued";
+            /** @description human-readable confirmation */
+            message?: string;
+        };
+        LaunchStep: {
+            /** @enum {string} */
+            platform: "slack" | "classroom" | "drive" | "forms" | "roster";
+            /** @enum {string} */
+            status: "succeeded" | "partially_failed" | "failed" | "skipped";
+            /** @description human-readable outcome or error summary */
+            detail?: string;
+        };
         SlackLaunch: {
             /** Format: uuid */
             id: string;
@@ -903,13 +930,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The existing or newly queued Slack execution */
+            /** @description Launch queued successfully */
             202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SlackLaunch"];
+                    "application/json": components["schemas"]["LaunchQueued"];
                 };
             };
             /** @description Coordinator credentials are missing or invalid */
@@ -944,7 +971,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Slack launch is unavailable */
+            /** @description Group launch is unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -964,13 +991,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Slack launch execution */
+            /** @description Unified launch result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SlackLaunch"];
+                    "application/json": components["schemas"]["GroupLaunchResult"];
                 };
             };
             /** @description Coordinator credentials are missing or invalid */
@@ -982,7 +1009,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Slack launch has not been queued for this group */
+            /** @description No launch has been recorded for this group */
             404: {
                 headers: {
                     [name: string]: unknown;

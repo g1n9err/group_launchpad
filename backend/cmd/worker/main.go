@@ -1,10 +1,6 @@
 // cmd/worker — background job process powered by River (PostgreSQL-backed
-// queue). Runs workers for the automation engine: launch pipelines, daily
-// sync audits, and announcement scheduling (added in later phases).
-//
-// The worker is a SEPARATE process from the API: it never serves HTTP, and
-// the API never runs job workers. They share the same PostgreSQL pool
-// configuration but are independently deployable and restartable.
+// queue). Runs workers for the automation engine: unified group launches,
+// daily sync audits, and announcement scheduling.
 package main
 
 import (
@@ -14,6 +10,7 @@ import (
 	stdmail "net/mail"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +19,7 @@ import (
 
 	"launchpad/internal/config"
 	"launchpad/internal/core/audit"
+	"launchpad/internal/core/groups"
 	"launchpad/internal/core/integrations"
 	"launchpad/internal/dbmigrate"
 	"launchpad/internal/integrations/google"
@@ -45,14 +43,12 @@ func run() error {
 	}
 	logger := newLogger(cfg.LogLevel)
 
-	// Connect to PostgreSQL with retry (compose races).
 	pool, err := connectWithRetry(cfg.DatabaseURL, logger)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	// Apply pending migrations (worker must see the same schema).
 	if cfg.MigrateOnBoot {
 		if err := dbmigrate.Up(cfg.DatabaseURL); err != nil {
 			return fmt.Errorf("migrate on boot: %w", err)
@@ -60,21 +56,47 @@ func run() error {
 		logger.Info("migrations up to date")
 	}
 
-	// Build the River client with registered workers.
-	workers := jobs.NewWorkers(logger)
+	// ── Build services first ──────────────────────────────────────────
 	repo := store.New(pool)
+	groupsSvc := groups.New(repo)
+	// Staff emails for Drive/Classroom access (comma-separated env var).
+	staffEmails := splitCSV(os.Getenv("STAFF_EMAILS"))
+
+	// Slack
 	slack := integrations.NewSlackChannelsService(nil, repo, repo, false)
 	var slackChecker audit.Checker
 	if cfg.SlackConfigured() {
 		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
 		slack = integrations.NewSlackChannelsService(slackGateway, repo, repo, true)
 		slackChecker = slackGateway
+	}
+
+	// Google (Classroom, Drive, Forms share the OAuth token source)
+	auth := google.NewAuthService(cfg, repo, logger)
+	var classroomSvc *integrations.ClassroomService
+	var driveSvc *integrations.DriveService
+	var formsSvc *integrations.FormsService
+	if auth.Configured() {
+		classroomSvc = &integrations.ClassroomService{Tokens: auth, Gateway: google.NewClassroomGateway(), Store: repo, Operations: repo}
+		driveSvc = &integrations.DriveService{Tokens: auth, Gateway: google.NewDriveGateway(), Store: repo, Operations: repo}
+		formsSvc = &integrations.FormsService{Tokens: auth, Gateway: google.NewFormsGateway(), Store: repo, Operations: repo}
+	}
+
+	// ── Register workers ──────────────────────────────────────────────
+	workers := jobs.NewLaunchWorkers(logger, slack, cfg.SlackConfigured(), classroomSvc, driveSvc, formsSvc, groupsSvc, staffEmails, repo)
+
+	// Slack-only launch worker (legacy, still needed for older queue entries)
+	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
+
+	if cfg.SlackConfigured() {
+		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
 		river.AddWorker(workers, &jobs.AnnouncementWorker{Store: repo, Slack: slackGateway})
 	}
-	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
-	auth := google.NewAuthService(cfg, repo, logger)
+
 	river.AddWorker(workers, &jobs.DailyAuditWorker{Groups: repo})
+
 	jobConfig := jobs.Config{WorkerID: cfg.WorkerID(), SlackAnnouncementsEnabled: cfg.SlackConfigured()}
+
 	var mailer interface {
 		integrations.IntakeMailer
 		jobs.AuditMailer
@@ -86,7 +108,6 @@ func run() error {
 		}
 		mailer = relay
 	}
-
 	if cfg.GmailEnabled {
 		if !auth.Configured() {
 			return fmt.Errorf("GMAIL_ENABLED requires valid Google OAuth configuration")
@@ -119,10 +140,29 @@ func run() error {
 	if _, err := client.PeriodicJobs().AddSafely(jobs.DailyAuditSchedule()); err != nil {
 		return fmt.Errorf("register daily audit: %w", err)
 	}
+
+	// Expose a launcher for the API process to enqueue unified launches.
+	launcher := &jobs.RiverLauncher{Client: client}
+	_ = launcher // used by the API process; worker doesn't enqueue
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	return jobs.RunWorker(ctx, client, logger)
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func newLogger(level string) *slog.Logger {

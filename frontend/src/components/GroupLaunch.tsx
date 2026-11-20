@@ -6,14 +6,17 @@ import { intakeActionClass, intakeButtonClass, intakeInputClass } from "../lib/i
 import type { components } from "../lib/schema";
 import { Card, Chip } from "./ui";
 
-type SlackLaunch = components["schemas"]["SlackLaunch"];
+type LaunchResult = components["schemas"]["GroupLaunchResult"];
+type LaunchStep = components["schemas"]["LaunchStep"];
 type Classroom = components["schemas"]["ClassroomCourse"];
 type Drive = components["schemas"]["DriveFolders"];
-type Service = "slack" | "classroom" | "drive";
+type Service = "slack" | "classroom" | "drive" | "forms";
 type Failure = "requestFailed" | "unavailable" | "originDenied";
 
-function inProgress(run: SlackLaunch | null | undefined) {
-  return run?.status === "pending" || run?.status === "running";
+const ALL_PLATFORMS: Service[] = ["slack", "classroom", "drive", "forms"];
+
+function inProgress(result: LaunchResult | null | undefined) {
+  return result?.status === "running";
 }
 
 export function GroupLaunch({ groupId }: { groupId: string }) {
@@ -65,7 +68,7 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
 }) {
   const { t } = useSettings();
   const queryClient = useQueryClient();
-  const [slack, setSlack] = useState<SlackLaunch | null>();
+  const [result, setResult] = useState<LaunchResult | null>();
   const [classroom, setClassroom] = useState<Classroom>();
   const [drive, setDrive] = useState<Drive>();
   const [statusFailed, setStatusFailed] = useState(false);
@@ -73,15 +76,20 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
   const [busy, setBusy] = useState<Service>();
   const [confirm, setConfirm] = useState<Service>();
   const [failures, setFailures] = useState<Partial<Record<Service, Failure>>>({});
+  const [queued, setQueued] = useState(false); // true after POST /launch until terminal status
   const request = useRef<AbortController | null>(null);
 
   useEffect(() => () => request.current?.abort(), []);
 
+  // Poll unified launch status. Keeps polling while: (a) the result is
+  // "running", (b) we've recently queued a launch and the worker hasn't
+  // persisted the result yet (404 or fallback), or (c) we haven't reached
+  // a terminal state. Gives up after 60 seconds of no transition.
   useEffect(() => {
-    if (busy === "slack") return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let wasRunning = false;
+    const deadline = Date.now() + 60_000;
 
     async function loadStatus() {
       try {
@@ -90,20 +98,38 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
         });
         if (controller.signal.aborted) return;
         if (response.status === 401) { onUnauthorized(); return; }
+
+        // 404: no unified result yet. If we just queued a launch, the
+        // worker is processing — keep polling until the deadline.
         if (response.status === 404) {
-          setSlack(null);
+          setResult(null);
           setStatusFailed(false);
+          if (queued && Date.now() < deadline) {
+            timer = setTimeout(() => void loadStatus(), 2000);
+          } else {
+            setQueued(false);
+          }
           return;
         }
+
         setStatusFailed(!data);
         if (!data) return;
-        setSlack(data);
+        setResult(data);
+
         if (inProgress(data)) {
           wasRunning = true;
           timer = setTimeout(() => void loadStatus(), 2000);
-        } else if (wasRunning || reload > 0) {
-          void queryClient.invalidateQueries({ queryKey: ["groups"] });
-          void queryClient.invalidateQueries({ queryKey: ["onboarding", groupId] });
+        } else if (queued && data.status === "running") {
+          // Worker saved "running" — keep polling for the terminal status.
+          wasRunning = true;
+          timer = setTimeout(() => void loadStatus(), 2000);
+        } else {
+          // Terminal state — stop polling, clear the queued flag.
+          setQueued(false);
+          if (wasRunning || reload > 0) {
+            void queryClient.invalidateQueries({ queryKey: ["groups"] });
+            void queryClient.invalidateQueries({ queryKey: ["onboarding", groupId] });
+          }
         }
       } catch {
         if (!controller.signal.aborted) setStatusFailed(true);
@@ -112,7 +138,7 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
 
     void loadStatus();
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [authorization, busy, groupId, onUnauthorized, queryClient, reload]);
+  }, [authorization, groupId, onUnauthorized, queryClient, reload, queued]);
 
   async function provision(service: Service) {
     if (request.current) return;
@@ -127,20 +153,24 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
     try {
       let response: Response;
       if (service === "slack") {
-        const result = await api.POST("/api/groups/{groupId}/launch", options);
-        response = result.response;
-        if (!controller.signal.aborted && result.data) {
-          setSlack(result.data);
+        // Unified launch: queues all platforms.
+        const res = await api.POST("/api/groups/{groupId}/launch", options);
+        response = res.response;
+        if (!controller.signal.aborted && res.response.ok) {
+          setQueued(true); // triggers status polling until terminal state
           setReload((value) => value + 1);
         }
       } else if (service === "classroom") {
-        const result = await api.POST("/api/groups/{groupId}/classroom/provision", options);
-        response = result.response;
-        if (!controller.signal.aborted && result.data) setClassroom(result.data);
+        const res = await api.POST("/api/groups/{groupId}/classroom/provision", options);
+        response = res.response;
+        if (!controller.signal.aborted && res.data) setClassroom(res.data);
+      } else if (service === "drive") {
+        const res = await api.POST("/api/groups/{groupId}/drive/provision", options);
+        response = res.response;
+        if (!controller.signal.aborted && res.data) setDrive(res.data);
       } else {
-        const result = await api.POST("/api/groups/{groupId}/drive/provision", options);
-        response = result.response;
-        if (!controller.signal.aborted && result.data) setDrive(result.data);
+        const res = await api.POST("/api/groups/{groupId}/forms/provision", options);
+        response = res.response;
       }
       if (controller.signal.aborted) return;
       if (response.status === 401) { onUnauthorized(); return; }
@@ -156,10 +186,14 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
     }
   }
 
-  if (slack === undefined && !statusFailed) return <p role="status" className="text-sm text-muted">{t("launch.loading")}</p>;
+  if (result === undefined && !statusFailed) return <p role="status" className="text-sm text-muted">{t("launch.loading")}</p>;
 
-  const slackFailed = slack?.status === "failed" || slack?.status === "partially_failed";
-  const services = ["slack", "classroom", "drive"] as const;
+  const stepFor = (platform: string): LaunchStep | undefined =>
+    result?.steps?.find((s) => s.platform === platform);
+
+  const overallTone = result?.status === "completed" ? "success"
+    : result?.status === "failed" ? "danger"
+    : result?.status === "partially_failed" ? "warn" : "info";
 
   return (
     <div className="space-y-4">
@@ -170,25 +204,40 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
             onClick={() => setReload((value) => value + 1)}>{t("audit.refresh")}</button>
         </div>
       )}
-      <ul className="grid gap-3 lg:grid-cols-3">
-        {services.map((service) => {
+
+      {result && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Chip tone={overallTone}>{t(`launch.status.${result.status}`)}</Chip>
+          {result.steps && result.steps.length > 0 && (
+            <span className="text-xs text-muted">
+              {result.steps.filter((s) => s.status === "succeeded").length}/{result.steps.length} {t("launch.platformsReady")}
+            </span>
+          )}
+        </div>
+      )}
+
+      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {ALL_PLATFORMS.map((service) => {
+          const step = stepFor(service);
           const failure = failures[service];
-          const completed = service === "slack" ? slack?.status === "succeeded" : service === "classroom" ? classroom : drive;
-          const slackActionBlocked = service === "slack" && (statusFailed || inProgress(slack));
+          const stepTone = step?.status === "succeeded" ? "success"
+            : step?.status === "failed" ? "danger"
+            : step?.status === "partially_failed" ? "warn"
+            : step?.status === "skipped" ? "muted" : "info";
           return (
-            <li key={service} className="space-y-3 rounded-md border border-border p-4 text-sm text-text">
+            <li key={service} className="space-y-2 rounded-md border border-border p-4 text-sm text-text">
               <h3 className="font-semibold">{t(`launch.${service}`)}</h3>
-              {service === "slack" && slack && (
-                <div role="status" className="space-y-2">
-                  <Chip tone={slackFailed ? "danger" : completed ? "success" : "info"}>{t(`launch.status.${slack.status}`)}</Chip>
-                  {slack.error && <p className="break-words text-danger-text">{slack.error}</p>}
+              {step && (
+                <div role="status" className="space-y-1">
+                  <Chip tone={stepTone}>{t(`launch.step.${step.status}`)}</Chip>
+                  {step.detail && <p className="break-words text-xs text-muted">{step.detail}</p>}
                 </div>
               )}
               {service === "classroom" && classroom && (
                 <p className="break-words">{t("launch.courseId")} <code>{classroom.courseId}</code></p>
               )}
               {service === "drive" && drive && (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <a className="block break-words text-primary underline" target="_blank" rel="noreferrer"
                     href={`https://drive.google.com/drive/folders/${encodeURIComponent(drive.root.id)}`}>{drive.root.name}</a>
                   <ul className="list-inside list-disc text-muted">
@@ -197,16 +246,22 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
                 </div>
               )}
               {failure && <p role="alert" className="text-danger-text">{t(`launch.${failure}`)}</p>}
-              {!completed && (
-                <button type="button" className={intakeButtonClass} disabled={Boolean(busy || confirm || slackActionBlocked)}
+
+              {/* Show action/retry button for platforms that need it */}
+              {(service === "slack" && (!step || step.status === "failed" || step.status === "partially_failed")) ||
+               (service !== "slack" && !step?.status?.match(/succeeded|skipped/)) ? (
+                <button type="button" className={intakeButtonClass} disabled={Boolean(busy || confirm)}
                   onClick={() => setConfirm(service)}>
-                  {busy === service ? t("launch.working") : failure || (service === "slack" && slackFailed) ? t("onboarding.retry") : t(`launch.action.${service}`)}
+                  {busy === service ? t("launch.working")
+                    : (failure || step?.status === "failed" || step?.status === "partially_failed") ? t("onboarding.retry")
+                    : t(`launch.action.${service}`)}
                 </button>
-              )}
+              ) : null}
             </li>
           );
         })}
       </ul>
+
       {confirm && (
         <div className="space-y-3 rounded-md border border-border p-4">
           <p className="text-sm text-text">{t(`launch.confirm.${confirm}`)}</p>

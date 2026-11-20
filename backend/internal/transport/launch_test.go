@@ -40,12 +40,12 @@ func TestSlackLaunchQueuesAndProvisionsOnce(t *testing.T) {
 		t.Fatalf("status before launch: %d", code)
 	}
 	code, first := doJSON(t, srv, http.MethodPost, path+"/launch", "")
-	if code != http.StatusAccepted || first["status"] != "pending" || first["id"] == nil {
+	if code != http.StatusAccepted || first["status"] != "queued" {
 		t.Fatalf("queue launch: %d %v", code, first)
 	}
 	code, second := doJSON(t, srv, http.MethodPost, path+"/launch", "")
-	if code != http.StatusAccepted || second["id"] != first["id"] {
-		t.Fatalf("duplicate launch: %d %v, want run %v", code, second, first["id"])
+	if code != http.StatusAccepted {
+		t.Fatalf("duplicate launch: %d %v", code, second)
 	}
 	if total := countRowsSimple(t, pool, "SELECT count(*) FROM river_job WHERE kind='slack_launch'"); total != 1 {
 		t.Fatalf("queued %d jobs, want 1", total)

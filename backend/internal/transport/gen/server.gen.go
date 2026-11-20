@@ -145,6 +145,30 @@ func (e GroupAuditResourceStatus) Valid() bool {
 	}
 }
 
+// Defines values for GroupLaunchResultStatus.
+const (
+	GroupLaunchResultStatusCompleted       GroupLaunchResultStatus = "completed"
+	GroupLaunchResultStatusFailed          GroupLaunchResultStatus = "failed"
+	GroupLaunchResultStatusPartiallyFailed GroupLaunchResultStatus = "partially_failed"
+	GroupLaunchResultStatusRunning         GroupLaunchResultStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the GroupLaunchResultStatus enum.
+func (e GroupLaunchResultStatus) Valid() bool {
+	switch e {
+	case GroupLaunchResultStatusCompleted:
+		return true
+	case GroupLaunchResultStatusFailed:
+		return true
+	case GroupLaunchResultStatusPartiallyFailed:
+		return true
+	case GroupLaunchResultStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupOnboardingStudentOnboardingStatus.
 const (
 	GroupOnboardingStudentOnboardingStatusComplete      GroupOnboardingStudentOnboardingStatus = "complete"
@@ -250,6 +274,72 @@ func (e IntakeFormQuestionType) Valid() bool {
 	}
 }
 
+// Defines values for LaunchQueuedStatus.
+const (
+	Queued LaunchQueuedStatus = "queued"
+)
+
+// Valid indicates whether the value is a known member of the LaunchQueuedStatus enum.
+func (e LaunchQueuedStatus) Valid() bool {
+	switch e {
+	case Queued:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LaunchStepPlatform.
+const (
+	Classroom LaunchStepPlatform = "classroom"
+	Drive     LaunchStepPlatform = "drive"
+	Forms     LaunchStepPlatform = "forms"
+	Roster    LaunchStepPlatform = "roster"
+	Slack     LaunchStepPlatform = "slack"
+)
+
+// Valid indicates whether the value is a known member of the LaunchStepPlatform enum.
+func (e LaunchStepPlatform) Valid() bool {
+	switch e {
+	case Classroom:
+		return true
+	case Drive:
+		return true
+	case Forms:
+		return true
+	case Roster:
+		return true
+	case Slack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LaunchStepStatus.
+const (
+	LaunchStepStatusFailed          LaunchStepStatus = "failed"
+	LaunchStepStatusPartiallyFailed LaunchStepStatus = "partially_failed"
+	LaunchStepStatusSkipped         LaunchStepStatus = "skipped"
+	LaunchStepStatusSucceeded       LaunchStepStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the LaunchStepStatus enum.
+func (e LaunchStepStatus) Valid() bool {
+	switch e {
+	case LaunchStepStatusFailed:
+		return true
+	case LaunchStepStatusPartiallyFailed:
+		return true
+	case LaunchStepStatusSkipped:
+		return true
+	case LaunchStepStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ScheduledAnnouncementStatus.
 const (
 	ScheduledAnnouncementStatusCancelled  ScheduledAnnouncementStatus = "cancelled"
@@ -346,33 +436,6 @@ func (e SlackInviteResultStatus) Valid() bool {
 	case SlackInviteResultStatusFailed:
 		return true
 	case SlackInviteResultStatusInvited:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SlackLaunchStatus.
-const (
-	SlackLaunchStatusFailed          SlackLaunchStatus = "failed"
-	SlackLaunchStatusPartiallyFailed SlackLaunchStatus = "partially_failed"
-	SlackLaunchStatusPending         SlackLaunchStatus = "pending"
-	SlackLaunchStatusRunning         SlackLaunchStatus = "running"
-	SlackLaunchStatusSucceeded       SlackLaunchStatus = "succeeded"
-)
-
-// Valid indicates whether the value is a known member of the SlackLaunchStatus enum.
-func (e SlackLaunchStatus) Valid() bool {
-	switch e {
-	case SlackLaunchStatusFailed:
-		return true
-	case SlackLaunchStatusPartiallyFailed:
-		return true
-	case SlackLaunchStatusPending:
-		return true
-	case SlackLaunchStatusRunning:
-		return true
-	case SlackLaunchStatusSucceeded:
 		return true
 	default:
 		return false
@@ -585,6 +648,16 @@ type GroupCreate struct {
 	StudentEmails *[]openapi_types.Email `json:"studentEmails,omitempty"`
 }
 
+// GroupLaunchResult defines model for GroupLaunchResult.
+type GroupLaunchResult struct {
+	GroupId openapi_types.UUID      `json:"groupId"`
+	Status  GroupLaunchResultStatus `json:"status"`
+	Steps   *[]LaunchStep           `json:"steps,omitempty"`
+}
+
+// GroupLaunchResultStatus defines model for GroupLaunchResult.Status.
+type GroupLaunchResultStatus string
+
 // GroupOnboarding defines model for GroupOnboarding.
 type GroupOnboarding struct {
 	Group    Group                    `json:"group"`
@@ -680,6 +753,30 @@ type IntakeResponseSummary struct {
 	Unchanged int `json:"unchanged"`
 }
 
+// LaunchQueued defines model for LaunchQueued.
+type LaunchQueued struct {
+	// Message human-readable confirmation
+	Message *string            `json:"message,omitempty"`
+	Status  LaunchQueuedStatus `json:"status"`
+}
+
+// LaunchQueuedStatus defines model for LaunchQueued.Status.
+type LaunchQueuedStatus string
+
+// LaunchStep defines model for LaunchStep.
+type LaunchStep struct {
+	// Detail human-readable outcome or error summary
+	Detail   *string            `json:"detail,omitempty"`
+	Platform LaunchStepPlatform `json:"platform"`
+	Status   LaunchStepStatus   `json:"status"`
+}
+
+// LaunchStepPlatform defines model for LaunchStep.Platform.
+type LaunchStepPlatform string
+
+// LaunchStepStatus defines model for LaunchStep.Status.
+type LaunchStepStatus string
+
 // OpenAuditIssues defines model for OpenAuditIssues.
 type OpenAuditIssues struct {
 	CheckedAt time.Time            `json:"checkedAt"`
@@ -748,20 +845,6 @@ type SlackInviteResult struct {
 
 // SlackInviteResultStatus defines model for SlackInviteResult.Status.
 type SlackInviteResultStatus string
-
-// SlackLaunch defines model for SlackLaunch.
-type SlackLaunch struct {
-	Attempts    int                `json:"attempts"`
-	CompletedAt *time.Time         `json:"completedAt,omitempty"`
-	CreatedAt   time.Time          `json:"createdAt"`
-	Error       *string            `json:"error,omitempty"`
-	GroupId     openapi_types.UUID `json:"groupId"`
-	Id          openapi_types.UUID `json:"id"`
-	Status      SlackLaunchStatus  `json:"status"`
-}
-
-// SlackLaunchStatus defines model for SlackLaunch.Status.
-type SlackLaunchStatus string
 
 // SlackProvisionRequest defines model for SlackProvisionRequest.
 type SlackProvisionRequest struct {
@@ -902,7 +985,7 @@ type ServerInterface interface {
 	// ImportGroupFormResponses Import verified intake responses for the group's students
 	// (POST /api/groups/{groupId}/forms/responses/import)
 	ImportGroupFormResponses(ctx echo.Context, groupId GroupId) error
-	// LaunchGroup Queue the Slack stage of a group launch
+	// LaunchGroup Queue a unified multi-platform group launch
 	// (POST /api/groups/{groupId}/launch)
 	LaunchGroup(ctx echo.Context, groupId GroupId) error
 	// GetGroupOnboarding Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
@@ -911,7 +994,7 @@ type ServerInterface interface {
 	// ProvisionGroupSlack Idempotently provision the group's Slack channels, invitations, and welcome messages
 	// (POST /api/groups/{groupId}/slack/provision)
 	ProvisionGroupSlack(ctx echo.Context, groupId GroupId) error
-	// GetGroupLaunchStatus Read the Slack stage of a group launch
+	// GetGroupLaunchStatus Read the unified multi-platform launch result
 	// (GET /api/groups/{groupId}/status)
 	GetGroupLaunchStatus(ctx echo.Context, groupId GroupId) error
 	// GoogleCallback Google OAuth callback (Google redirects the browser here after consent)

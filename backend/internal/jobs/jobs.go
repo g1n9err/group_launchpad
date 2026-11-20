@@ -11,11 +11,15 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
+
+	"launchpad/internal/core/groups"
+	"launchpad/internal/core/integrations"
 )
 
 // Config for the River client.
@@ -38,6 +42,35 @@ const DefaultMaxWorkers = 10
 func NewWorkers(logger *slog.Logger) *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &PingWorker{Logger: logger})
+	return workers
+}
+
+// NewLaunchWorkers returns workers with the unified group launch registered,
+// alongside the base ping worker. Callers inject their service dependencies.
+func NewLaunchWorkers(
+	logger *slog.Logger,
+	slack SlackProvisioner,
+	slackConfigured bool,
+	classroom *integrations.ClassroomService,
+	drive *integrations.DriveService,
+	forms *integrations.FormsService,
+	groupsSvc *groups.Service,
+	staffEmails []string,
+	resultStore LaunchResultStore,
+) *river.Workers {
+	workers := river.NewWorkers()
+	river.AddWorker(workers, &PingWorker{Logger: logger})
+	river.AddWorker(workers, &GroupLaunchWorker{
+		Logger:           logger,
+		SlackProvisioner: slack,
+		SlackConfigured:  slackConfigured,
+		ClassroomService: classroom,
+		DriveService:     drive,
+		FormsService:     forms,
+		GroupsService:    groupsSvc,
+		StaffEmails:      staffEmails,
+		ResultStore:      resultStore,
+	})
 	return workers
 }
 
@@ -164,6 +197,59 @@ func Enqueue(ctx context.Context, client *river.Client[pgx.Tx], args river.JobAr
 	_, err := client.Insert(ctx, args, opts)
 	if err != nil {
 		return fmt.Errorf("jobs: enqueue: %w", err)
+	}
+	return nil
+}
+
+// JobInserter is the narrow River client interface needed for queueing.
+type JobInserter interface {
+	Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error)
+}
+
+// RiverLauncher implements transport.GroupLauncher by inserting the unified
+// group launch job into River. The worker process picks it up.
+type RiverLauncher struct {
+	Client      JobInserter
+	ResultStore LaunchResultStore // overwrites stale results on queue
+}
+
+// QueueGroupLaunch marks the group as "running" BEFORE inserting the job,
+// so the status endpoint immediately reflects the new launch — the UI
+// never sees a stale completed/partially_failed result from a previous run.
+// If the River insert fails, the result is rolled back to "failed" so
+// the coordinator isn't left with a permanently "running" status.
+func (l *RiverLauncher) QueueGroupLaunch(ctx context.Context, groupID uuid.UUID) error {
+	// Overwrite any previous result with "running" first. This ensures
+	// GET /status returns "running" (not the old terminal state) from
+	// the moment the launch is queued.
+	if l.ResultStore != nil {
+		if err := l.ResultStore.SaveLaunchResult(ctx, groupID, "running", nil); err != nil {
+			return fmt.Errorf("mark launch running: %w", err)
+		}
+	}
+	_, err := l.Client.Insert(ctx, GroupLaunchArgs{GroupID: groupID}, &river.InsertOpts{
+		UniqueOpts: river.UniqueOpts{
+			ByArgs: true,
+			ByState: []rivertype.JobState{
+				rivertype.JobStateAvailable,
+				rivertype.JobStatePending,
+				rivertype.JobStateRunning,
+				rivertype.JobStateRetryable,
+				rivertype.JobStateScheduled,
+			},
+		},
+	})
+	if err != nil {
+		// Roll back the "running" status so the UI doesn't poll forever.
+		if l.ResultStore != nil {
+			rollbackErr := l.ResultStore.SaveLaunchResult(ctx, groupID, "failed", []LaunchStep{
+				{Platform: "queue", Status: StepFailed, Detail: "failed to enqueue launch job"},
+			})
+			if rollbackErr != nil {
+				return fmt.Errorf("queue launch (%v); rollback to failed also failed: %w", err, rollbackErr)
+			}
+		}
+		return fmt.Errorf("queue group launch: %w", err)
 	}
 	return nil
 }

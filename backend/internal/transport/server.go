@@ -41,6 +41,8 @@ type Handlers struct {
 	auditNotifications AuditNotificationReader
 	announcements      AnnouncementService
 	staffEmails        []string // coordinator-configured staff with Drive/Classroom access
+	groupLauncher      GroupLauncher
+	launchStatus       LaunchStatusReader
 	ping               PingFunc
 	logger             *slog.Logger
 }
@@ -48,6 +50,8 @@ type Handlers struct {
 // GroupProvisioning wires the group launch and Google provisioning use cases.
 type GroupProvisioning struct {
 	Launch             SlackLaunchService
+	GroupLauncher      GroupLauncher
+	LaunchStatus       LaunchStatusReader
 	Classroom          *integrations.ClassroomService
 	Drive              *integrations.DriveService
 	Forms              *integrations.FormsService
@@ -64,6 +68,8 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 	h.coordinator = newCoordinatorAuth(cfg.CoordinatorPassword, cfg.CORSAllowedOrigins)
 	if len(provisioning) > 0 {
 		h.launch = provisioning[0].Launch
+		h.groupLauncher = provisioning[0].GroupLauncher
+		h.launchStatus = provisioning[0].LaunchStatus
 		h.classroom = provisioning[0].Classroom
 		h.drive = provisioning[0].Drive
 		h.forms = provisioning[0].Forms

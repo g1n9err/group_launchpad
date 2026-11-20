@@ -65,6 +65,7 @@ services:
       DATABASE_URL: postgres://launchpad:launchpad@postgres:5432/launchpad?sslmode=disable
       LOG_LEVEL: info
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      STAFF_EMAILS: ${STAFF_EMAILS:-}
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
       GMAIL_ENABLED: ${GMAIL_ENABLED:-false}
       AUDIT_NOTIFICATION_EMAIL: ${AUDIT_NOTIFICATION_EMAIL:-}
