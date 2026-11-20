@@ -467,6 +467,20 @@ type AuditNotifications struct {
 // ClassroomCourse defines model for ClassroomCourse.
 type ClassroomCourse struct {
 	CourseId string `json:"courseId"`
+
+	// StudentEnrollments per-student enrollment outcomes (PRD 4.3)
+	StudentEnrollments *[]ClassroomEnrollment `json:"studentEnrollments,omitempty"`
+
+	// TeacherAssignments per-teacher assignment outcomes
+	TeacherAssignments *[]ClassroomEnrollment `json:"teacherAssignments,omitempty"`
+}
+
+// ClassroomEnrollment defines model for ClassroomEnrollment.
+type ClassroomEnrollment struct {
+	Email string `json:"email"`
+
+	// Success true if enrolled/assigned, false on failure
+	Success bool `json:"success"`
 }
 
 // Date ISO 8601 calendar date (YYYY-MM-DD)

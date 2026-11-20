@@ -309,7 +309,7 @@ export interface paths {
         };
         /**
          * Onboarding visibility for one group (joined Slack tracking, PRD 4.6)
-         * @description Read-only. "Joined" counts joined_slack and complete. A form submission by itself does not count as a Slack join. joinedAt is not tracked yet and is deliberately omitted rather than fabricated. Exposes student emails — requires coordinator authentication before production exposure (not yet implemented).
+         * @description Read-only. "Joined" counts joined_slack and complete. A form submission by itself does not count as a Slack join. joinedAt is not tracked yet and is deliberately omitted rather than fabricated. Exposes student emails — requires coordinator authentication (HTTP Basic). Anonymous requests receive 401.
          */
         get: operations["getGroupOnboarding"];
         put?: never;
@@ -566,6 +566,15 @@ export interface components {
         };
         ClassroomCourse: {
             courseId: string;
+            /** @description per-student enrollment outcomes (PRD 4.3) */
+            studentEnrollments?: components["schemas"]["ClassroomEnrollment"][];
+            /** @description per-teacher assignment outcomes */
+            teacherAssignments?: components["schemas"]["ClassroomEnrollment"][];
+        };
+        ClassroomEnrollment: {
+            email: string;
+            /** @description true if enrolled/assigned, false on failure */
+            success: boolean;
         };
         SlackLaunch: {
             /** Format: uuid */

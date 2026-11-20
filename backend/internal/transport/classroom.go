@@ -24,5 +24,36 @@ func (h *Handlers) ProvisionGroupClassroom(c echo.Context, groupID gen.GroupId) 
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, gen.ClassroomCourse{CourseId: id})
+
+	// Enroll students (from the group's roster) and assign teachers (from
+	// the coordinator's staff list). Individual failures are reported but
+	// don't abort the provisioning response.
+	var studentResults []gen.ClassroomEnrollment
+	roster, _ := h.groups.Onboarding(ctx, group.ID.String())
+	studentEmails := make([]string, 0, len(roster.Students))
+	for _, s := range roster.Students {
+		studentEmails = append(studentEmails, s.Email)
+	}
+	if len(studentEmails) > 0 {
+		for _, r := range h.classroom.EnrollAll(ctx, group.ID, id, studentEmails) {
+			studentResults = append(studentResults, gen.ClassroomEnrollment{
+				Email: r.Email, Success: r.Err == nil,
+			})
+		}
+	}
+
+	var teacherResults []gen.ClassroomEnrollment
+	if len(h.staffEmails) > 0 {
+		for _, r := range h.classroom.AssignTeachers(ctx, group.ID, id, h.staffEmails) {
+			teacherResults = append(teacherResults, gen.ClassroomEnrollment{
+				Email: r.Email, Success: r.Err == nil,
+			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, gen.ClassroomCourse{
+		CourseId:          id,
+		StudentEnrollments: &studentResults,
+		TeacherAssignments: &teacherResults,
+	})
 }

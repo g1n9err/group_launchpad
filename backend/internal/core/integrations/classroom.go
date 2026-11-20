@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,12 @@ type ClassroomCourseInput struct {
 
 type ClassroomGateway interface {
 	EnsureCourse(context.Context, string, ClassroomCourseInput) (string, error)
+	// EnrollStudent invites a student to a course by email; already-enrolled
+	// returns success (idempotent).
+	EnrollStudent(ctx context.Context, token, courseID, email string) error
+	// AssignTeacher adds a teacher to a course by email; already-assigned
+	// returns success (idempotent).
+	AssignTeacher(ctx context.Context, token, courseID, email string) error
 }
 
 type GoogleAccessTokenSource interface {
@@ -71,4 +78,59 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 		return "", err
 	}
 	return id, nil
+}
+
+// EnrollAll enrolls every student email into the course. Individual failures
+// are recorded but don't abort the batch — the caller receives a summary.
+func (s *ClassroomService) EnrollAll(ctx context.Context, groupID uuid.UUID, courseID string, emails []string) []EnrollmentResult {
+	token, err := s.Tokens.AccessToken(ctx)
+	if err != nil {
+		return errorResults(emails, "token_unavailable")
+	}
+	results := make([]EnrollmentResult, 0, len(emails))
+	for _, email := range emails {
+		started := time.Now()
+		err := s.Gateway.EnrollStudent(ctx, token, courseID, email)
+		s.record(ctx, groupID, "classroom.enroll_student", started, err)
+		results = append(results, EnrollmentResult{Email: email, Err: err})
+	}
+	return results
+}
+
+// AssignTeachers adds teachers to the course. Idempotent per teacher.
+func (s *ClassroomService) AssignTeachers(ctx context.Context, groupID uuid.UUID, courseID string, emails []string) []EnrollmentResult {
+	token, err := s.Tokens.AccessToken(ctx)
+	if err != nil {
+		return errorResults(emails, "token_unavailable")
+	}
+	results := make([]EnrollmentResult, 0, len(emails))
+	for _, email := range emails {
+		started := time.Now()
+		err := s.Gateway.AssignTeacher(ctx, token, courseID, email)
+		s.record(ctx, groupID, "classroom.assign_teacher", started, err)
+		results = append(results, EnrollmentResult{Email: email, Err: err})
+	}
+	return results
+}
+
+// EnrollmentResult reports one student/teacher enrollment outcome.
+type EnrollmentResult struct {
+	Email string
+	Err   error // nil = success
+}
+
+func errorResults(emails []string, reason string) []EnrollmentResult {
+	out := make([]EnrollmentResult, len(emails))
+	for i, email := range emails {
+		out[i] = EnrollmentResult{Email: email, Err: errors.New(reason)}
+	}
+	return out
+}
+
+func (s *ClassroomService) record(ctx context.Context, groupID uuid.UUID, operation string, started time.Time, err error) {
+	op := ExternalOperation{GroupID: &groupID, Provider: classroomProvider, Operation: operation, DurationMS: time.Since(started).Milliseconds()}
+	if err != nil {
+		op.Error = err.Error()
+	}
+	_ = s.Operations.RecordExternalOperation(ctx, op)
 }

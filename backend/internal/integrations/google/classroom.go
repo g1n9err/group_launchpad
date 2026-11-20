@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"launchpad/internal/core/integrations"
@@ -45,6 +46,69 @@ func (g *ClassroomGateway) EnsureCourse(ctx context.Context, token string, in in
 		id, _, err = g.courseRequest(ctx, token, http.MethodGet, g.coursesURL+"/"+url.PathEscape(in.Alias), nil)
 	}
 	return id, err
+}
+
+// EnrollStudent invites a student to a course by email via the Classroom
+// API. Already-enrolled (409) returns success — idempotent.
+func (g *ClassroomGateway) EnrollStudent(ctx context.Context, token, courseID, email string) error {
+	body, err := json.Marshal(map[string]string{"userId": email})
+	if err != nil {
+		return errors.New("could not encode enrollment")
+	}
+	endpoint := fmt.Sprintf("%s/%s/students?enrollmentCode=", g.coursesURL, url.PathEscape(courseID))
+	resp, err := g.rawRequest(ctx, token, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		return nil // already enrolled
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("classroom: enroll %s: HTTP %d", maskEmail(email), resp.StatusCode)
+	}
+	return nil
+}
+
+// AssignTeacher adds a teacher to a course by email via the Classroom API.
+// Already-assigned (409) returns success — idempotent.
+func (g *ClassroomGateway) AssignTeacher(ctx context.Context, token, courseID, email string) error {
+	body, err := json.Marshal(map[string]string{"userId": email})
+	if err != nil {
+		return errors.New("could not encode teacher assignment")
+	}
+	endpoint := fmt.Sprintf("%s/%s/teachers", g.coursesURL, url.PathEscape(courseID))
+	resp, err := g.rawRequest(ctx, token, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		return nil // already a teacher
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("classroom: assign teacher %s: HTTP %d", maskEmail(email), resp.StatusCode)
+	}
+	return nil
+}
+
+func maskEmail(email string) string {
+	if at := strings.Index(email, "@"); at > 2 {
+		return email[:3] + "***" + email[at:]
+	}
+	return "***"
+}
+
+func (g *ClassroomGateway) rawRequest(ctx context.Context, token, method, endpoint string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, errors.New("could not build Google Classroom request")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return g.client.Do(req)
 }
 
 func (g *ClassroomGateway) courseRequest(ctx context.Context, token, method, endpoint string, body io.Reader) (string, int, error) {
