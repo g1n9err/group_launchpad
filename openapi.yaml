@@ -1023,6 +1023,25 @@ components:
       properties:
         courseId:
           type: string
+        studentEnrollments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassroomEnrollment"
+          description: per-student enrollment outcomes (PRD 4.3)
+        teacherAssignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassroomEnrollment"
+          description: per-teacher assignment outcomes
+    ClassroomEnrollment:
+      type: object
+      required: [email, success]
+      properties:
+        email:
+          type: string
+        success:
+          type: boolean
+          description: true if enrolled/assigned, false on failure
     SlackLaunch:
       type: object
       required: [id, groupId, status, attempts, createdAt]

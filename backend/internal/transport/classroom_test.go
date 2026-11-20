@@ -24,6 +24,14 @@ func (f *fakeClassroom) EnsureCourse(_ context.Context, _ string, _ integrations
 	return "classroom-123", nil
 }
 
+func (*fakeClassroom) EnrollStudent(context.Context, string, string, string) error {
+	return nil // transport tests don't assert enrollment
+}
+
+func (*fakeClassroom) AssignTeacher(context.Context, string, string, string) error {
+	return nil // transport tests don't assert teacher assignment
+}
+
 func TestClassroomProvisionReusesPersistedCourse(t *testing.T) {
 	pool := newTestPool(t)
 	truncate(t, pool, "groups")
