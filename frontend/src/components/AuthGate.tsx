@@ -20,6 +20,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <Card className="border-dashed p-8 text-center">
         <p className="text-sm text-muted">{t("auth.required")}</p>
+        <a href="#/login" className="app-action mt-4">{t("auth.signIn")}</a>
       </Card>
     );
   }

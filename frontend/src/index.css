@@ -4,79 +4,98 @@
    choice wins over prefers-color-scheme. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Cyber-brutalist light and dark themes for the full workspace. */
+/* Soft, editorial workspace themes. The logo and app structure stay unchanged. */
 :root {
   color-scheme: light;
-  --bg: #ecece8;
-  --surface: #f9f9f5;
-  --surface-muted: #edede9;
-  --soft: #eae4fb;
-  --border: #c5c4cb;
-  --text: #17171c;
-  --text-muted: #53515d;
-  --primary: #592cb8;
-  --primary-hover: #41208e;
-  --on-primary: #fff;
-  --muted-text: #4f5d71;
-  --muted-bg: #edf0f5;
-  --muted-ring: #d9e0ea;
-  --info-text: #5527a5;
-  --info-bg: #ece4ff;
-  --info-ring: #d1c0f5;
-  --success-text: #295c42;
-  --success-bg: #e4efe3;
-  --success-ring: #c7dec7;
-  --warn-text: #825413;
-  --warn-bg: #fcf0d8;
-  --warn-ring: #ead6ae;
-  --danger-text: #a13732;
-  --danger-bg: #f8e6e2;
-  --danger-ring: #ebc9c1;
-  --rail: #f4f4f0;
-  --rail-text: #1b1921;
-  --rail-muted: #555160;
-  --rail-hover: #ece8f5;
-  --rail-active: #eae1ff;
-  --rail-accent: #582cb1;
-  --card-shadow: none;
-  --rule: #26232c;
+  --bg: #f5f0f4;
+  --surface: #fffafd;
+  --surface-muted: #f8f0f7;
+  --soft: #f3e1f0;
+  --border: #eadce8;
+  --text: #2a2029;
+  --text-muted: #786b78;
+  --primary: #bd68a7;
+  --primary-hover: #a85291;
+  --on-primary: #fffaff;
+  --muted-text: #706575;
+  --muted-bg: #f0eaf0;
+  --muted-ring: #e4d9e3;
+  --info-text: #76527f;
+  --info-bg: #f1e8f4;
+  --info-ring: #e4d4e9;
+  --success-text: #2e765a;
+  --success-bg: #e4f2eb;
+  --success-ring: #cfe7d9;
+  --warn-text: #94692c;
+  --warn-bg: #f8f0df;
+  --warn-ring: #ebdfc1;
+  --danger-text: #a24e5a;
+  --danger-bg: #f8e9ec;
+  --danger-ring: #efcfd6;
+  --rail: #fffafd;
+  --rail-text: #352a35;
+  --rail-muted: #817582;
+  --rail-hover: #f8eff7;
+  --rail-active: #f1e1ef;
+  --rail-accent: #bd68a7;
+  --card-shadow: 0 12px 34px rgb(55 31 51 / 5%);
+  --rule: #eadce8;
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0e100f;
-  --surface: #161916;
-  --surface-muted: #202420;
-  --soft: #27301b;
-  --border: #454942;
-  --text: #f2f4e9;
-  --text-muted: #b4baae;
-  --primary: #d4f34f;
-  --primary-hover: #e3ff79;
-  --on-primary: #171b0b;
-  --muted-text: #b5c1d8;
-  --muted-bg: #293346;
-  --muted-ring: #3c4b64;
-  --info-text: #dcf583;
-  --info-bg: #29321b;
-  --info-ring: #54643b;
-  --success-text: #a9ddaf;
-  --success-bg: #263e2c;
-  --success-ring: #42634b;
-  --warn-text: #f1cc8b;
-  --warn-bg: #3b3221;
-  --warn-ring: #625237;
-  --danger-text: #f4aaa1;
-  --danger-bg: #422b29;
-  --danger-ring: #6b4440;
-  --rail: #111410;
-  --rail-hover: #252b21;
-  --rail-active: #2b331e;
-  --card-shadow: 0 1px 3px #0004;
-  --rail-text: #f3f5eb;
-  --rail-muted: #b1b8aa;
-  --rail-accent: #d4f34f;
-  --rule: #818a76;
+  --bg: #0b0a0f;
+  --surface: #15141b;
+  --surface-muted: #1d1b25;
+  --soft: #292638;
+  --border: #332f3d;
+  --text: #f3f0f8;
+  --text-muted: #aaa4b7;
+  --primary: #c8fa3d;
+  --primary-hover: #dcff78;
+  --on-primary: #15180d;
+  --muted-text: #b8b2c4;
+  --muted-bg: #292632;
+  --muted-ring: #413c4d;
+  --info-text: #b29aff;
+  --info-bg: #292137;
+  --info-ring: #51416f;
+  --success-text: #c8fa3d;
+  --success-bg: #232d16;
+  --success-ring: #4a6425;
+  --warn-text: #f2c96d;
+  --warn-bg: #332b1e;
+  --warn-ring: #5b4b2d;
+  --danger-text: #ff9aa9;
+  --danger-bg: #38232b;
+  --danger-ring: #65404b;
+  --rail: #111018;
+  --rail-hover: #211e2c;
+  --rail-active: #29243a;
+  --card-shadow: 0 14px 38px rgb(0 0 0 / 28%);
+  --rail-text: #f3f0f8;
+  --rail-muted: #aaa4b7;
+  --rail-accent: #ad91ff;
+  --rule: #332f3d;
+}
+
+[data-theme="dark"] body {
+  background-image:
+    radial-gradient(ellipse at 78% 0%, color-mix(in srgb, var(--info-text) 9%, transparent), transparent 36rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 10%, var(--bg)), var(--bg) 30rem);
+}
+
+[data-theme="dark"] .app-card {
+  border-color: color-mix(in srgb, var(--info-text) 18%, var(--border));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 96%, var(--info-text)), var(--surface) 72%);
+}
+
+[data-theme="dark"] .dashboard-hero,
+[data-theme="dark"] .home-hero {
+  border-color: color-mix(in srgb, var(--info-text) 24%, var(--border));
+  background:
+    radial-gradient(ellipse at 8% 0%, color-mix(in srgb, var(--info-text) 12%, transparent), transparent 34rem),
+    var(--surface);
 }
 
 @theme inline {
@@ -126,6 +145,10 @@
 
 body {
   @apply bg-bg text-text font-sans antialiased;
+  background-image:
+    radial-gradient(ellipse at 76% 0%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 34rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 14%, var(--bg)), var(--bg) 28rem);
+  background-attachment: fixed;
 }
 
 :where(button, a, input, select, textarea):focus-visible {
@@ -134,36 +157,192 @@ body {
 }
 
 .app-sidebar {
+  display: flex;
+  flex-direction: column;
   border-inline-end: 1px solid var(--border);
+  box-shadow: 10px 0 38px rgb(0 0 0 / 10%);
 }
 
-.app-nav-link,
-.app-shell :is(button, input, select, textarea),
-.app-card {
-  border-radius: 0;
-}
-
-.app-card {
-  border-top-color: var(--rule);
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--rule) 13%, transparent);
-}
-
-.app-page-title {
-  padding-block: 1.15rem 1.25rem;
-  border-block-end: 1px solid var(--rule);
-}
-
-.app-page-title h1 {
-  font-family: "Barlow Condensed", "Noto Sans Armenian", sans-serif;
-  font-size: clamp(2.5rem, 5vw, 4rem);
-  font-weight: 800;
-  line-height: 0.95;
+.app-sidebar-section {
+  color: var(--rail-muted);
+  font-family: "IBM Plex Mono", "Noto Sans Armenian", monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 2rem;
   text-transform: uppercase;
 }
 
-:lang(hy) .app-page-title h1 {
-  font-size: clamp(1.6rem, 3.3vw, 2.75rem);
-  line-height: 1.1;
+.app-sidebar-search {
+  height: 2.75rem;
+  min-height: 2.75rem;
+  max-height: 2.75rem;
+  flex: 0 0 auto;
+  border-radius: 0.85rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.app-sidebar-search:focus-within {
+  border-color: var(--rail-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.app-sidebar-search input,
+.app-sidebar-search input:focus-visible {
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  outline: none;
+  box-shadow: none;
+}
+
+.app-search-shortcut {
+  flex: 0 0 auto;
+  padding-inline-start: 0.55rem;
+  border-inline-start: 1px solid var(--border);
+  color: var(--rail-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.app-header-control {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: var(--surface);
+  padding-inline: 0.9rem;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.app-header-control:hover {
+  border-color: color-mix(in srgb, var(--primary) 68%, var(--border));
+  color: var(--primary);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.app-header-danger {
+  color: var(--danger-text);
+}
+
+.app-header-danger:hover {
+  border-color: var(--danger-ring);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.app-notification-control {
+  gap: 0.55rem;
+}
+
+.app-notification-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.app-notification-dot {
+  position: absolute;
+  top: -0.16rem;
+  right: -0.19rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1.5px solid var(--surface);
+  border-radius: 999px;
+  background: #51cf91;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #51cf91 20%, transparent);
+}
+
+.app-sidebar-account {
+  flex: 0 0 auto;
+}
+
+.app-account-avatar {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rail-accent) 18%, var(--rail-active));
+  color: var(--rail-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.app-nav-link {
+  border-radius: 0.8rem;
+  border-left-width: 0 !important;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.app-nav-link[aria-current="page"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rail-accent) 24%, transparent);
+}
+
+.app-shell :is(button, input, select, textarea) {
+  border-radius: 0.7rem;
+}
+
+.app-shell .app-header-control {
+  border-radius: 0.85rem;
+}
+
+.app-shell .app-theme-control {
+  min-width: 5.2rem;
+  padding-inline: 0.75rem;
+}
+
+.app-shell button,
+.app-shell a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-shell button:not(:disabled),
+.app-shell a {
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.app-shell button:not(:disabled):active,
+.app-shell .app-action:active {
+  transform: translateY(1px);
+}
+
+.app-card {
+  border-color: color-mix(in srgb, var(--border) 88%, var(--primary));
+  border-radius: 1.2rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 96%, var(--primary)), var(--surface) 72%);
+  box-shadow: var(--card-shadow);
+}
+
+.app-page-title {
+  padding-block: 0.35rem 1rem;
+}
+
+.app-page-title h1 {
+  font-family: "DM Sans", "Noto Sans Armenian", sans-serif;
+  font-size: clamp(2rem, 3vw, 2.8rem);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.055em;
+}
+
+.app-page-title p {
+  max-width: 46rem;
+  color: var(--text-muted);
+  line-height: 1.55;
 }
 
 .app-table thead th {
@@ -173,20 +352,448 @@ body {
 }
 
 .app-wordmark {
-  font-family: "Barlow Condensed", sans-serif;
-  font-size: 1.3rem;
+  font-family: "Space Grotesk", "DM Sans", "Noto Sans Armenian", sans-serif;
+  font-size: 0.86rem;
   font-weight: 700;
-  line-height: 0.86;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  line-height: 1.05;
+  letter-spacing: 0.015em;
 }
 
 .app-wordmark strong {
   display: block;
-  margin-top: 0.18rem;
-  font-size: 1.45rem;
+  margin-top: 0.1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.dashboard-hero {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+  border-radius: 1.25rem;
+  background: linear-gradient(120deg, var(--surface), color-mix(in srgb, var(--surface) 92%, var(--primary)));
+  padding: 1.4rem 1.6rem;
+  box-shadow: var(--card-shadow);
+}
+
+.dashboard-hero-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dashboard-hero .app-page-title {
+  margin: 0 0 0.8rem;
+  padding: 0;
+}
+
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+[data-theme="dark"] .login-page {
+  background: #18161f;
+}
+
+.login-wrap {
+  width: min(100%, 32rem);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: fit-content;
+  margin: 0 auto 1.5rem;
+  color: var(--text);
+}
+
+.login-card {
+  padding: clamp(1.75rem, 5vw, 2.75rem);
+}
+
+.login-brand .app-wordmark {
+  font-size: 1rem;
+}
+
+.login-brand .app-wordmark strong {
+  font-size: 1.15rem;
+}
+
+.login-card-heading h1 {
+  margin-top: 0.35rem;
+  color: var(--text);
+  font-size: clamp(1.8rem, 3.5vw, 2.1rem);
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+
+.login-card-heading > p:last-child {
+  margin-top: 0.55rem;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.login-eyebrow {
+  color: var(--primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.5rem;
+}
+
+.login-form label {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.login-input {
+  min-height: 3.1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface-muted);
+  padding: 0.65rem 0.8rem;
+  color: var(--text);
+}
+
+.login-input-error {
+  border-color: var(--danger-text);
+}
+
+.login-error {
+  color: var(--danger-text);
+  font-size: 0.8rem;
+}
+
+.login-submit {
+  width: 100%;
+  min-height: 3.1rem;
+  margin-top: 0.35rem;
+  border-radius: 0.8rem;
+  font-size: 0.95rem;
+}
+
+.login-back {
+  display: inline-flex;
+  margin-top: 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.login-back:hover {
+  color: var(--primary);
+}
+
+.account-card {
+  max-width: 46rem;
+}
+
+.account-avatar {
+  display: grid;
+  width: 3.25rem;
+  height: 3.25rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--primary);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.account-details {
+  display: grid;
+  gap: 1rem;
+  padding-block: 1.25rem;
+}
+
+.account-details > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.account-details dt {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.account-details dd {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.home-hero {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.45fr) minmax(17rem, 0.75fr);
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(ellipse at 8% 0%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 34rem),
+    var(--surface);
+  padding: clamp(2rem, 6vw, 4rem);
+  box-shadow: var(--card-shadow);
+}
+
+.home-hero-content {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 54rem);
+}
+
+.home-platform-panel {
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 1.1rem;
+  background: color-mix(in srgb, var(--surface-muted) 84%, var(--surface));
+  padding: 1.25rem;
+}
+
+.home-platform-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.home-platform-panel-heading > div > span {
+  color: var(--primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.home-platform-panel-heading h2 {
+  margin-top: 0.3rem;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.home-platform-panel-heading > strong {
+  color: color-mix(in srgb, var(--primary) 70%, var(--text));
+  font-family: "DM Sans", sans-serif;
+  font-size: 2.2rem;
+  font-weight: 750;
+  letter-spacing: -0.07em;
+  line-height: 1;
+}
+
+.home-platform-panel-description {
+  margin-top: 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.home-platform-panel ul {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.85rem;
+}
+
+.home-platform-panel li {
+  display: flex;
+  min-height: 2.35rem;
+  align-items: center;
+  gap: 0.65rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.platform-mark {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0.45rem;
+  background: var(--soft);
+  color: var(--primary);
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.slack-mark {
+  background: #f0e4f2;
+  color: #83579b;
+}
+
+.classroom-mark {
+  background: #e8effa;
+  color: #547ab9;
+}
+
+.drive-mark {
+  background: #e5f2e8;
+  color: #52855f;
+}
+
+.forms-mark {
+  background: #fae9e5;
+  color: #b66353;
+}
+
+.home-eyebrow {
+  color: var(--primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.home-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 48rem;
+  margin-top: 0.9rem;
+  color: var(--text);
+  font-family: "DM Sans", "Noto Sans Armenian", sans-serif;
+  font-size: clamp(2.25rem, 5vw, 4rem);
   font-weight: 800;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.06em;
+  line-height: 1.04;
+}
+
+.home-description {
+  position: relative;
+  z-index: 1;
+  max-width: 42rem;
+  margin-top: 1rem;
+  color: var(--text-muted);
+  font-size: clamp(0.95rem, 1.5vw, 1.1rem);
+  line-height: 1.65;
+}
+
+.home-secondary-action {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  padding: 0.55rem 0.95rem;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.home-secondary-action:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.home-steps,
+.home-guides {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.home-step-card,
+.home-guide-card {
+  height: 100%;
+}
+
+.home-step-number {
+  display: inline-flex;
+  color: var(--primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.home-step-card h3,
+.home-guide-card h3 {
+  margin-top: 0.8rem;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.home-step-card p,
+.home-guide-card > p {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.home-step-card > a {
+  display: inline-flex;
+  margin-top: 1.1rem;
+  color: var(--primary);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.home-guide-card ul {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.home-guide-card li a {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 0.65rem;
+  padding: 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.home-guide-card li a:hover {
+  background: var(--surface-muted);
+  color: var(--primary);
+}
+
+@media (max-width: 1023px) {
+  .home-steps,
+  .home-guides {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 639px) {
+  .home-steps,
+  .home-guides {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .home-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .app-nav-link[aria-current="page"] {
@@ -200,31 +807,34 @@ body {
   gap: 0.5rem;
   min-height: 2.75rem;
   padding: 0.5rem 0.9rem;
-  border: 1px solid var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 76%, transparent);
   background: var(--primary);
   color: var(--on-primary);
   font-size: 0.875rem;
   font-weight: 700;
+  border-radius: 0.8rem;
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .app-action:hover {
   background: var(--primary-hover);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 23%, transparent);
+  transform: translateY(-1px);
 }
 
 .dashboard-metrics {
-  border: 1px solid var(--border);
-  background: var(--border);
+  gap: 1rem;
+  border: 0;
+  background: transparent;
 }
 
 .dashboard-metrics .metric-card {
-  border: 0;
-  box-shadow: none;
+  border: 1px solid var(--border);
+  box-shadow: var(--card-shadow);
 }
 
-.dashboard-metrics .metric-label,
 .dashboard-metrics .metric-value {
-  font-family: "IBM Plex Mono", "Noto Sans Armenian", monospace;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.045em;
 }
 
 .mobile-nav {
@@ -275,6 +885,7 @@ body {
   background:
     repeating-linear-gradient(90deg, transparent 0 19px, color-mix(in srgb, var(--border) 45%, transparent) 19px 20px),
     var(--surface-muted);
+  border-radius: 0.9rem;
 }
 
 .dashboard-stage-filter[aria-pressed="true"] {
@@ -284,7 +895,7 @@ body {
 }
 
 .dashboard-stage-filter {
-  font-family: "IBM Plex Mono", "Noto Sans Armenian", monospace;
+  border-radius: 999px;
 }
 
 .dashboard-provider-icon {
@@ -292,7 +903,7 @@ body {
   width: 2rem;
   aspect-ratio: 1;
   place-items: center;
-  font-family: "IBM Plex Mono", monospace;
+  border-radius: 999px;
   font-weight: 600;
 }
 
@@ -302,4 +913,58 @@ body {
   aspect-ratio: 1;
   border-radius: 50%;
   mask-image: radial-gradient(circle closest-side, transparent 64%, #000 66%);
+}
+
+.mobile-nav-link {
+  border-radius: 0.7rem 0.7rem 0 0;
+}
+
+.app-table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.app-table tbody tr:hover {
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+
+.app-shell :is(input, select, textarea) {
+  border-color: var(--border);
+  background-color: color-mix(in srgb, var(--surface) 92%, var(--bg));
+}
+
+.app-shell .app-sidebar-search input {
+  background-color: transparent;
+}
+
+.app-shell input[type="search"] {
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+}
+
+.app-shell input[type="search"]:focus,
+.app-shell input[type="search"]:focus-visible {
+  border: 2px solid var(--primary);
+  outline: none;
+  box-shadow: none;
+}
+
+.app-shell :is(input, select, textarea)::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 72%, transparent);
+}
+
+.app-shell button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

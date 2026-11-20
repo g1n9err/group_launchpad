@@ -11,7 +11,7 @@ export interface Route {
 function parse(hash: string): Route {
   const clean = hash.replace(/^#\/?/, "");
   const [page = "", id] = clean.split("/");
-  if (!page) return { page: "overview" };
+  if (!page) return { page: "home" };
   return { page, id };
 }
 

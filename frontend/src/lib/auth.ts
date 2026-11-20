@@ -25,8 +25,15 @@ export function getAuthHeader(): Record<string, string> {
   return credentials ? { Authorization: credentials } : {};
 }
 
+export function basicAuthValue(username: string, password: string): string {
+  const bytes = new TextEncoder().encode(`${username}:${password}`);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `Basic ${btoa(binary)}`;
+}
+
 export function unlock(username: string, password: string): void {
-  credentials = "Basic " + btoa(username + ":" + password);
+  credentials = basicAuthValue(username, password);
   notify();
 }
 

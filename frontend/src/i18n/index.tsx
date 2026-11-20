@@ -46,10 +46,12 @@ function readLang(): Lang {
 
 function readTheme(): Theme {
   try {
-    return localStorage.getItem(STORAGE.theme) === "dark" ? "dark" : "light";
+    const theme = localStorage.getItem(STORAGE.theme);
+    if (theme === "light" || theme === "dark") return theme;
   } catch {
-    return "light"; // default theme: Light
+    // Fall through to the design's default theme.
   }
+  return "dark";
 }
 
 // ── context ─────────────────────────────────────────────────────────────────

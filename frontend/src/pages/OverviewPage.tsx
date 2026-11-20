@@ -52,9 +52,12 @@ export function OverviewPage() {
 
   return (
     <div className="cyber-dashboard space-y-5">
-      <PageTitle title={t("overview.title")} actions={
+      <div className="dashboard-hero mb-5">
+        <div className="dashboard-hero-copy">
+          <PageTitle title={t("overview.title")} sub={t("overview.summary")} />
+        </div>
         <a href="#/groups/new" className="app-action">{t("form.title")} <IconBack className="h-4 w-4 rotate-180" /></a>
-      } />
+      </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card className="p-5">

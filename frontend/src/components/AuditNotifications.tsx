@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSettings } from "../i18n";
 import type { TranslationKey } from "../i18n/en";
 import { api } from "../lib/api";
+import { fireLock, getAuthHeader, isUnlocked, onAuthChange } from "../lib/auth";
 import type { components } from "../lib/schema";
 import { Card, Chip } from "./ui";
 
@@ -31,15 +32,18 @@ export function AuditNotifications({ children }: {
   children?: (authorization: string, onUnauthorized: () => void, reload: number) => ReactNode;
 } = {}) {
   const { t, lang } = useSettings();
-  const [password, setPassword] = useState("");
-  const [authorization, setAuthorization] = useState("");
+  const [authorized, setAuthorized] = useState(isUnlocked());
   const [feed, setFeed] = useState<Feed>();
   const [error, setError] = useState<TranslationKey>();
   const [loading, setLoading] = useState(false);
   const [reload, setReload] = useState(0);
 
+  const authorization = authorized ? getAuthHeader().Authorization ?? "" : "";
+
+  useEffect(() => onAuthChange(() => setAuthorized(isUnlocked())), []);
+
   const rejectAuthorization = useCallback(() => {
-    setAuthorization("");
+    fireLock();
     setFeed(undefined);
     setLoading(false);
     setError("audit.invalidPassword");
@@ -82,14 +86,6 @@ export function AuditNotifications({ children }: {
     };
   }, [authorization, reload, rejectAuthorization]);
 
-  function unlock(event: FormEvent) {
-    event.preventDefault();
-    const bytes = new TextEncoder().encode("coordinator:" + password);
-    setAuthorization("Basic " + btoa(String.fromCharCode(...bytes)));
-    setPassword("");
-    setError(undefined);
-  }
-
   const label = (status: string) => statusLabels[status] ? t(statusLabels[status]) : status;
   const dateFormat = new Intl.DateTimeFormat({ hy: "hy-AM", en: "en-US", ru: "ru-RU" }[lang], { dateStyle: "medium", timeStyle: "short" });
   const time = (value: string) => dateFormat.format(new Date(value));
@@ -104,7 +100,7 @@ export function AuditNotifications({ children }: {
               className="rounded-md border border-border px-3 py-2 text-sm text-text hover:bg-surface-muted disabled:opacity-50">
               {t("audit.refresh")}
             </button>
-            <button type="button" onClick={() => { setAuthorization(""); setFeed(undefined); setError(undefined); setLoading(false); }}
+            <button type="button" onClick={() => { fireLock(); setFeed(undefined); setError(undefined); setLoading(false); }}
               className="rounded-md border border-border px-3 py-2 text-sm text-text hover:bg-surface-muted">
               {t("audit.lock")}
             </button>
@@ -112,17 +108,7 @@ export function AuditNotifications({ children }: {
         )}
       </div>
 
-      {!authorization && (
-        <form className="flex flex-wrap items-end gap-3" onSubmit={unlock}>
-          <label className="text-sm text-text">
-            {t("audit.password")}
-            <input className="mt-1 block w-64 max-w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-              type="password" autoComplete="current-password" required maxLength={256} value={password}
-              onChange={(event) => setPassword(event.target.value)} />
-          </label>
-          <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-on-primary" type="submit">{t("audit.unlock")}</button>
-        </form>
-      )}
+      {!authorization && <a href="#/login" className="app-action">{t("auth.signIn")}</a>}
 
       {error && <p className="text-sm text-danger-text" role="alert">{t(error)}</p>}
       {authorization && loading && !feed && <p className="text-sm text-muted" role="status">{t("audit.loading")}</p>}
