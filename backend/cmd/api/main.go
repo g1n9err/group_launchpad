@@ -78,8 +78,13 @@ func run() error {
 	if cfg.GmailEnabled {
 		delivery.CheckReady = googleSvc.CheckGmailPermission
 	}
+	// Unified multi-platform launcher (River queue).
+	// ResultStore ensures stale results are overwritten with "running"
+	// before the job is queued, so the UI always sees the current state.
+	launcher := &jobs.RiverLauncher{Client: queue, ResultStore: repo}
+
 	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, pool.Ping,
-		transport.GroupProvisioning{Launch: launch, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, Audit: audit, AuditNotifications: repo, Announcements: announcements, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
+		transport.GroupProvisioning{Launch: launch, GroupLauncher: launcher, LaunchStatus: repo, Classroom: classroom, Drive: drive, Forms: forms, Delivery: delivery, Audit: audit, AuditNotifications: repo, Announcements: announcements, DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled})
 
 	// 5. Serve with graceful shutdown.
 	servers := []*http.Server{{

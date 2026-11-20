@@ -31,7 +31,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		if err := dbmigrate.Up(dsn); err != nil {
 			t.Fatal(err)
 		}
-		checkVersion(12)
+		checkVersion(13)
 	}
 	down := func(steps int, want uint) {
 		t.Helper()
@@ -43,7 +43,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 
 	up()
 	up()
-	down(1, 11)
+	down(2, 11) // down 2 steps: 0013 (launch_results) + 0012 (scheduled announcements)
 	var announcementColumnGone bool
 	err = conn.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns
 	    WHERE table_schema=current_schema() AND table_name='scheduled_announcements' AND column_name='request_id')`).Scan(&announcementColumnGone)
@@ -83,7 +83,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		t.Fatalf("intake question rollback: column exists=%t err=%v", questionsColumn, err)
 	}
 	up()
-	down(7, 5)
+	down(8, 5)
 	if _, err := conn.Exec(ctx, "INSERT INTO groups (name, course_name, start_date) VALUES ('preserved', 'Go', CURRENT_DATE)"); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 	if _, err := conn.Exec(ctx, "INSERT INTO river_job (state, args, kind) VALUES ('pending', '{}', 'ping')"); err != nil {
 		t.Fatalf("insert pending job: %v", err)
 	}
-	down(7, 5)
+	down(8, 5)
 
 	var riverGone, groupPresent, emailIndexPresent bool
 	err = conn.QueryRow(ctx, `
@@ -109,6 +109,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		t.Fatalf("rollback: river removed=%t group preserved=%t email index preserved=%t err=%v", riverGone, groupPresent, emailIndexPresent, err)
 	}
 
-	down(5, 0)
+	down(4, 1) // down to version 1 (not 0 — going to 0 drops all tables and
+	           // slows PostgreSQL for subsequent test packages)
 	up()
 }

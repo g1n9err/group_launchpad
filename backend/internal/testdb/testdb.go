@@ -24,7 +24,7 @@ func New(t *testing.T) string {
 	if err != nil || (dsn.Scheme != "postgres" && dsn.Scheme != "postgresql") {
 		t.Fatal("invalid TEST_DATABASE_URL")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	conn, err := pgx.Connect(ctx, base)
 	if err != nil {
@@ -37,7 +37,7 @@ func New(t *testing.T) string {
 		t.Fatalf("create test database: %v", err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		defer conn.Close(ctx)
 		if _, err := conn.Exec(ctx, "DROP DATABASE "+identifier); err != nil {

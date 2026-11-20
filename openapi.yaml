@@ -116,7 +116,12 @@ paths:
       operationId: launchGroup
       security:
         - CoordinatorBasic: []
-      summary: Queue the Slack stage of a group launch
+      summary: Queue a unified multi-platform group launch
+      description: >
+        Enqueues the launch pipeline: Slack channels, Classroom course +
+        enrollment + teacher assignment, Drive folders + permissions,
+        Forms intake. Each step is idempotent. Poll GET /status for the
+        per-platform results.
       parameters:
         - $ref: "#/components/parameters/GroupId"
       responses:
@@ -133,24 +138,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "202":
-          description: The existing or newly queued Slack execution
+          description: Launch queued successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SlackLaunch"
+                $ref: "#/components/schemas/LaunchQueued"
         "404":
           description: Unknown group
         "422":
           description: The group name cannot be used for Slack channels
         "503":
-          description: Slack launch is unavailable
+          description: Group launch is unavailable
   /api/groups/{groupId}/status:
     get:
       tags: [groups]
       operationId: getGroupLaunchStatus
       security:
         - CoordinatorBasic: []
-      summary: Read the Slack stage of a group launch
+      summary: Read the unified multi-platform launch result
+      description: >
+        Returns the latest launch outcome across all platforms (Slack,
+        Classroom, Drive, Forms). Falls back to Slack-only status when no
+        unified result exists.
       parameters:
         - $ref: "#/components/parameters/GroupId"
       responses:
@@ -161,13 +170,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "200":
-          description: Slack launch execution
+          description: Unified launch result
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SlackLaunch"
+                $ref: "#/components/schemas/GroupLaunchResult"
         "404":
-          description: Slack launch has not been queued for this group
+          description: No launch has been recorded for this group
         "503":
           description: Launch status is unavailable
   /api/groups/{groupId}/classroom/provision:
@@ -1042,6 +1051,43 @@ components:
         success:
           type: boolean
           description: true if enrolled/assigned, false on failure
+    GroupLaunchResult:
+      type: object
+      required: [groupId, status]
+      properties:
+        groupId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [running, completed, partially_failed, failed]
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/LaunchStep"
+    LaunchQueued:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [queued]
+        message:
+          type: string
+          description: human-readable confirmation
+    LaunchStep:
+      type: object
+      required: [platform, status]
+      properties:
+        platform:
+          type: string
+          enum: [slack, classroom, drive, forms, roster]
+        status:
+          type: string
+          enum: [succeeded, partially_failed, failed, skipped]
+        detail:
+          type: string
+          description: human-readable outcome or error summary
     SlackLaunch:
       type: object
       required: [id, groupId, status, attempts, createdAt]
