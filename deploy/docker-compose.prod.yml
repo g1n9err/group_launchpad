@@ -1,0 +1,102 @@
+# Production compose for Group Launchpad.
+#
+# Run from the repository root with the production environment file:
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production \
+#     --profile full up -d --build
+#
+# Differences from the development docker-compose.yml:
+#   - restart: unless-stopped (survives host reboots)
+#   - the API binds only to 127.0.0.1:8080 on the host — a reverse proxy
+#     (nginx/Caddy, see DEPLOY.md) terminates HTTPS in front of it
+#   - PostgreSQL is NOT published to the host at all
+#   - no Vite dev proxy assumptions; the SPA is built with VITE_API_URL
+#     pointing at the public HTTPS origin and served by the proxy as static
+#     files (or any static host).
+#
+# This file expects deploy/.env.production (copy env.production.example).
+# NEVER commit the filled-in file.
+
+name: group-launchpad-prod
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata-prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MIGRATE_ON_BOOT: ${MIGRATE_ON_BOOT:-true}
+      COORDINATOR_PASSWORD: ${COORDINATOR_PASSWORD}
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-12h}
+      LOGIN_RATE_MAX: ${LOGIN_RATE_MAX:-10}
+      LOGIN_RATE_WINDOW: ${LOGIN_RATE_WINDOW:-5m}
+      # Set to true ONLY behind a reverse proxy that OVERWRITES X-Forwarded-For.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # One-time admin bootstrap: REMOVE both after the first successful login.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_EVENTS_ADDR: 0.0.0.0:8081
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    ports:
+      # Loopback only — the reverse proxy on this host reaches it locally.
+      - "127.0.0.1:8080:8080"
+      # Slack Events listener: expose via the proxy/tunnel, loopback here.
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      STAFF_EMAILS: ${STAFF_EMAILS:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      AUDIT_NOTIFICATION_EMAIL: ${AUDIT_NOTIFICATION_EMAIL:-}
+      SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      GMAIL_ENABLED: ${GMAIL_ENABLED:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL:-}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata-prod:
