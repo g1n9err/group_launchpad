@@ -11,7 +11,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { AccountPage } from "./pages/AccountPage";
 import { HomePage } from "./pages/HomePage";
 import { useRoute } from "./lib/router";
-import { useAuthUser } from "./lib/auth";
+import { useAuthUser, useIsResuming } from "./lib/auth";
 import { AuthGate } from "./components/AuthGate";
 import { Card } from "./components/ui";
 import { useSettings } from "./i18n";
@@ -19,13 +19,19 @@ import { useSettings } from "./i18n";
 export default function App() {
   const route = useRoute();
   const user = useAuthUser();
+  const resuming = useIsResuming();
   const { t } = useSettings();
 
   if (route.page === "login") return <LoginPage />;
   if (route.page === "home") return <AppShell><HomePage /></AppShell>;
   if (route.page === "account") return <AppShell><AccountPage /></AppShell>;
 
-  if (!user) return <AppShell><AuthGate><></></AuthGate></AppShell>;
+  // While the HttpOnly session cookie is being rotated into a session, do
+  // not flash the sign-in prompt on a page refresh.
+  if (!user) {
+    if (resuming) return <AppShell>{null}</AppShell>;
+    return <AppShell><AuthGate><></></AuthGate></AppShell>;
+  }
 
   const staffRole = user.role === "admin" || user.role === "coordinator";
   const groupReader = user.role === "lecturer" || user.role === "ta";

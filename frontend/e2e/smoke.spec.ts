@@ -133,7 +133,8 @@ async function storageSnapshot(page: Page): Promise<string> {
 test("unauthenticated users cannot trigger protected queries", async ({ page }) => {
   const protectedCalls: string[] = [];
   page.on("request", (req) => {
-    if (req.url().includes("/api/") && !req.url().includes("/api/auth/login")) protectedCalls.push(req.url());
+    // /api/auth/* (login, resume) is public by design; everything else is protected.
+    if (req.url().includes("/api/") && !req.url().includes("/api/auth/")) protectedCalls.push(req.url());
   });
   await openApp(page, "#/overview");
   await expect(page.getByText("Coordinator access required").first()).toBeVisible({ timeout: 10_000 });
@@ -192,6 +193,32 @@ test("coordinator creates a group through the form (regression: request headers)
   await expect(page.getByText("E2E Form Created Group").first()).toBeVisible({ timeout: 10_000 });
 });
 
+test("page refresh keeps the session (HttpOnly cookie resume) until logout", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  await expect(page).toHaveURL(/#\/overview/);
+  // Wait for the workspace to be fully interactive (initial queries done).
+  await page.goto(`${baseURL}/#/groups`);
+  await expect(page.getByText(alphaGroup).first()).toBeVisible({ timeout: 10_000 });
+
+  // The session token stays out of JS-readable storage — persistence rides
+  // an HttpOnly cookie (invisible to document.cookie).
+  expect(await storageSnapshot(page)).toBe("");
+
+  // F5: the app resumes via /api/auth/resume — no sign-in prompt, the
+  // workspace is functional immediately.
+  await page.reload({ waitUntil: "load" });
+  await expect(page.getByText(alphaGroup).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("Coordinator access required")).toHaveCount(0);
+
+  // Logout kills persistence: refresh lands on the sign-in prompt again.
+  await page.locator("header .app-header-danger").first().click();
+  await page.waitForURL((url) => url.hash.includes("login"), { timeout: 10_000 });
+  await page.goto(`${baseURL}/#/overview`);
+  await expect(page.getByText("Coordinator access required").first()).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(500);
+  expect(await storageSnapshot(page)).toBe("");
+});
+
 test("lecturer login lands on scoped groups; only the assigned group is visible", async ({ page }) => {
   await signIn(page, accounts.lecturer.email, accounts.lecturer.password);
   await expect(page).toHaveURL(/#\/groups/);
@@ -242,8 +269,9 @@ test("student login: account only, no workspace surface", async ({ page }) => {
 test("logout clears access and protected queries stop", async ({ page }) => {
   await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
   await expect(page).toHaveURL(/#\/overview/);
-  // Let the overview's initial queries finish BEFORE measuring.
-  await page.waitForLoadState("networkidle");
+  // Wait until the initial data queries have finished BEFORE measuring.
+  await page.goto(`${baseURL}/#/groups`);
+  await expect(page.getByText(alphaGroup).first()).toBeVisible({ timeout: 10_000 });
 
   // What matters after logout: NO request may carry credentials. (Cleared
   // TanStack queries can still finish an in-flight refetch; it is rejected

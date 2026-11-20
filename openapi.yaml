@@ -53,6 +53,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/auth/resume:
+    post:
+      tags: [auth]
+      operationId: resumeSession
+      summary: Restore a sign-in across page refreshes (HttpOnly session cookie)
+      description: >
+        The browser holds an HttpOnly, Path=/api/auth, SameSite=Strict cookie
+        set at login. This endpoint rotates that cookie atomically (one-time
+        use — replay fails) and returns a fresh bearer session. No
+        Authorization header, no JS-readable storage, no token in URLs.
+      responses:
+        "200":
+          description: a new session token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: no cookie, or the cookie is expired/revoked (it is cleared)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/auth/logout:
     post:
       tags: [auth]

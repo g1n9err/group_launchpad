@@ -1397,6 +1397,9 @@ type ServerInterface interface {
 	// RefreshToken Rotate the bearer token (token refresh, PRD §7.4)
 	// (POST /api/auth/refresh)
 	RefreshToken(ctx echo.Context) error
+	// ResumeSession Restore a sign-in across page refreshes (HttpOnly session cookie)
+	// (POST /api/auth/resume)
+	ResumeSession(ctx echo.Context) error
 	// ListGroups List groups (newest first)
 	// (GET /api/groups)
 	ListGroups(ctx echo.Context, params ListGroupsParams) error
@@ -1686,6 +1689,15 @@ func (w *ServerInterfaceWrapper) RefreshToken(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.RefreshToken(ctx)
+	return err
+}
+
+// ResumeSession converts echo context to params.
+func (w *ServerInterfaceWrapper) ResumeSession(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ResumeSession(ctx)
 	return err
 }
 
@@ -2195,6 +2207,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	}
 
 	router.POST(options.BaseURL+"/api/auth/login", wrapper.Login, options.OperationMiddlewares["login"]...)
+	router.POST(options.BaseURL+"/api/auth/resume", wrapper.ResumeSession, options.OperationMiddlewares["resumeSession"]...)
 	router.POST(options.BaseURL+"/api/auth/logout", wrapper.Logout, options.OperationMiddlewares["logout"]...)
 	router.GET(options.BaseURL+"/api/auth/me", wrapper.GetAuthMe, options.OperationMiddlewares["getAuthMe"]...)
 	router.POST(options.BaseURL+"/api/auth/refresh", wrapper.RefreshToken, options.OperationMiddlewares["refreshToken"]...)

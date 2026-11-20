@@ -164,9 +164,10 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 	// PII-bearing (rosters, emails): no browser or intermediary caching.
 	e.Use(noStoreAPICache)
 	e.Use(echomw.CORSWithConfig(echomw.CORSConfig{
-		AllowOrigins: cfg.CORSAllowedOrigins,
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowHeaders: []string{echo.HeaderContentType, echo.HeaderAuthorization},
+		AllowOrigins:     cfg.CORSAllowedOrigins,
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+		AllowHeaders:     []string{echo.HeaderContentType, echo.HeaderAuthorization},
+		AllowCredentials: true, // HttpOnly session cookie (Path=/api/auth) for split-origin deployments
 	}))
 
 	e.HTTPErrorHandler = errorHandler(logger)

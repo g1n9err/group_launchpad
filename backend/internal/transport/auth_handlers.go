@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -63,6 +64,9 @@ func (h *Handlers) Login(c echo.Context) error {
 			return errUnauthorized(c)
 		}
 		throttled.reset(ip, email)
+		// Persistent sign-in: the token also lands in an HttpOnly,
+		// Path=/api/auth cookie so a page refresh can resume the session.
+		setSessionCookie(c, session.Token, time.Until(session.ExpiresAt))
 		return c.JSON(http.StatusOK, toAuthSession(session))
 	}
 	if !auth.ValidateEmail(string(body.Email)) || body.Password == "" {
@@ -72,18 +76,48 @@ func (h *Handlers) Login(c echo.Context) error {
 	if err != nil {
 		return errUnauthorized(c)
 	}
+	setSessionCookie(c, session.Token, time.Until(session.ExpiresAt))
 	return c.JSON(http.StatusOK, toAuthSession(session))
 }
 
-// Logout POST /api/auth/logout — revokes the presented bearer session.
+// ResumeSession POST /api/auth/resume — restores a sign-in across page
+// refreshes: rotates the HttpOnly session cookie atomically and returns a
+// fresh bearer session. No Authorization header is involved; the one-time
+// cookie is the credential. Invalid/expired/revoked cookies are cleared and
+// answered with a plain 401.
+func (h *Handlers) ResumeSession(c echo.Context) error {
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+	if h.auth == nil {
+		return errAuthUnavailable()
+	}
+	cookieToken, ok := sessionCookieToken(c)
+	if !ok || cookieToken == "" {
+		return &core.AppError{Code: core.CodeUnauthorized, Message: "no session"}
+	}
+	session, err := h.auth.Refresh(c.Request().Context(), cookieToken)
+	if err != nil {
+		clearSessionCookie(c)
+		return &core.AppError{Code: core.CodeUnauthorized, Message: "session expired"}
+	}
+	setSessionCookie(c, session.Token, time.Until(session.ExpiresAt))
+	return c.JSON(http.StatusOK, toAuthSession(session))
+}
+
+// Logout POST /api/auth/logout — revokes the presented bearer session and,
+// when present, the persistent HttpOnly session cookie (cleared).
 func (h *Handlers) Logout(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
 	if h.auth == nil {
 		return errAuthUnavailable()
 	}
+	clearSessionCookie(c)
 	token, ok := bearerToken(c.Request())
-	if !ok {
-		return errUnauthorized(c)
+	if !ok || strings.TrimSpace(token) == "" {
+		// No header: fall back to the persistent cookie, if any.
+		token, ok = sessionCookieToken(c)
+		if !ok || token == "" {
+			return errUnauthorized(c)
+		}
 	}
 	if err := h.auth.Logout(c.Request().Context(), token); err != nil {
 		return err
@@ -118,6 +152,7 @@ func (h *Handlers) RefreshToken(c echo.Context) error {
 	if err != nil {
 		return errUnauthorized(c)
 	}
+	setSessionCookie(c, session.Token, time.Until(session.ExpiresAt))
 	return c.JSON(http.StatusOK, toAuthSession(session))
 }
 
