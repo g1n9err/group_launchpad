@@ -238,6 +238,8 @@ const en = {
   "intake.conflict": "The saved form state prevents this action. Refresh before trying again.",
   "intake.editQuestions": "Questions",
   "intake.editQuestionsHint": "Change, remove, or add questions freely while the form is a draft (before publishing). “Full name” and “Email address” are always first and required.",
+  "intake.addSentQuestions": "Add questions to the sent form",
+  "intake.addSentQuestionsHint": "The form was already sent to students. You can ADD new questions — existing questions and their answers are never touched.",
   "intake.editQuestionsAction": "Save questions",
   "intake.addQuestions": "Add questions",
   "intake.addQuestionsHint": "Existing questions cannot be changed or removed — you can only add new ones. “Full name” and “Email address” are always included and required.",

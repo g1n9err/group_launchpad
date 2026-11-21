@@ -181,15 +181,21 @@ func (s *FormsService) record(ctx context.Context, groupID uuid.UUID, operation 
 	return nil
 }
 
-// allowQuestionChange permits ANY question-set change on a NOT-yet-published
-// draft — nothing has been sent to students and no responses exist, so the
-// form can be freely rebuilt (including replacing it wholesale). A published
-// form is immutable: collected responses map by question title.
+// allowQuestionChange governs question edits by publication state:
+//
+//   - DRAFT (never sent): any change — replace, edit, add, remove.
+//   - PUBLISHED (sent to students): APPEND-ONLY. Adding a question is safe
+//     (existing responses simply lack the new answer; Google keeps mapping
+//     by question), but changing or removing existing questions would
+//     orphan already-collected responses.
 func allowQuestionChange(form IntakeForm, next []IntakeQuestion) error {
 	published := form.ResponderURL != "" || form.VerifiedSince != nil ||
 		form.Status == "distributed" || form.Status == "closed"
-	if published {
-		return &core.AppError{Code: core.CodeConflict, Message: "the intake form was already sent to students; its questions cannot change"}
+	if !published {
+		return nil
+	}
+	if len(next) < len(form.Questions) || !reflect.DeepEqual(next[:len(form.Questions)], form.Questions) {
+		return &core.AppError{Code: core.CodeConflict, Message: "the form was already sent to students: new questions can be added, but existing ones cannot be changed or removed"}
 	}
 	return nil
 }

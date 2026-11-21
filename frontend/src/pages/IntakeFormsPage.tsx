@@ -61,6 +61,7 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
   const [notice, setNotice] = useState<TranslationKey>();
   const [extraError, setExtraError] = useState<TranslationKey>();
   const [reload, setReload] = useState(0);
+  const published = Boolean(form?.responderUrl);
 
   const options = { headers: { Authorization: authorization }, params: { path: { groupId } } };
 
@@ -100,7 +101,7 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
   // Full name / Email address pair) into the editor whenever a draft form
   // loads, so it can be freely edited: change, remove, add.
   useEffect(() => {
-    if (!form?.questions) return;
+    if (!form?.questions || published) return; // sent form: add-only, start empty
     setExtraQuestions(form.questions.slice(2).map((question) => ({
       id: nextEditableId(),
       title: question.title,
@@ -108,7 +109,7 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
       required: question.required,
       optionsText: (question.options ?? []).join("\n"),
     })));
-  }, [form?.questions]);
+  }, [form?.questions, published]);
 
   async function act(action: Action) {
     if (busy) return;
@@ -157,13 +158,15 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
     setNotice(undefined);
     const customs = toIntakeQuestions(extraQuestions).filter((question) => question.title);
     setBusy("draft");
+    // ՈՒՂԱՐԿՎԱԾ ֆորմա՝ առկա հարցերին ենք ավելացնում նորերը (append-only)․
+    // սևագիր՝ ուղարկում ենք ամբողջական նոր ցանկը (ազատ խմբագրում)։
+    const questions = published
+      ? [...(form.questions ?? []), ...customs]
+      : [{ title: "Full name", type: "text", required: true } as const,
+         { title: "Email address", type: "text", required: true } as const, ...customs];
     try {
       const result = await api.POST("/api/groups/{groupId}/forms/provision", {
-        ...options, body: { questions: [
-          { title: "Full name", type: "text", required: true },
-          { title: "Email address", type: "text", required: true },
-          ...customs,
-        ] },
+        ...options, body: { questions },
       });
       if (result.response.status === 401) { onUnauthorized(); return; }
       if (!result.data) {
@@ -181,7 +184,6 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
   }
 
   const ready = form?.status === "created" || form?.status === "distributed";
-  const published = Boolean(form?.responderUrl);
   const stateUnknown = form === undefined;
   const questionTypeLabels = { text: "intake.text", paragraph: "intake.paragraph", single_choice: "intake.single_choice" } as const;
 
@@ -217,12 +219,12 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
                 </li>
               ))}
             </ol>
-            {/* Full question editor for a draft (not yet published) form. */}
-            {ready && !published && (
+            {/* Question editor: drafts are freely editable; sent forms accept new questions (append-only). */}
+            {ready && (
               <form className="space-y-3 border-t border-border pt-4" onSubmit={saveQuestions}>
                 <div>
-                  <h3 className="text-sm font-semibold text-text">{t("intake.editQuestions")}</h3>
-                  <p className="mt-1 text-xs text-muted">{t("intake.editQuestionsHint")}</p>
+                  <h3 className="text-sm font-semibold text-text">{t(published ? "intake.addSentQuestions" : "intake.editQuestions")}</h3>
+                  <p className="mt-1 text-xs text-muted">{t(published ? "intake.addSentQuestionsHint" : "intake.editQuestionsHint")}</p>
                 </div>
                 <IntakeQuestions questions={extraQuestions} setQuestions={setExtraQuestions} disabled={Boolean(busy)} />
                 <div className="flex flex-wrap items-center gap-3">

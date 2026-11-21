@@ -119,16 +119,44 @@ func TestProvisionAllowsFullQuestionReplacementOnDraft(t *testing.T) {
 	}
 }
 
-func TestProvisionRejectsQuestionChangeOnPublishedForm(t *testing.T) {
+// ՈՒՂԱՐԿՎԱԾ ֆորմային ՆՈՐ հարց ավելացնելը թույլատրված է (պատասխանները
+// չեն խանգարվում)․ փոխել/ջնջել առկաները՝ միայն 409։
+func TestProvisionPublishedFormAppendAndRejectEdit(t *testing.T) {
 	published := draftForm()
 	published.Status = "distributed"
 	published.ResponderURL = "https://docs.google.com/forms/d/x/viewform"
+	published.Questions = append(published.Questions, IntakeQuestion{Title: "City", Type: "text"}) // 3 հարց
 	store := &appendFormsStore{form: published}
-	svc := &FormsService{Tokens: stubFormsToken{}, Gateway: &appendFormsGW{}, Store: store, Operations: noopRecorder{}}
-	_, err := svc.Provision(context.Background(), uuid.New(), "Group", append(append([]IntakeQuestion(nil), published.Questions...),
-		IntakeQuestion{Title: "Extra", Type: "text"}))
-	if err == nil {
-		t.Fatal("published form question change accepted")
+	gw := &appendFormsGW{}
+	svc := &FormsService{Tokens: stubFormsToken{}, Gateway: gw, Store: store, Operations: noopRecorder{}}
+
+	// ԱՎԵԼԱՑՈՒՄ՝ հաջող։
+	appended := append(append([]IntakeQuestion(nil), published.Questions...),
+		IntakeQuestion{Title: "Phone number", Type: "text"})
+	if _, err := svc.Provision(context.Background(), uuid.New(), "Group", appended); err != nil {
+		t.Fatalf("published append rejected: %v", err)
+	}
+	if len(store.updated) != 4 || store.updated[3].Title != "Phone number" {
+		t.Fatalf("stored = %+v, want appended set", store.updated)
+	}
+	if len(gw.ensured) != 1 || len(gw.ensured[0]) != 4 {
+		t.Fatalf("gateway = %+v, want appended set sent to Google", gw.ensured)
+	}
+
+	// ՓՈԽՈՒՄ (ջնջում)՝ մերժվում է, պահեստը (store) չի փոխվում։
+	// (ջնջումը պետք է վերապրի normalize-ը․ [Full name, Email, City]-ից հանում ենք City-ն)
+	store2 := &appendFormsStore{form: published}
+	svc2 := &FormsService{Tokens: stubFormsToken{}, Gateway: &appendFormsGW{}, Store: store2, Operations: noopRecorder{}}
+	if _, err := svc2.Provision(context.Background(), uuid.New(), "Group", published.Questions[:2]); err == nil {
+		t.Fatal("published removal accepted")
+	}
+	renamed := append([]IntakeQuestion(nil), published.Questions...)
+	renamed[2].Title = "Renamed" // City → Renamed (non-alias, stays custom)
+	if _, err := svc2.Provision(context.Background(), uuid.New(), "Group", renamed); err == nil {
+		t.Fatal("published rename accepted")
+	}
+	if len(store2.updated) != 0 {
+		t.Fatalf("store changed despite rejection: %+v", store2.updated)
 	}
 }
 

@@ -30,15 +30,22 @@ func (r *Repo) ClaimIntakeForm(ctx context.Context, groupID uuid.UUID, questions
 // question set. Published/distributed forms refuse the change at the
 // database level too — the service-level guard is not the only defense.
 func (r *Repo) UpdateIntakeQuestions(ctx context.Context, groupID uuid.UUID, questions []integrations.IntakeQuestion) error {
+	// Draft (never sent): free replacement. Published/sent forms accept
+	// APPEND-ONLY extensions at the database level too — the stored set must
+	// grow, never shrink or reorder.
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE intake_forms SET questions = $2::jsonb
-		WHERE group_id = $1 AND status IN ('pending', 'created') AND COALESCE(form_url, '') = ''`,
+		WHERE group_id = $1 AND (
+		    (status IN ('pending', 'created') AND COALESCE(form_url, '') = '')
+		    OR (status IN ('created', 'distributed', 'closed')
+		        AND jsonb_array_length(questions) < jsonb_array_length($2::jsonb))
+		)`,
 		groupID, questions)
 	if err != nil {
 		return fmt.Errorf("store: update intake questions: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return &core.AppError{Code: core.CodeConflict, Message: "published intake forms cannot change questions"}
+		return &core.AppError{Code: core.CodeConflict, Message: "sent forms only accept newly added questions"}
 	}
 	return nil
 }
