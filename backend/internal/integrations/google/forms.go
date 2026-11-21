@@ -142,23 +142,41 @@ func (g *FormsGateway) EnsureQuestions(ctx context.Context, token, id string, qu
 	if reflect.DeepEqual(form.Items, expected) {
 		return nil
 	}
-	// Append-only: the existing items must be a PREFIX of the expected set
-	// (unchanged, same order); only the missing tail is created. Editing or
-	// reordering existing items is rejected — collected responses map by
-	// question title.
-	if len(form.Items) > len(expected) || form.Revision == "" {
-		return errors.New("Google Forms draft has unexpected questions or no revision")
+	// Draft forms are freely rebuildable: if the existing items are a
+	// PREFIX of the expected set, only the missing tail is created;
+	// otherwise the draft is rebuilt from scratch (delete every existing
+	// item, then create the new set) in one revision-guarded batch.
+	if form.Revision == "" {
+		return errors.New("Google Forms draft has no revision")
 	}
+	prefix := len(form.Items) <= len(expected)
 	for i := range form.Items {
-		if !reflect.DeepEqual(form.Items[i], expected[i]) {
-			return errors.New("existing form questions cannot be changed or reordered; only new questions can be added")
+		if prefix && !reflect.DeepEqual(form.Items[i], expected[i]) {
+			prefix = false
 		}
 	}
-	requests = make([]map[string]any, 0, len(expected)-len(form.Items))
+	requests = make([]map[string]any, 0, len(form.Items)+len(expected))
+	if !prefix {
+		for i := len(form.Items) - 1; i >= 0; i-- { // reverse order keeps earlier indexes valid
+			requests = append(requests, map[string]any{"deleteItem": map[string]any{"location": map[string]int{"index": i}}})
+		}
+		for i := range expected {
+			requests = append(requests, map[string]any{"createItem": map[string]any{"item": expected[i], "location": map[string]int{"index": i}}})
+		}
+		return writeBatch(ctx, token, id, form.Revision, requests, g, expected)
+	}
 	for i := len(form.Items); i < len(expected); i++ {
 		requests = append(requests, map[string]any{"createItem": map[string]any{"item": expected[i], "location": map[string]int{"index": i}}})
 	}
-	body := map[string]any{"requests": requests, "writeControl": map[string]string{"requiredRevisionId": form.Revision}}
+	return writeBatch(ctx, token, id, form.Revision, requests, g, expected)
+}
+
+// writeBatch posts the batchUpdate (revision-guarded) and treats HTTP 400
+// as success only when a re-read shows the form already matches the
+// expected items (a concurrent execution won the race).
+func writeBatch(ctx context.Context, token, id, revision string, requests []map[string]any, g *FormsGateway, expected []formQuestionItem) error {
+	endpoint := g.formsURL + "/" + url.PathEscape(id)
+	body := map[string]any{"requests": requests, "writeControl": map[string]string{"requiredRevisionId": revision}}
 	var updated map[string]any
 	status, err := g.request(ctx, token, http.MethodPost, endpoint+":batchUpdate", body, &updated)
 	if status == http.StatusBadRequest {

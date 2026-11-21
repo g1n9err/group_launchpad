@@ -80,8 +80,8 @@ func (s *FormsService) Provision(ctx context.Context, groupID uuid.UUID, name st
 		if err := allowQuestionChange(form, questions); err != nil {
 			return "", err
 		}
-		// Append-only update of a draft form: persist the extended question
-		// set before touching Google, so a crash mid-way never loses it.
+		// The form is an unpublished draft: persist the new question set
+		// before touching Google, so a crash mid-way never loses it.
 		if err := s.Store.UpdateIntakeQuestions(ctx, groupID, questions); err != nil {
 			return "", err
 		}
@@ -181,18 +181,15 @@ func (s *FormsService) record(ctx context.Context, groupID uuid.UUID, operation 
 	return nil
 }
 
-// allowQuestionChange permits extending a NOT-yet-published draft with new
-// questions (appended after the existing ones). Editing or removing
-// existing questions — or any change to a published form — is rejected:
-// collected responses map by question title.
+// allowQuestionChange permits ANY question-set change on a NOT-yet-published
+// draft — nothing has been sent to students and no responses exist, so the
+// form can be freely rebuilt (including replacing it wholesale). A published
+// form is immutable: collected responses map by question title.
 func allowQuestionChange(form IntakeForm, next []IntakeQuestion) error {
 	published := form.ResponderURL != "" || form.VerifiedSince != nil ||
 		form.Status == "distributed" || form.Status == "closed"
 	if published {
-		return &core.AppError{Code: core.CodeConflict, Message: "the intake form is already published; its questions cannot change"}
-	}
-	if len(next) < len(form.Questions) || !reflect.DeepEqual(next[:len(form.Questions)], form.Questions) {
-		return &core.AppError{Code: core.CodeConflict, Message: "questions can only be added; existing questions cannot be removed, renamed, or changed"}
+		return &core.AppError{Code: core.CodeConflict, Message: "the intake form was already sent to students; its questions cannot change"}
 	}
 	return nil
 }

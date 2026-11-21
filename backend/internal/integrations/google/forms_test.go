@@ -145,17 +145,42 @@ func TestEnsureQuestionsAppendsMissingTail(t *testing.T) {
 	}
 }
 
-func TestEnsureQuestionsRejectsEditingExisting(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+// Սևագիրը ազատ վերակառուցվում է․ տարբերվող դասավորության դեպքում բոլոր
+// առկա տարրերը ջնջվում են և նոր շարքն է ստեղծվում՝ մեկ batchUpdate-ում։
+func TestEnsureQuestionsRebuildsDraftFromScratch(t *testing.T) {
+	var body struct {
+		Requests []map[string]any `json:"requests"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, ":batchUpdate") {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"revisionId":"r1","items":[{"title":"Full name","questionItem":{"question":{"required":true,"textQuestion":{}}}}]}`))
+		_, _ = w.Write([]byte(`{"revisionId":"r1","items":[{"title":"Old question","questionItem":{"question":{"required":true,"textQuestion":{}}}}]}`))
 	}))
 	defer srv.Close()
 	gw := &FormsGateway{formsURL: srv.URL, client: srv.Client()}
 	err := gw.EnsureQuestions(context.Background(), "tok", "form1", []integrations.IntakeQuestion{
-		{Title: "Renamed", Type: "text", Required: true},
+		{Title: "Full name", Type: "text", Required: true},
+		{Title: "Email address", Type: "text", Required: true},
+		{Title: "City", Type: "text"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "cannot be changed") {
-		t.Fatalf("err = %v, want changed-item rejection", err)
+	if err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	deletes := 0
+	creates := 0
+	for _, request := range body.Requests {
+		if _, ok := request["deleteItem"]; ok {
+			deletes++
+		}
+		if _, ok := request["createItem"]; ok {
+			creates++
+		}
+	}
+	if deletes != 1 || creates != 3 {
+		t.Fatalf("requests: %d deletes, %d creates; want 1/3 (delete old, create new set)", deletes, creates)
 	}
 }

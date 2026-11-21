@@ -6,7 +6,6 @@ package integrations
 
 import (
 	"context"
-	"reflect"
 	"testing"
 	"time"
 
@@ -95,36 +94,29 @@ func TestProvisionAppendsQuestionsToDraft(t *testing.T) {
 	}
 }
 
-func TestProvisionRejectsRemovingOrRenamingExistingQuestions(t *testing.T) {
+// Սևագրի հարցերը ԿԱՐՈՂ ԵՆ ազատ փոխվել (ջնջում/անվանափոխում/փոխարինում)՝
+// մինչև հրապարակումը. ոչ մի պատասխան դեռ չկա։
+func TestProvisionAllowsFullQuestionReplacementOnDraft(t *testing.T) {
 	withPhone := draftForm()
 	withPhone.Questions = append(withPhone.Questions, IntakeQuestion{Title: "Phone number", Type: "text"})
-	svcBase := func(store *appendFormsStore) *FormsService {
-		return &FormsService{Tokens: stubFormsToken{}, Gateway: &appendFormsGW{}, Store: store, Operations: noopRecorder{}}
-	}
-
-	// Removal: submit the form without the stored "Phone number" question.
 	store := &appendFormsStore{form: withPhone}
-	if _, err := svcBase(store).Provision(context.Background(), uuid.New(), "Group", withPhone.Questions[:2]); err == nil {
-		t.Fatal("removal accepted")
-	}
-	if len(store.updated) != 0 {
-		t.Fatalf("store updated despite removal rejection: %+v", store.updated)
-	}
+	gw := &appendFormsGW{}
+	svc := &FormsService{Tokens: stubFormsToken{}, Gateway: gw, Store: store, Operations: noopRecorder{}}
 
-	// Rename: submit "Phone" instead of the stored "Phone number".
-	store = &appendFormsStore{form: withPhone}
-	renamed := []IntakeQuestion{
+	// Full replacement: "Phone number" dropped, "City" added instead.
+	if _, err := svc.Provision(context.Background(), uuid.New(), "Group", []IntakeQuestion{
 		{Title: "Full name", Type: "text", Required: true},
 		{Title: "Email address", Type: "text", Required: true},
-		{Title: "Phone", Type: "text"},
+		{Title: "City", Type: "text"},
+	}); err != nil {
+		t.Fatalf("replacement rejected: %v", err)
 	}
-	if _, err := svcBase(store).Provision(context.Background(), uuid.New(), "Group", renamed); err == nil {
-		t.Fatal("rename accepted")
+	if len(store.updated) != 3 || store.updated[2].Title != "City" {
+		t.Fatalf("stored = %+v, want City replacing Phone number", store.updated)
 	}
-	if len(store.updated) != 0 {
-		t.Fatalf("store updated despite rename rejection: %+v", store.updated)
+	if len(gw.ensured) != 1 || gw.ensured[0][2].Title != "City" {
+		t.Fatalf("gateway set = %+v", gw.ensured)
 	}
-	_ = reflect.DeepEqual
 }
 
 func TestProvisionRejectsQuestionChangeOnPublishedForm(t *testing.T) {

@@ -95,6 +95,21 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
     return () => controller.abort();
   }, [groupId, authorization, reload, onUnauthorized]);
 
+  // ── Draft question editor ────────────────────────────────────────────────
+  // Load the form's current custom questions (everything after the mandatory
+  // Full name / Email address pair) into the editor whenever a draft form
+  // loads, so it can be freely edited: change, remove, add.
+  useEffect(() => {
+    if (!form?.questions) return;
+    setExtraQuestions(form.questions.slice(2).map((question) => ({
+      id: nextEditableId(),
+      title: question.title,
+      type: question.type,
+      required: question.required,
+      optionsText: (question.options ?? []).join("\n"),
+    })));
+  }, [form?.questions]);
+
   async function act(action: Action) {
     if (busy) return;
     setBusy(action);
@@ -132,20 +147,23 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
     }
   }
 
-  // Append new questions to an existing DRAFT form: the request carries the
-  // stored set plus the new rows (the server enforces append-only and the
-  // mandatory Full name / Email address questions).
-  async function addQuestions(event: React.FormEvent) {
+  // Edit the questions of an existing DRAFT form: the request carries the
+  // FULL intended custom set (the server pins the mandatory Full name /
+  // Email address pair and rebuilds the draft). Published forms are locked.
+  async function saveQuestions(event: React.FormEvent) {
     event.preventDefault();
     if (busy || !form?.questions) return;
     setExtraError(undefined);
     setNotice(undefined);
-    const added = toIntakeQuestions(extraQuestions).filter((question) => question.title);
-    if (!added.length) { setExtraError("intake.nothingToAdd"); return; }
+    const customs = toIntakeQuestions(extraQuestions).filter((question) => question.title);
     setBusy("draft");
     try {
       const result = await api.POST("/api/groups/{groupId}/forms/provision", {
-        ...options, body: { questions: [...form.questions, ...added] },
+        ...options, body: { questions: [
+          { title: "Full name", type: "text", required: true },
+          { title: "Email address", type: "text", required: true },
+          ...customs,
+        ] },
       });
       if (result.response.status === 401) { onUnauthorized(); return; }
       if (!result.data) {
@@ -153,7 +171,6 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
           : result.response.status === 409 ? "intake.conflict" : "intake.actionFailed");
         return;
       }
-      setExtraQuestions([]);
       setNotice("intake.questionsUpdated");
       setReload((version) => version + 1);
     } catch {
@@ -200,16 +217,16 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
                 </li>
               ))}
             </ol>
-            {/* Append new questions to a draft (not yet published) form. */}
+            {/* Full question editor for a draft (not yet published) form. */}
             {ready && !published && (
-              <form className="space-y-3 border-t border-border pt-4" onSubmit={addQuestions}>
+              <form className="space-y-3 border-t border-border pt-4" onSubmit={saveQuestions}>
                 <div>
-                  <h3 className="text-sm font-semibold text-text">{t("intake.addQuestions")}</h3>
-                  <p className="mt-1 text-xs text-muted">{t("intake.addQuestionsHint")}</p>
+                  <h3 className="text-sm font-semibold text-text">{t("intake.editQuestions")}</h3>
+                  <p className="mt-1 text-xs text-muted">{t("intake.editQuestionsHint")}</p>
                 </div>
                 <IntakeQuestions questions={extraQuestions} setQuestions={setExtraQuestions} disabled={Boolean(busy)} />
                 <div className="flex flex-wrap items-center gap-3">
-                  <button type="submit" className={intakeActionClass} disabled={Boolean(busy)}>{t("intake.addQuestionsAction")}</button>
+                  <button type="submit" className={intakeActionClass} disabled={Boolean(busy)}>{t("intake.editQuestionsAction")}</button>
                   {extraError && <p role="alert" className="text-sm text-danger-text">{t(extraError)}</p>}
                 </div>
               </form>
@@ -267,6 +284,11 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
       )}
     </>
   );
+}
+
+let extraQuestionId = 0;
+function nextEditableId(): number {
+  return ++extraQuestionId;
 }
 
 const emailStatusLabels = {

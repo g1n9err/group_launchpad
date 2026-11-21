@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +18,7 @@ type fakeForms struct {
 	updates   atomic.Int32
 	publishes atomic.Int32
 	responses []integrations.IntakeResponse
+	lastSet   []integrations.IntakeQuestion
 }
 
 func (*fakeForms) AccessToken(context.Context) (string, error) { return "test-token", nil }
@@ -46,12 +46,12 @@ func (f *fakeForms) FindDraft(context.Context, string, string) (string, error) {
 }
 
 func (f *fakeForms) EnsureQuestions(_ context.Context, _, id string, questions []integrations.IntakeQuestion) error {
-	if id != "recovered-form-id" || len(questions) != 3 || questions[0].Title != "Full name" ||
-		!questions[0].Required || questions[1].Title != "Email address" || !questions[1].Required ||
-		questions[2].Type != "single_choice" ||
-		strings.Join(questions[2].Options, ",") != "Morning,Evening" {
+	if id != "recovered-form-id" || len(questions) < 2 ||
+		questions[0].Title != "Full name" || !questions[0].Required ||
+		questions[1].Title != "Email address" || !questions[1].Required {
 		return errors.New("unexpected question payload")
 	}
+	f.lastSet = questions
 	f.updates.Add(1)
 	return nil
 }
@@ -99,14 +99,22 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 			t.Fatalf("draft: %d %v", code, result)
 		}
 	}
-	if code, _ := doJSON(t, srv, http.MethodPost, path, `{"questions":[{"title":"Different","type":"paragraph"}]}`); code != http.StatusConflict {
-		t.Fatalf("changing saved questions: %d, want 409", code)
+	// ՄԻՆՉ հրապարակումը՝ սևագրի հարցերը ազատ փոխվում են (լրիվ փոխարինում)։
+	if code, _ := doJSON(t, srv, http.MethodPost, path, `{"questions":[{"title":"Different","type":"paragraph"}]}`); code != http.StatusOK {
+		t.Fatalf("changing draft questions before publish: %d, want 200", code)
+	}
+	if len(gateway.lastSet) != 3 || gateway.lastSet[2].Title != "Different" {
+		t.Fatalf("draft rebuild payload = %+v", gateway.lastSet)
 	}
 	for range 2 {
 		code, result := doJSON(t, srv, http.MethodPost, publishPath, "")
 		if code != http.StatusOK || result["formId"] != "recovered-form-id" || result["responderUrl"] != testResponderURL {
 			t.Fatalf("publish: %d %v", code, result)
 		}
+	}
+	// ՀՐԱՊԱՐԱԿՈՒՄԻՑ ՀԵՏՈ՝ հարցերը կողպվում են (պատասխանների ամբողջականություն)։
+	if code, _ := doJSON(t, srv, http.MethodPost, path, `{"questions":[{"title":"Another","type":"text"}]}`); code != http.StatusConflict {
+		t.Fatalf("changing questions after publish: %d, want 409", code)
 	}
 	code, state := doJSON(t, srv, http.MethodGet, formsPath, "")
 	if code != http.StatusOK || state["status"] != "created" || state["verifiedEmail"] != true ||
@@ -119,8 +127,8 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	if rows := countRowsSimple(t, pool, "SELECT count(*) FROM intake_forms WHERE form_url='https://docs.google.com/forms/d/e/test-form/viewform'"); rows != 1 {
 		t.Fatalf("saved %d published URLs, want 1", rows)
 	}
-	if gateway.creates.Load() != 1 || gateway.updates.Load() != 1 {
-		t.Fatalf("create calls=%d update calls=%d, want one each", gateway.creates.Load(), gateway.updates.Load())
+	if gateway.creates.Load() != 1 || gateway.updates.Load() < 2 {
+		t.Fatalf("create calls=%d update calls=%d, want 1 create and >=2 updates", gateway.creates.Load(), gateway.updates.Load())
 	}
 	if rows := countRowsSimple(t, pool, "SELECT count(*) FROM intake_forms WHERE external_form_id='recovered-form-id' AND status='created' AND jsonb_array_length(questions)=3"); rows != 1 {
 		t.Fatalf("saved %d intake forms, want 1", rows)
