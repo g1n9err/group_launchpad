@@ -21,6 +21,17 @@ const (
 	OpSlackPostMessage  = "slack.chat.postMessage"
 )
 
+// SlackJoinRecorder reconciles onboarding state from provisioning results:
+// conversations.invite ADDS a workspace member to a channel immediately, so
+// a successful invite (or "already in channel") IS the Slack join — waiting
+// for a member_joined_channel event would leave members "pending" forever
+// when the Events webhook is unreachable.
+type SlackJoinRecorder interface {
+	FindUserIDsByEmail(ctx context.Context, normalizedEmail string) ([]uuid.UUID, error)
+	FindGroupMember(ctx context.Context, groupID, userID uuid.UUID) (memberID uuid.UUID, onboardingStatus string, found bool, err error)
+	MarkGroupMemberJoinedSlack(ctx context.Context, memberID uuid.UUID) error
+}
+
 // ProvisionChannelStatus values.
 const (
 	ChannelCreated = "created"
@@ -106,6 +117,9 @@ type SlackChannelsService struct {
 	gateway    SlackGateway
 	resources  SlackResourceRepository
 	operations ExternalOperationRecorder
+	// Joins, when set, marks roster members as joined_slack for successful
+	// invitations (see SlackJoinRecorder). Optional: nil disables write-back.
+	Joins      SlackJoinRecorder
 	configured bool
 }
 
@@ -258,8 +272,10 @@ func (s *SlackChannelsService) Provision(ctx context.Context, in ProvisionInput)
 				switch {
 				case err == nil && outcome == InviteOutcomeInvited:
 					result.Invites = append(result.Invites, InviteResult{Email: email, ChannelName: p.name, Status: string(InviteOutcomeInvited)})
+					s.markJoined(ctx, in.GroupID, email)
 				case err == nil:
 					result.Invites = append(result.Invites, InviteResult{Email: email, ChannelName: p.name, Status: string(InviteOutcomeAlreadyMember)})
+					s.markJoined(ctx, in.GroupID, email)
 				default:
 					result.Invites = append(result.Invites, InviteResult{Email: email, ChannelName: p.name, Status: InviteFailed, Error: errorCategory(err)})
 				}
@@ -268,6 +284,27 @@ func (s *SlackChannelsService) Provision(ctx context.Context, in ProvisionInput)
 	}
 
 	return result, nil
+}
+
+// markJoined reconciles onboarding for a successfully invited (or
+// already-member) email: unambiguously matched roster members are marked
+// joined_slack. Best-effort by design — failures never fail provisioning.
+func (s *SlackChannelsService) markJoined(ctx context.Context, groupID uuid.UUID, email string) {
+	if s.Joins == nil {
+		return
+	}
+	ids, err := s.Joins.FindUserIDsByEmail(ctx, NormalizeEmail(email))
+	if err != nil || len(ids) != 1 {
+		return // zero or ambiguous matches: the Events flow remains authoritative
+	}
+	memberID, status, found, err := s.Joins.FindGroupMember(ctx, groupID, ids[0])
+	if err != nil || !found {
+		return
+	}
+	if status == "joined_slack" || status == "complete" {
+		return
+	}
+	_ = s.Joins.MarkGroupMemberJoinedSlack(ctx, memberID) //nolint:errcheck — best effort
 }
 
 // claimChannel records the channel in the idempotency registry (active).

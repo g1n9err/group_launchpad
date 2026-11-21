@@ -43,7 +43,7 @@ function OverviewContent() {
   const onboardingPending = groups.isPending || onboarding.some((report) => report.isPending);
   const totalStudents = onboarding.reduce((total, report) => total + (report.data?.summary.expectedCount ?? 0), 0);
   const joinedStudents = onboarding.reduce((total, report) => total + (report.data?.summary.joinedCount ?? 0), 0);
-  const activeGroups = groups.data?.filter((group) => group.status === "launched" || group.status === "launching");
+  const activeGroups = groups.data?.filter((group) => group.status !== "draft" && group.status !== "archived");
   const stages = launchStages.map((stage) => ({
     ...stage, count: groups.data?.filter((group) => launchStage(group.status) === stage.key).length ?? 0,
   }));

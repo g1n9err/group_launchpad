@@ -69,6 +69,7 @@ func run() error {
 	if cfg.SlackConfigured() {
 		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
 		slack = integrations.NewSlackChannelsService(slackGateway, repo, repo, true)
+		slack.Joins = repo // successful invites reconcile onboarding joins
 		slackChecker = slackGateway
 		memberChecker = slackGateway
 	}

@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -339,5 +340,90 @@ func TestProvisionUnconfiguredRefuses(t *testing.T) {
 	svc := NewSlackChannelsService(nil, nil, nil, false)
 	if _, err := svc.Provision(context.Background(), testInput()); err == nil {
 		t.Fatal("expected NOT_READY")
+	}
+}
+
+// ── Join write-back (invite = channel membership) ─────────────────────────
+
+type joinRecorderFake struct {
+	byEmail    map[string][]uuid.UUID
+	members    map[uuid.UUID]map[uuid.UUID]uuid.UUID // groupID -> userID -> memberID
+	marked     []uuid.UUID
+	failLookup bool
+}
+
+func (f *joinRecorderFake) FindUserIDsByEmail(_ context.Context, email string) ([]uuid.UUID, error) {
+	if f.failLookup {
+		return nil, errors.New("db down")
+	}
+	return f.byEmail[email], nil
+}
+
+func (f *joinRecorderFake) FindGroupMember(_ context.Context, groupID, userID uuid.UUID) (uuid.UUID, string, bool, error) {
+	inner, ok := f.members[groupID]
+	if !ok {
+		return uuid.Nil, "", false, nil
+	}
+	memberID, ok := inner[userID]
+	return memberID, "pending", ok, nil
+}
+
+func (f *joinRecorderFake) MarkGroupMemberJoinedSlack(_ context.Context, memberID uuid.UUID) error {
+	f.marked = append(f.marked, memberID)
+	return nil
+}
+
+func TestProvisionMarksInvitedRosterMembersJoined(t *testing.T) {
+	input := testInput("student@x.example")
+	groupID := input.GroupID
+	studentID := uuid.New()
+	memberID := uuid.New()
+	recorder := &joinRecorderFake{
+		byEmail: map[string][]uuid.UUID{NormalizeEmail("student@x.example"): {studentID}},
+		members: map[uuid.UUID]map[uuid.UUID]uuid.UUID{groupID: {studentID: memberID}},
+	}
+	gw, repo := newFakeChannelGateway(), newFakeResourceRepo()
+	gw.users["student@x.example"] = "U1"
+	svc := newChannelsService(gw, repo)
+	svc.Joins = recorder
+
+	if _, err := svc.Provision(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	// Marked once per provisioned channel (idempotent), always the same member.
+	if len(recorder.marked) < 1 {
+		t.Fatal("roster member was never marked joined")
+	}
+	for _, marked := range recorder.marked {
+		if marked != memberID {
+			t.Fatalf("marked members = %v, want only %s", recorder.marked, memberID)
+		}
+	}
+}
+
+func TestProvisionJoinWriteBackIsBestEffort(t *testing.T) {
+	input := testInput()
+	recorder := &joinRecorderFake{failLookup: true}
+	gw, repo := newFakeChannelGateway(), newFakeResourceRepo()
+	gw.users["ghost@x.example"] = "U2"
+	svc := newChannelsService(gw, repo)
+	svc.Joins = recorder
+
+	input.InviteEmails = []string{"ghost@x.example"}
+	result, err := svc.Provision(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.marked) != 0 {
+		t.Fatalf("marked = %v, want none", recorder.marked)
+	}
+	invited := false
+	for _, inv := range result.Invites {
+		if inv.Status == string(InviteOutcomeInvited) || inv.Status == string(InviteOutcomeAlreadyMember) {
+			invited = true
+		}
+	}
+	if !invited {
+		t.Fatal("invite result missing despite write-back failure")
 	}
 }

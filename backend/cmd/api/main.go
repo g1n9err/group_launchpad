@@ -184,8 +184,9 @@ func newSlackServices(cfg config.Config, repo *store.Repo) (*integrations.SlackA
 			integrations.NewSlackChannelsService(nil, nil, repo, false)
 	}
 	gateway := slackgw.NewGateway(cfg.SlackBotToken)
-	return integrations.NewSlackAuthService(repo, gateway, true),
-		integrations.NewSlackChannelsService(gateway, repo, repo, true)
+	channels := integrations.NewSlackChannelsService(gateway, repo, repo, true)
+	channels.Joins = repo // successful invites reconcile onboarding joins
+	return integrations.NewSlackAuthService(repo, gateway, true), channels
 }
 
 // newSlackEventsService wires the Events webhook when the signing secret is
