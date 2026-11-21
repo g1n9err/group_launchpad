@@ -435,32 +435,34 @@ func (w *GroupLaunchWorker) provisionClassroomStep(ctx context.Context, data Gro
 	if err != nil {
 		return LaunchStep{Platform: "classroom", Status: StepFailed, Detail: err.Error()}
 	}
+	// Both phases run even when the other has failures — a partially failed
+	// enrollment must never leave the course without its teachers (and vice
+	// versa). Details aggregate.
+	var enrollmentFails, teacherFails int
 	if len(data.StudentEmails) > 0 {
-		results := w.ClassroomService.EnrollAll(ctx, data.ID, courseID, data.StudentEmails)
-		var failCount int
-		for _, r := range results {
+		for _, r := range w.ClassroomService.EnrollAll(ctx, data.ID, courseID, data.StudentEmails) {
 			if r.Err != nil {
-				failCount++
+				enrollmentFails++
 			}
-		}
-		if failCount > 0 {
-			return LaunchStep{Platform: "classroom", Status: StepPartiallyFailed,
-				Detail: fmt.Sprintf("course created, %d enrollment failures", failCount)}
 		}
 	}
-	// Assign teachers/staff (PRD §4.3).
-	if len(w.effectiveStaff(data)) > 0 {
-		teacherResults := w.ClassroomService.AssignTeachers(ctx, data.ID, courseID, w.effectiveStaff(data))
-		var teacherFail int
-		for _, r := range teacherResults {
+	if staff := w.effectiveStaff(data); len(staff) > 0 {
+		for _, r := range w.ClassroomService.AssignTeachers(ctx, data.ID, courseID, staff) {
 			if r.Err != nil {
-				teacherFail++
+				teacherFails++
 			}
 		}
-		if teacherFail > 0 {
-			return LaunchStep{Platform: "classroom", Status: StepPartiallyFailed,
-				Detail: fmt.Sprintf("course created, %d teacher assignment failures", teacherFail)}
-		}
+	}
+	switch {
+	case enrollmentFails > 0 && teacherFails > 0:
+		return LaunchStep{Platform: "classroom", Status: StepPartiallyFailed,
+			Detail: fmt.Sprintf("course created, %d enrollment and %d teacher assignment failures", enrollmentFails, teacherFails)}
+	case enrollmentFails > 0:
+		return LaunchStep{Platform: "classroom", Status: StepPartiallyFailed,
+			Detail: fmt.Sprintf("course created, %d enrollment failures", enrollmentFails)}
+	case teacherFails > 0:
+		return LaunchStep{Platform: "classroom", Status: StepPartiallyFailed,
+			Detail: fmt.Sprintf("course created, %d teacher assignment failures", teacherFails)}
 	}
 	return LaunchStep{Platform: "classroom", Status: StepSucceeded}
 }

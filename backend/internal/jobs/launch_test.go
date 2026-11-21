@@ -2,9 +2,11 @@ package jobs_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -159,4 +161,54 @@ func TestLaunchFormsSkippedWhenNil(t *testing.T) {
 	if step.Status != jobs.StepSkipped {
 		t.Errorf("want skipped, got %+v", step)
 	}
+}
+
+// Enrollment failures must NOT skip teacher assignment — the course still
+// gets its teachers, and the detail aggregates both counts.
+func TestClassroomStepAssignsTeachersDespiteEnrollmentFailures(t *testing.T) {
+	gw := &partialClassroomGW{failingStudents: map[string]bool{"bad@test.example": true}}
+	svc := &integrations.ClassroomService{Tokens: fakeTokenSource{}, Gateway: gw, Store: &stubClassroomStore{}, Operations: noopRecorder{}}
+	worker := &jobs.GroupLaunchWorker{Logger: testLogger(), ClassroomService: svc, StaffEmails: []string{"teacher@test.example"}}
+	data := testData()
+	data.StudentEmails = []string{"good@test.example", "bad@test.example"}
+
+	step := worker.ProvisionClassroomForTest(context.Background(), data)
+	if step.Status != jobs.StepPartiallyFailed {
+		t.Fatalf("step = %+v, want partially_failed", step)
+	}
+	if !strings.Contains(step.Detail, "1 enrollment") {
+		t.Errorf("detail = %q, want enrollment failure count", step.Detail)
+	}
+	if len(gw.assignedTeachers) != 1 || gw.assignedTeachers[0] != "teacher@test.example" {
+		t.Fatalf("teachers assigned = %v, want [teacher@test.example]", gw.assignedTeachers)
+	}
+}
+
+type partialClassroomGW struct {
+	failingStudents  map[string]bool
+	assignedTeachers []string
+}
+
+func (g *partialClassroomGW) EnsureCourse(context.Context, string, integrations.ClassroomCourseInput) (string, error) {
+	return "course-x", nil
+}
+func (g *partialClassroomGW) ActivateCourse(context.Context, string, string) error { return nil }
+func (g *partialClassroomGW) EnrollStudent(_ context.Context, _, _, email string) error {
+	if g.failingStudents[email] {
+		return errors.New("not found")
+	}
+	return nil
+}
+func (g *partialClassroomGW) AssignTeacher(_ context.Context, _, _, email string) error {
+	g.assignedTeachers = append(g.assignedTeachers, email)
+	return nil
+}
+
+type stubClassroomStore struct{}
+
+func (s *stubClassroomStore) GetResource(context.Context, uuid.UUID, string, string, string) (integrations.GroupResource, bool, error) {
+	return integrations.GroupResource{}, false, nil
+}
+func (s *stubClassroomStore) SaveClassroomCourse(context.Context, uuid.UUID, integrations.GroupResource) error {
+	return nil
 }

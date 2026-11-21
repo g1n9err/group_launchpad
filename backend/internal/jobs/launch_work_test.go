@@ -41,6 +41,7 @@ type fakeClassroomGW struct{}
 func (f *fakeClassroomGW) EnsureCourse(_ context.Context, _ string, _ integrations.ClassroomCourseInput) (string, error) {
 	return "fake-course-123", nil
 }
+func (f *fakeClassroomGW) ActivateCourse(_ context.Context, _ string, _ string) error { return nil }
 
 func (f *fakeClassroomGW) EnrollStudent(_ context.Context, _, _, email string) error {
 	if email == "bad@test.example" {

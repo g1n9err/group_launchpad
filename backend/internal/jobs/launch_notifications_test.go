@@ -46,6 +46,7 @@ type failingClassroomGW struct{}
 func (failingClassroomGW) EnsureCourse(context.Context, string, integrations.ClassroomCourseInput) (string, error) {
 	return "", integrations.ErrSlackUnavailable // any typed error
 }
+func (failingClassroomGW) ActivateCourse(context.Context, string, string) error        { return nil }
 func (failingClassroomGW) EnrollStudent(context.Context, string, string, string) error { return nil }
 func (failingClassroomGW) AssignTeacher(context.Context, string, string, string) error { return nil }
 

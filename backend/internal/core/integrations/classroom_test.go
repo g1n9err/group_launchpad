@@ -36,6 +36,8 @@ func (g *fakeClassroomGateway) EnsureCourse(_ context.Context, _ string, in Clas
 	return id, nil
 }
 
+func (g *fakeClassroomGateway) ActivateCourse(_ context.Context, _, _ string) error { return nil }
+
 func (g *fakeClassroomGateway) EnrollStudent(_ context.Context, _, courseID, email string) error {
 	if g.FailEmails[email] {
 		return errors.New("enrollment failed")

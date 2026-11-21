@@ -21,6 +21,10 @@ type ClassroomCourseInput struct {
 
 type ClassroomGateway interface {
 	EnsureCourse(context.Context, string, ClassroomCourseInput) (string, error)
+	// ActivateCourse transitions a PROVISIONED course to ACTIVE (idempotent:
+	// already-ACTIVE is a no-op). Students can only be invited to ACTIVE
+	// courses, so provisioning must activate before enrolling.
+	ActivateCourse(ctx context.Context, token, courseID string) error
 	// EnrollStudent invites a student to a course by email; already-enrolled
 	// returns success (idempotent).
 	EnrollStudent(ctx context.Context, token, courseID, email string) error
@@ -71,6 +75,14 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 	_ = s.Operations.RecordExternalOperation(ctx, op)
 	if err != nil {
 		return "", &core.AppError{Code: core.CodeUpstream, Message: err.Error()}
+	}
+	// A freshly created course is PROVISIONED (a draft invisible to
+	// students); activate it so enrollment and the audit see a live course.
+	started = time.Now()
+	activateErr := s.Gateway.ActivateCourse(ctx, token, id)
+	s.record(ctx, groupID, "classroom.activate_course", started, activateErr)
+	if activateErr != nil {
+		return "", &core.AppError{Code: core.CodeUpstream, Message: activateErr.Error()}
 	}
 	if err := s.Store.SaveClassroomCourse(ctx, groupID, GroupResource{
 		Provider: classroomProvider, Type: classroomCourseType, Name: alias, Status: ResourceStatusActive, ExternalID: id,

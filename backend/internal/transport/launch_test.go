@@ -27,6 +27,7 @@ type launchTestClassroomGateway struct{}
 func (launchTestClassroomGateway) EnsureCourse(context.Context, string, integrations.ClassroomCourseInput) (string, error) {
 	return "fixture-course", nil
 }
+func (launchTestClassroomGateway) ActivateCourse(context.Context, string, string) error { return nil }
 func (launchTestClassroomGateway) EnrollStudent(context.Context, string, string, string) error {
 	return nil
 }

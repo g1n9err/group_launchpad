@@ -2,8 +2,10 @@ package google
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -48,5 +50,40 @@ func TestClassroomEnsureCourseRecoversExistingAlias(t *testing.T) {
 		if err != nil || id != "classroom-123" {
 			t.Fatalf("ensure course: id=%q err=%v", id, err)
 		}
+	}
+}
+
+func TestActivateCoursePatchesStateToActive(t *testing.T) {
+	var gotMethod, gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"course-1","courseState":"ACTIVE"}`))
+	}))
+	defer srv.Close()
+
+	gw := &ClassroomGateway{coursesURL: srv.URL + "/v1/courses", client: srv.Client()}
+	if err := gw.ActivateCourse(t.Context(), "tok", "course-1"); err != nil {
+		t.Fatalf("ActivateCourse: %v", err)
+	}
+	if gotMethod != http.MethodPatch || gotPath != "/v1/courses/course-1" {
+		t.Errorf("request = %s %s, want PATCH /v1/courses/course-1", gotMethod, gotPath)
+	}
+	if !strings.Contains(gotBody, `"updateMask":"courseState"`) || !strings.Contains(gotBody, `"courseState":"ACTIVE"`) {
+		t.Errorf("body = %s, want updateMask=courseState and courseState=ACTIVE", gotBody)
+	}
+}
+
+func TestActivateCourseSurfacesHTTPFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+	gw := &ClassroomGateway{coursesURL: srv.URL + "/v1/courses", client: srv.Client()}
+	err := gw.ActivateCourse(t.Context(), "tok", "course-1")
+	if err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("err = %v, want HTTP 403 surfaced", err)
 	}
 }

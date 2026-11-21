@@ -19,6 +19,7 @@ func (*fakeClassroom) AccessToken(context.Context) (string, error) {
 	return "classroom-test-token", nil
 }
 
+func (f *fakeClassroom) ActivateCourse(_ context.Context, _ string, _ string) error { return nil }
 func (f *fakeClassroom) EnsureCourse(_ context.Context, _ string, _ integrations.ClassroomCourseInput) (string, error) {
 	f.requests.Add(1)
 	return "classroom-123", nil

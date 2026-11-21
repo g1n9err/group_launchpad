@@ -48,6 +48,34 @@ func (g *ClassroomGateway) EnsureCourse(ctx context.Context, token string, in in
 	return id, err
 }
 
+// ActivateCourse PATCHes courseState to ACTIVE. PROVISIONED courses are
+// drafts invisible to students; PATCHing an already-ACTIVE course with the
+// same value is a no-op, so this is idempotent.
+func (g *ClassroomGateway) ActivateCourse(ctx context.Context, token, courseID string) error {
+	course := struct {
+		UpdateMask string `json:"updateMask"`
+		Course     struct {
+			CourseState string `json:"courseState"`
+		} `json:"course"`
+	}{}
+	course.UpdateMask = "courseState"
+	course.Course.CourseState = "ACTIVE"
+	body, err := json.Marshal(course)
+	if err != nil {
+		return errors.New("could not encode activation")
+	}
+	endpoint := fmt.Sprintf("%s/%s", g.coursesURL, url.PathEscape(courseID))
+	resp, err := g.rawRequest(ctx, token, http.MethodPatch, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("classroom: activate course: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // EnrollStudent invites a student to a course by email via the Classroom
 // API. Already-enrolled (409) returns success — idempotent.
 func (g *ClassroomGateway) EnrollStudent(ctx context.Context, token, courseID, email string) error {
