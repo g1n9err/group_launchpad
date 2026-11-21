@@ -142,8 +142,21 @@ func (g *FormsGateway) EnsureQuestions(ctx context.Context, token, id string, qu
 	if reflect.DeepEqual(form.Items, expected) {
 		return nil
 	}
-	if len(form.Items) != 0 || form.Revision == "" {
+	// Append-only: the existing items must be a PREFIX of the expected set
+	// (unchanged, same order); only the missing tail is created. Editing or
+	// reordering existing items is rejected — collected responses map by
+	// question title.
+	if len(form.Items) > len(expected) || form.Revision == "" {
 		return errors.New("Google Forms draft has unexpected questions or no revision")
+	}
+	for i := range form.Items {
+		if !reflect.DeepEqual(form.Items[i], expected[i]) {
+			return errors.New("existing form questions cannot be changed or reordered; only new questions can be added")
+		}
+	}
+	requests = make([]map[string]any, 0, len(expected)-len(form.Items))
+	for i := len(form.Items); i < len(expected); i++ {
+		requests = append(requests, map[string]any{"createItem": map[string]any{"item": expected[i], "location": map[string]int{"index": i}}})
 	}
 	body := map[string]any{"requests": requests, "writeControl": map[string]string{"requiredRevisionId": form.Revision}}
 	var updated map[string]any

@@ -1,9 +1,11 @@
 package google
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -96,5 +98,64 @@ func TestGoogleFormsPublishReturnsVerifiedResponderLink(t *testing.T) {
 	got, err := gateway.Publish(t.Context(), "test-token", "test-form")
 	if err != nil || got != link {
 		t.Fatalf("publish: %q %v", got, err)
+	}
+}
+
+// EnsureQuestions appends only the missing tail to an existing draft; edits
+// or reorders of existing items are rejected.
+func TestEnsureQuestionsAppendsMissingTail(t *testing.T) {
+	var batchCalls int
+	var created []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && !strings.Contains(r.URL.Path, ":batchUpdate"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"revisionId":"r1","items":[` +
+				`{"title":"Full name","questionItem":{"question":{"required":true,"textQuestion":{}}}},` +
+				`{"title":"Email address","questionItem":{"question":{"required":true,"textQuestion":{}}}}]}`))
+		case strings.Contains(r.URL.Path, ":batchUpdate"):
+			batchCalls++
+			var body struct {
+				Requests []map[string]any `json:"requests"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			created = body.Requests
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	gw := &FormsGateway{formsURL: srv.URL, client: srv.Client()}
+
+	err := gw.EnsureQuestions(context.Background(), "tok", "form1", []integrations.IntakeQuestion{
+		{Title: "Full name", Type: "text", Required: true},
+		{Title: "Email address", Type: "text", Required: true},
+		{Title: "Phone", Type: "text"},
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if batchCalls != 1 || len(created) != 1 {
+		t.Fatalf("batchUpdate calls=%d requests=%d, want 1 new item", batchCalls, len(created))
+	}
+	item := created[0]["createItem"].(map[string]any)
+	if item["location"].(map[string]any)["index"].(float64) != 2 {
+		t.Errorf("new item index = %v, want 2 (after the existing pair)", item["location"])
+	}
+}
+
+func TestEnsureQuestionsRejectsEditingExisting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"revisionId":"r1","items":[{"title":"Full name","questionItem":{"question":{"required":true,"textQuestion":{}}}}]}`))
+	}))
+	defer srv.Close()
+	gw := &FormsGateway{formsURL: srv.URL, client: srv.Client()}
+	err := gw.EnsureQuestions(context.Background(), "tok", "form1", []integrations.IntakeQuestion{
+		{Title: "Renamed", Type: "text", Required: true},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be changed") {
+		t.Fatalf("err = %v, want changed-item rejection", err)
 	}
 }

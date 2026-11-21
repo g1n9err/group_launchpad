@@ -43,6 +43,9 @@ type IntakeFormStore interface {
 	GetIntakeForm(context.Context, uuid.UUID) (IntakeForm, error)
 	SaveIntakeResponderURL(context.Context, uuid.UUID, string, string) (string, error)
 	ClaimIntakeForm(context.Context, uuid.UUID, []IntakeQuestion) (IntakeForm, bool, error)
+	// UpdateIntakeQuestions persists an append-only extension of a draft
+	// form's questions; it must refuse published forms.
+	UpdateIntakeQuestions(context.Context, uuid.UUID, []IntakeQuestion) error
 	ReleaseIntakeForm(context.Context, uuid.UUID) error
 	SaveIntakeFormID(context.Context, uuid.UUID, string) error
 	CompleteIntakeForm(context.Context, uuid.UUID, string) error
@@ -72,10 +75,22 @@ func (s *FormsService) Provision(ctx context.Context, groupID uuid.UUID, name st
 	if err != nil {
 		return "", err
 	}
+	extended := false
 	if !reflect.DeepEqual(form.Questions, questions) {
-		return "", &core.AppError{Code: core.CodeConflict, Message: "the group already has an intake form with different questions"}
+		if err := allowQuestionChange(form, questions); err != nil {
+			return "", err
+		}
+		// Append-only update of a draft form: persist the extended question
+		// set before touching Google, so a crash mid-way never loses it.
+		if err := s.Store.UpdateIntakeQuestions(ctx, groupID, questions); err != nil {
+			return "", err
+		}
+		form.Questions = questions
+		extended = true
 	}
-	if form.ID != "" && (form.Status == "created" || form.Status == "distributed" || form.Status == "closed") {
+	// Fast path: an already-created form with the SAME questions needs no
+	// Google call; an extended draft must continue to append the new items.
+	if form.ID != "" && !extended && (form.Status == "created" || form.Status == "distributed" || form.Status == "closed") {
 		return form.ID, nil
 	}
 
@@ -166,25 +181,97 @@ func (s *FormsService) record(ctx context.Context, groupID uuid.UUID, operation 
 	return nil
 }
 
+// allowQuestionChange permits extending a NOT-yet-published draft with new
+// questions (appended after the existing ones). Editing or removing
+// existing questions — or any change to a published form — is rejected:
+// collected responses map by question title.
+func allowQuestionChange(form IntakeForm, next []IntakeQuestion) error {
+	published := form.ResponderURL != "" || form.VerifiedSince != nil ||
+		form.Status == "distributed" || form.Status == "closed"
+	if published {
+		return &core.AppError{Code: core.CodeConflict, Message: "the intake form is already published; its questions cannot change"}
+	}
+	if len(next) < len(form.Questions) || !reflect.DeepEqual(next[:len(form.Questions)], form.Questions) {
+		return &core.AppError{Code: core.CodeConflict, Message: "questions can only be added; existing questions cannot be removed, renamed, or changed"}
+	}
+	return nil
+}
+
+// ── Mandatory identity questions ───────────────────────────────────────────
+// Every intake form MUST collect the respondent's name and email (PRD §4.5
+// proposed fields; the response importer keys on them). normalizeIntakeQuestions
+// guarantees their presence, order, and required flag no matter what the
+// coordinator submits.
+
+const (
+	QuestionFullName = "Full name"
+	QuestionEmail    = "Email address"
+)
+
+// fullNameAliases / emailAliases map common (and Armenian) spellings onto
+// the canonical identity questions instead of creating duplicates.
+var fullNameAliases = map[string]bool{"full name": true, "name": true, "full_name": true, "անուն": true, "անուն ազգանուն": true}
+var emailAliases = map[string]bool{"email address": true, "email": true, "e-mail": true, "mail": true, "էլ. փոստ": true, "էլ փոստ": true, "էլ.հասցե": true}
+
+// canonicalize returns (canonicalTitle, isIdentity) for a question title.
+func canonicalize(title string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(title))
+	switch {
+	case fullNameAliases[key]:
+		return QuestionFullName, true
+	case emailAliases[key]:
+		return QuestionEmail, true
+	}
+	return "", false
+}
+
 func normalizeIntakeQuestions(input []IntakeQuestion) ([]IntakeQuestion, error) {
-	if input == nil {
-		input = []IntakeQuestion{
-			{Title: "Full name", Type: "text", Required: true},
-			{Title: "Email address", Type: "text", Required: true},
-		}
-	}
-	if len(input) == 0 || len(input) > 50 {
-		return nil, core.Validation("provide between 1 and 50 questions", nil)
-	}
-	seen := make(map[string]bool, len(input))
-	normalized := make([]IntakeQuestion, 0, len(input))
+	seenFullName, seenEmail := false, false
+	custom := make([]IntakeQuestion, 0, len(input))
 	for i, question := range input {
 		question.Title = strings.TrimSpace(question.Title)
-		if err := validateIntakeQuestion(&question, seen); err != nil {
+		if canonical, identity := canonicalize(question.Title); identity {
+			// Identity questions are canonicalized: fixed title, plain
+			// text, always required — and pinned to the top of the form.
+			question.Title = canonical
+			question.Type = "text"
+			question.Required = true
+			question.Options = nil
+			if canonical == QuestionFullName {
+				if seenFullName {
+					return nil, core.Validation("invalid intake questions", map[string]string{fmt.Sprintf("questions[%d]", i): "the full-name question may appear only once"})
+				}
+				seenFullName = true
+			} else {
+				if seenEmail {
+					return nil, core.Validation("invalid intake questions", map[string]string{fmt.Sprintf("questions[%d]", i): "the email question may appear only once"})
+				}
+				seenEmail = true
+			}
+			continue
+		}
+		if err := validateIntakeQuestion(&question, map[string]bool{}); err != nil {
 			return nil, core.Validation("invalid intake questions", map[string]string{fmt.Sprintf("questions[%d]", i): err.Error()})
 		}
-		seen[strings.ToLower(question.Title)] = true
-		normalized = append(normalized, question)
+		custom = append(custom, question)
+	}
+	// The identity pair ALWAYS leads the form, in a fixed order.
+	normalized := make([]IntakeQuestion, 0, len(custom)+2)
+	normalized = append(normalized,
+		IntakeQuestion{Title: QuestionFullName, Type: "text", Required: true},
+		IntakeQuestion{Title: QuestionEmail, Type: "text", Required: true},
+	)
+	normalized = append(normalized, custom...)
+	if len(normalized) < 2 || len(normalized) > 50 {
+		return nil, core.Validation("provide between 1 and 50 questions", nil)
+	}
+	seen := make(map[string]bool, len(normalized))
+	for i := range normalized {
+		key := strings.ToLower(normalized[i].Title)
+		if seen[key] {
+			return nil, core.Validation("invalid intake questions", map[string]string{fmt.Sprintf("questions[%d]", i): "question titles must be unique"})
+		}
+		seen[key] = true
 	}
 	return normalized, nil
 }

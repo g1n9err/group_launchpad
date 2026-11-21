@@ -46,9 +46,10 @@ func (f *fakeForms) FindDraft(context.Context, string, string) (string, error) {
 }
 
 func (f *fakeForms) EnsureQuestions(_ context.Context, _, id string, questions []integrations.IntakeQuestion) error {
-	if id != "recovered-form-id" || len(questions) != 2 || questions[0].Title != "Name" ||
-		!questions[0].Required || questions[1].Type != "single_choice" ||
-		strings.Join(questions[1].Options, ",") != "Morning,Evening" {
+	if id != "recovered-form-id" || len(questions) != 3 || questions[0].Title != "Full name" ||
+		!questions[0].Required || questions[1].Title != "Email address" || !questions[1].Required ||
+		questions[2].Type != "single_choice" ||
+		strings.Join(questions[2].Options, ",") != "Morning,Evening" {
 		return errors.New("unexpected question payload")
 	}
 	f.updates.Add(1)
@@ -79,8 +80,10 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	if code, _ := doJSON(t, srv, http.MethodPost, publishPath, ""); code != http.StatusNotFound {
 		t.Fatalf("publish before provisioning: %d, want 404", code)
 	}
-	if code, _ := doJSON(t, srv, http.MethodPost, path, `{"questions":[]}`); code != http.StatusUnprocessableEntity {
-		t.Fatalf("empty question list: %d, want 422", code)
+	// Դատարկ ցուցակն այժմ վավեր է (ավտոմատ ավելանում են պարտադիր Անուն+Email)․
+	// 422-ն այժմ ստուգվում է անվավեր հարցով։
+	if code, _ := doJSON(t, srv, http.MethodPost, path, `{"questions":[{"title":"Time","type":"single_choice","options":["Only"]}]}`); code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid question: %d, want 422", code)
 	}
 	const questions = `{"questions":[{"title":" Name ","type":"text","required":true},
 		{"title":"Time","type":"single_choice","options":["Morning"," Evening "]}]}`
@@ -107,7 +110,7 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	}
 	code, state := doJSON(t, srv, http.MethodGet, formsPath, "")
 	if code != http.StatusOK || state["status"] != "created" || state["verifiedEmail"] != true ||
-		state["responderUrl"] != testResponderURL || state["editUrl"] == nil || len(state["questions"].([]any)) != 2 {
+		state["responderUrl"] != testResponderURL || state["editUrl"] == nil || len(state["questions"].([]any)) != 3 {
 		t.Fatalf("saved intake form state: %d %v", code, state)
 	}
 	if gateway.publishes.Load() != 1 {
@@ -119,7 +122,7 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	if gateway.creates.Load() != 1 || gateway.updates.Load() != 1 {
 		t.Fatalf("create calls=%d update calls=%d, want one each", gateway.creates.Load(), gateway.updates.Load())
 	}
-	if rows := countRowsSimple(t, pool, "SELECT count(*) FROM intake_forms WHERE external_form_id='recovered-form-id' AND status='created' AND jsonb_array_length(questions)=2"); rows != 1 {
+	if rows := countRowsSimple(t, pool, "SELECT count(*) FROM intake_forms WHERE external_form_id='recovered-form-id' AND status='created' AND jsonb_array_length(questions)=3"); rows != 1 {
 		t.Fatalf("saved %d intake forms, want 1", rows)
 	}
 }

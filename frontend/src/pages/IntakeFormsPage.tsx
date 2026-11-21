@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Chip, PageTitle } from "../components/ui";
 import { IntakeQuestions } from "../components/IntakeQuestions";
-import { editableQuestion, intakeActionClass, intakeButtonClass, intakeInputClass, toIntakeQuestions } from "../lib/intakeForm";
+import { editableQuestion, intakeActionClass, intakeButtonClass, intakeInputClass, toIntakeQuestions, type EditableQuestion } from "../lib/intakeForm";
 import { useSettings } from "../i18n";
 import type { TranslationKey } from "../i18n/en";
 import { api } from "../lib/api";
@@ -51,6 +51,7 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
 }) {
   const { t } = useSettings();
   const [questions, setQuestions] = useState(() => [editableQuestion(t("intake.fullName"))]);
+  const [extraQuestions, setExtraQuestions] = useState<EditableQuestion[]>([]);
   const [form, setForm] = useState<FormState | null>();
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [summary, setSummary] = useState<Summary>();
@@ -58,6 +59,7 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
   const [confirm, setConfirm] = useState<"publish" | "distribute">();
   const [error, setError] = useState<TranslationKey>();
   const [notice, setNotice] = useState<TranslationKey>();
+  const [extraError, setExtraError] = useState<TranslationKey>();
   const [reload, setReload] = useState(0);
 
   const options = { headers: { Authorization: authorization }, params: { path: { groupId } } };
@@ -130,6 +132,37 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
     }
   }
 
+  // Append new questions to an existing DRAFT form: the request carries the
+  // stored set plus the new rows (the server enforces append-only and the
+  // mandatory Full name / Email address questions).
+  async function addQuestions(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || !form?.questions) return;
+    setExtraError(undefined);
+    setNotice(undefined);
+    const added = toIntakeQuestions(extraQuestions).filter((question) => question.title);
+    if (!added.length) { setExtraError("intake.nothingToAdd"); return; }
+    setBusy("draft");
+    try {
+      const result = await api.POST("/api/groups/{groupId}/forms/provision", {
+        ...options, body: { questions: [...form.questions, ...added] },
+      });
+      if (result.response.status === 401) { onUnauthorized(); return; }
+      if (!result.data) {
+        setExtraError(result.response.status === 422 ? "intake.invalidQuestions"
+          : result.response.status === 409 ? "intake.conflict" : "intake.actionFailed");
+        return;
+      }
+      setExtraQuestions([]);
+      setNotice("intake.questionsUpdated");
+      setReload((version) => version + 1);
+    } catch {
+      setExtraError("intake.actionFailed");
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
   const ready = form?.status === "created" || form?.status === "distributed";
   const published = Boolean(form?.responderUrl);
   const stateUnknown = form === undefined;
@@ -167,6 +200,20 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
                 </li>
               ))}
             </ol>
+            {/* Append new questions to a draft (not yet published) form. */}
+            {ready && !published && (
+              <form className="space-y-3 border-t border-border pt-4" onSubmit={addQuestions}>
+                <div>
+                  <h3 className="text-sm font-semibold text-text">{t("intake.addQuestions")}</h3>
+                  <p className="mt-1 text-xs text-muted">{t("intake.addQuestionsHint")}</p>
+                </div>
+                <IntakeQuestions questions={extraQuestions} setQuestions={setExtraQuestions} disabled={Boolean(busy)} />
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="submit" className={intakeActionClass} disabled={Boolean(busy)}>{t("intake.addQuestionsAction")}</button>
+                  {extraError && <p role="alert" className="text-sm text-danger-text">{t(extraError)}</p>}
+                </div>
+              </form>
+            )}
             <div className="flex flex-wrap gap-2">
               {!ready && form.status === "pending" && (
                 <button type="button" className={intakeActionClass} disabled={Boolean(busy)} onClick={() => void act("draft")}>{t("intake.resumeDraft")}</button>

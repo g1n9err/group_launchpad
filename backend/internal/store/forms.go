@@ -26,6 +26,23 @@ func (r *Repo) ClaimIntakeForm(ctx context.Context, groupID uuid.UUID, questions
 	return result, false, err
 }
 
+// UpdateIntakeQuestions persists an append-only extension of a DRAFT form's
+// question set. Published/distributed forms refuse the change at the
+// database level too — the service-level guard is not the only defense.
+func (r *Repo) UpdateIntakeQuestions(ctx context.Context, groupID uuid.UUID, questions []integrations.IntakeQuestion) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE intake_forms SET questions = $2::jsonb
+		WHERE group_id = $1 AND status IN ('pending', 'created') AND COALESCE(form_url, '') = ''`,
+		groupID, questions)
+	if err != nil {
+		return fmt.Errorf("store: update intake questions: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return &core.AppError{Code: core.CodeConflict, Message: "published intake forms cannot change questions"}
+	}
+	return nil
+}
+
 func (r *Repo) GetIntakeForm(ctx context.Context, groupID uuid.UUID) (integrations.IntakeForm, error) {
 	var form integrations.IntakeForm
 	err := r.pool.QueryRow(ctx, `

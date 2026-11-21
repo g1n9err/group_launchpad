@@ -1,0 +1,149 @@
+package integrations
+
+// Provision's append-only question extension: a DRAFT form may gain new
+// questions; published forms and edits/removals of existing questions are
+// rejected. All fakes — no Google calls.
+
+import (
+	"context"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type appendFormsStore struct {
+	form     IntakeForm
+	claimed  bool
+	updated  []IntakeQuestion
+	updateOK bool
+}
+
+func (s *appendFormsStore) MarkIntakeVerified(context.Context, uuid.UUID, string) error { return nil }
+func (s *appendFormsStore) SaveIntakeResponse(context.Context, uuid.UUID, string, IntakeResponse) (bool, bool, error) {
+	return false, false, nil
+}
+func (s *appendFormsStore) GetIntakeForm(_ context.Context, _ uuid.UUID) (IntakeForm, error) {
+	return s.form, nil
+}
+func (s *appendFormsStore) SaveIntakeResponderURL(_ context.Context, _ uuid.UUID, _, _ string) (string, error) {
+	return "", nil
+}
+func (s *appendFormsStore) ClaimIntakeForm(_ context.Context, _ uuid.UUID, _ []IntakeQuestion) (IntakeForm, bool, error) {
+	return s.form, s.claimed, nil
+}
+func (s *appendFormsStore) ReleaseIntakeForm(context.Context, uuid.UUID) error        { return nil }
+func (s *appendFormsStore) SaveIntakeFormID(context.Context, uuid.UUID, string) error { return nil }
+func (s *appendFormsStore) CompleteIntakeForm(context.Context, uuid.UUID, string) error {
+	s.updateOK = true
+	return nil
+}
+func (s *appendFormsStore) UpdateIntakeQuestions(_ context.Context, _ uuid.UUID, questions []IntakeQuestion) error {
+	s.updated = questions
+	return nil
+}
+
+type appendFormsGW struct {
+	ensured [][]IntakeQuestion
+}
+
+func (g *appendFormsGW) EnableVerifiedEmail(context.Context, string, string) error { return nil }
+func (g *appendFormsGW) VerifiedEmail(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+func (g *appendFormsGW) ListResponses(context.Context, string, string, time.Time, string) ([]IntakeResponse, string, error) {
+	return nil, "", nil
+}
+func (g *appendFormsGW) Publish(context.Context, string, string) (string, error) { return "", nil }
+func (g *appendFormsGW) CreateDraft(context.Context, string, string, string) (string, bool, error) {
+	return "form-1", false, nil
+}
+func (g *appendFormsGW) FindDraft(context.Context, string, string) (string, error) {
+	return "form-1", nil
+}
+func (g *appendFormsGW) EnsureQuestions(_ context.Context, _ string, _ string, questions []IntakeQuestion) error {
+	g.ensured = append(g.ensured, questions)
+	return nil
+}
+
+func draftForm() IntakeForm {
+	return IntakeForm{
+		ID: "form-1", Status: "created",
+		Questions: []IntakeQuestion{
+			{Title: "Full name", Type: "text", Required: true},
+			{Title: "Email address", Type: "text", Required: true},
+		},
+	}
+}
+
+func TestProvisionAppendsQuestionsToDraft(t *testing.T) {
+	store := &appendFormsStore{form: draftForm()}
+	gw := &appendFormsGW{}
+	svc := &FormsService{Tokens: stubFormsToken{}, Gateway: gw, Store: store, Operations: noopRecorder{}}
+
+	next := append(append([]IntakeQuestion(nil), store.form.Questions...),
+		IntakeQuestion{Title: "Phone number", Type: "text"})
+	if _, err := svc.Provision(context.Background(), uuid.New(), "Group", next); err != nil {
+		t.Fatalf("Provision append: %v", err)
+	}
+	if len(store.updated) != 3 || store.updated[2].Title != "Phone number" {
+		t.Fatalf("stored questions = %+v, want 3 with Phone number appended", store.updated)
+	}
+	if len(gw.ensured) != 1 || len(gw.ensured[0]) != 3 {
+		t.Fatalf("EnsureQuestions calls = %+v, want the extended set", gw.ensured)
+	}
+}
+
+func TestProvisionRejectsRemovingOrRenamingExistingQuestions(t *testing.T) {
+	withPhone := draftForm()
+	withPhone.Questions = append(withPhone.Questions, IntakeQuestion{Title: "Phone number", Type: "text"})
+	svcBase := func(store *appendFormsStore) *FormsService {
+		return &FormsService{Tokens: stubFormsToken{}, Gateway: &appendFormsGW{}, Store: store, Operations: noopRecorder{}}
+	}
+
+	// Removal: submit the form without the stored "Phone number" question.
+	store := &appendFormsStore{form: withPhone}
+	if _, err := svcBase(store).Provision(context.Background(), uuid.New(), "Group", withPhone.Questions[:2]); err == nil {
+		t.Fatal("removal accepted")
+	}
+	if len(store.updated) != 0 {
+		t.Fatalf("store updated despite removal rejection: %+v", store.updated)
+	}
+
+	// Rename: submit "Phone" instead of the stored "Phone number".
+	store = &appendFormsStore{form: withPhone}
+	renamed := []IntakeQuestion{
+		{Title: "Full name", Type: "text", Required: true},
+		{Title: "Email address", Type: "text", Required: true},
+		{Title: "Phone", Type: "text"},
+	}
+	if _, err := svcBase(store).Provision(context.Background(), uuid.New(), "Group", renamed); err == nil {
+		t.Fatal("rename accepted")
+	}
+	if len(store.updated) != 0 {
+		t.Fatalf("store updated despite rename rejection: %+v", store.updated)
+	}
+	_ = reflect.DeepEqual
+}
+
+func TestProvisionRejectsQuestionChangeOnPublishedForm(t *testing.T) {
+	published := draftForm()
+	published.Status = "distributed"
+	published.ResponderURL = "https://docs.google.com/forms/d/x/viewform"
+	store := &appendFormsStore{form: published}
+	svc := &FormsService{Tokens: stubFormsToken{}, Gateway: &appendFormsGW{}, Store: store, Operations: noopRecorder{}}
+	_, err := svc.Provision(context.Background(), uuid.New(), "Group", append(append([]IntakeQuestion(nil), published.Questions...),
+		IntakeQuestion{Title: "Extra", Type: "text"}))
+	if err == nil {
+		t.Fatal("published form question change accepted")
+	}
+}
+
+type stubFormsToken struct{}
+
+func (stubFormsToken) AccessToken(context.Context) (string, error) { return "token", nil }
+
+type noopRecorder struct{}
+
+func (noopRecorder) RecordExternalOperation(context.Context, ExternalOperation) error { return nil }
