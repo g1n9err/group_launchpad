@@ -1971,7 +1971,6 @@ components:
           maxItems: 500
           items:
             type: string
-            format: email
           description: >
             Optional student roster (PRD 4.1). Emails are normalized
             (trimmed, lowercased); invalid entries and post-normalization
@@ -1984,21 +1983,18 @@ components:
           maxItems: 100
           items:
             type: string
-            format: email
           description: Teaching staff assigned to this group (PRD 4.1).
         lecturerEmails:
           type: array
           maxItems: 100
           items:
             type: string
-            format: email
           description: Lecturers assigned to this group (PRD 4.1).
         taEmails:
           type: array
           maxItems: 100
           items:
             type: string
-            format: email
           description: Teaching assistants assigned to this group (PRD 4.1, optional).
     Page:
       type: object
@@ -2149,7 +2145,6 @@ components:
           type: array
           items:
             type: string
-            format: email
           description: workspace members to invite to every group channel
         welcomeTemplate:
           type: string

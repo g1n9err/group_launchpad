@@ -936,20 +936,20 @@ type GroupCreate struct {
 	CourseName string `json:"courseName"`
 
 	// LecturerEmails Lecturers assigned to this group (PRD 4.1).
-	LecturerEmails []openapi_types.Email `json:"lecturerEmails"`
-	Name           string                `json:"name"`
+	LecturerEmails []string `json:"lecturerEmails"`
+	Name           string   `json:"name"`
 
 	// StaffEmails Teaching staff assigned to this group (PRD 4.1).
-	StaffEmails []openapi_types.Email `json:"staffEmails"`
+	StaffEmails []string `json:"staffEmails"`
 
 	// StartDate ISO 8601 calendar date (YYYY-MM-DD)
 	StartDate Date `json:"startDate"`
 
 	// StudentEmails Optional student roster (PRD 4.1). Emails are normalized (trimmed, lowercased); invalid entries and post-normalization duplicates are rejected with the offending values — never silently discarded. Existing users are reused by normalized email; new 'student' users are created and enrolled as pending group members atomically with the group.
-	StudentEmails *[]openapi_types.Email `json:"studentEmails,omitempty"`
+	StudentEmails *[]string `json:"studentEmails,omitempty"`
 
 	// TaEmails Teaching assistants assigned to this group (PRD 4.1, optional).
-	TaEmails *[]openapi_types.Email `json:"taEmails,omitempty"`
+	TaEmails *[]string `json:"taEmails,omitempty"`
 }
 
 // GroupLaunchResult defines model for GroupLaunchResult.
@@ -1228,7 +1228,7 @@ type SlackInviteResultStatus string
 // SlackProvisionRequest defines model for SlackProvisionRequest.
 type SlackProvisionRequest struct {
 	// InviteEmails workspace members to invite to every group channel
-	InviteEmails *[]openapi_types.Email `json:"inviteEmails,omitempty"`
+	InviteEmails *[]string `json:"inviteEmails,omitempty"`
 
 	// WelcomeTemplate optional welcome-message override (default template otherwise)
 	WelcomeTemplate *string `json:"welcomeTemplate,omitempty"`

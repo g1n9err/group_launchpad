@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"launchpad/internal/core/integrations"
 	gen "launchpad/internal/transport/gen"
@@ -141,7 +140,7 @@ func (h *Handlers) ProvisionGroupSlack(c echo.Context, groupId gen.GroupId) erro
 		GroupName:       g.Name,
 		CourseName:      g.CourseName,
 		StartDate:       g.StartDate.Format("2006-01-02"),
-		InviteEmails:    derefEmails(body.InviteEmails),
+		InviteEmails:    derefStrings(body.InviteEmails),
 		WelcomeTemplate: deref(body.WelcomeTemplate),
 	})
 	if err != nil {
@@ -176,15 +175,14 @@ func (h *Handlers) SlackEvents(c echo.Context) error {
 	return c.JSON(http.StatusOK, gen.SlackEventAck{Status: &status})
 }
 
-func derefEmails(list *[]openapi_types.Email) []string {
+// derefStrings unwraps an optional string list (email LISTS are plain
+// strings in the contract — validation with field-level errors lives in
+// core/groups, not in the OpenAPI format: email regex).
+func derefStrings(list *[]string) []string {
 	if list == nil {
 		return nil
 	}
-	out := make([]string, len(*list))
-	for i, e := range *list {
-		out[i] = string(e)
-	}
-	return out
+	return *list
 }
 
 func toProvisionResult(r integrations.ProvisionResult) gen.SlackProvisionResult {

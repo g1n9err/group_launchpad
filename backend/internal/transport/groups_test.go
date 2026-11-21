@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -259,5 +260,27 @@ func TestListGroupsPagination(t *testing.T) {
 	page := body["page"].(map[string]any)
 	if page["total"] != float64(3) || page["limit"] != float64(2) || page["offset"] != float64(1) {
 		t.Errorf("page envelope wrong: %v", page)
+	}
+}
+
+// Անվավեր email ցուցակները պետք է ստանան ԴԱՇԹ-ԱՌ-ԴԱՇԹ 422 սխալ՝
+// հենց անվավեր արժեքով (ոչ թե ընդհանուր bind-ժամանակ 400)։
+func TestCreateGroupInvalidEmailGivesFieldErrors(t *testing.T) {
+	srv := newApp(t)
+	code, body := doJSON(t, srv, http.MethodPost, "/api/groups",
+		`{"name":"Email Errors","courseName":"Go","startDate":"2026-12-01",
+		  "staffEmails":["yohan.muller.aca@gmail.com"],
+		  "lecturerEmails":["satenik.e.sargsyan@gmail.com"],
+		  "studentEmails":["ուսանող կոսմոս", "anushv203@gmail.com"]}`)
+	if code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid student email: %d %v, want 422", code, body)
+	}
+	fieldErrors := body["error"].(map[string]any)["fieldErrors"].(map[string]any)
+	studentErr := fieldErrors["studentEmails"].(string)
+	if !strings.Contains(studentErr, "ուսանող") {
+		t.Fatalf("studentEmails error = %q, want the offending value surfaced", studentErr)
+	}
+	if _, present := fieldErrors["staffEmails"]; present {
+		t.Errorf("staffEmails wrongly flagged: %v", fieldErrors)
 	}
 }

@@ -105,10 +105,10 @@ func (h *Handlers) CreateGroup(c echo.Context) error {
 		Name:           body.Name,
 		CourseName:     body.CourseName,
 		StartDate:      body.StartDate,
-		StudentEmails:  derefEmails(body.StudentEmails),
-		StaffEmails:    derefEmails(&body.StaffEmails),
-		LecturerEmails: derefEmails(&body.LecturerEmails),
-		TAEmails:       derefEmails(body.TaEmails),
+		StudentEmails:  derefStrings(body.StudentEmails),
+		StaffEmails:    derefStrings(&body.StaffEmails),
+		LecturerEmails: derefStrings(&body.LecturerEmails),
+		TAEmails:       derefStrings(body.TaEmails),
 	})
 	if err != nil {
 		return err
