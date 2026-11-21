@@ -54,9 +54,9 @@ func TestClassroomEnsureCourseRecoversExistingAlias(t *testing.T) {
 }
 
 func TestActivateCoursePatchesStateToActive(t *testing.T) {
-	var gotMethod, gotPath, gotBody string
+	var gotMethod, gotPath, gotBody, gotMask string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod, gotPath = r.Method, r.URL.Path
+		gotMethod, gotPath, gotMask = r.Method, r.URL.Path, r.URL.Query().Get("updateMask")
 		raw, _ := io.ReadAll(r.Body)
 		gotBody = string(raw)
 		w.Header().Set("Content-Type", "application/json")
@@ -71,8 +71,11 @@ func TestActivateCoursePatchesStateToActive(t *testing.T) {
 	if gotMethod != http.MethodPatch || gotPath != "/v1/courses/course-1" {
 		t.Errorf("request = %s %s, want PATCH /v1/courses/course-1", gotMethod, gotPath)
 	}
-	if !strings.Contains(gotBody, `"updateMask":"courseState"`) || !strings.Contains(gotBody, `"courseState":"ACTIVE"`) {
-		t.Errorf("body = %s, want updateMask=courseState and courseState=ACTIVE", gotBody)
+	if gotMask != "courseState" {
+		t.Errorf("updateMask query = %q, want courseState", gotMask)
+	}
+	if !strings.Contains(gotBody, `"courseState":"ACTIVE"`) {
+		t.Errorf("body = %s, want courseState=ACTIVE", gotBody)
 	}
 }
 

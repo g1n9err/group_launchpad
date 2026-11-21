@@ -50,21 +50,14 @@ func (g *ClassroomGateway) EnsureCourse(ctx context.Context, token string, in in
 
 // ActivateCourse PATCHes courseState to ACTIVE. PROVISIONED courses are
 // drafts invisible to students; PATCHing an already-ACTIVE course with the
-// same value is a no-op, so this is idempotent.
+// same value is a no-op, so this is idempotent. updateMask is a QUERY
+// parameter in the Classroom API, not a body field.
 func (g *ClassroomGateway) ActivateCourse(ctx context.Context, token, courseID string) error {
-	course := struct {
-		UpdateMask string `json:"updateMask"`
-		Course     struct {
-			CourseState string `json:"courseState"`
-		} `json:"course"`
-	}{}
-	course.UpdateMask = "courseState"
-	course.Course.CourseState = "ACTIVE"
-	body, err := json.Marshal(course)
+	body, err := json.Marshal(map[string]string{"courseState": "ACTIVE"})
 	if err != nil {
 		return errors.New("could not encode activation")
 	}
-	endpoint := fmt.Sprintf("%s/%s", g.coursesURL, url.PathEscape(courseID))
+	endpoint := fmt.Sprintf("%s/%s?updateMask=courseState", g.coursesURL, url.PathEscape(courseID))
 	resp, err := g.rawRequest(ctx, token, http.MethodPatch, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
