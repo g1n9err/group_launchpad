@@ -1478,12 +1478,18 @@ type ServerInterface interface {
 	// SlackStatus Slack connection status (verifies the bot token, never exposes it)
 	// (GET /api/integrations/slack/status)
 	SlackStatus(ctx echo.Context) error
+	// DeleteAllNotifications Delete all coordinator notifications
+	// (DELETE /api/notifications)
+	DeleteAllNotifications(ctx echo.Context) error
 	// ListNotifications List coordinator notifications (PRD §4.9)
 	// (GET /api/notifications)
 	ListNotifications(ctx echo.Context, params ListNotificationsParams) error
 	// MarkAllNotificationsRead Mark all notifications as read
 	// (POST /api/notifications/read-all)
 	MarkAllNotificationsRead(ctx echo.Context) error
+	// DeleteNotification Delete one notification
+	// (DELETE /api/notifications/{notificationId})
+	DeleteNotification(ctx echo.Context, notificationId openapi_types.UUID) error
 	// MarkNotificationRead Mark a single notification as read
 	// (POST /api/notifications/{notificationId}/read)
 	MarkNotificationRead(ctx echo.Context, notificationId openapi_types.UUID) error
@@ -2094,6 +2100,15 @@ func (w *ServerInterfaceWrapper) SlackStatus(ctx echo.Context) error {
 	return err
 }
 
+// DeleteAllNotifications converts echo context to params.
+func (w *ServerInterfaceWrapper) DeleteAllNotifications(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeleteAllNotifications(ctx)
+	return err
+}
+
 // ListNotifications converts echo context to params.
 func (w *ServerInterfaceWrapper) ListNotifications(ctx echo.Context) error {
 	var err error
@@ -2125,6 +2140,22 @@ func (w *ServerInterfaceWrapper) MarkAllNotificationsRead(ctx echo.Context) erro
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.MarkAllNotificationsRead(ctx)
+	return err
+}
+
+// DeleteNotification converts echo context to params.
+func (w *ServerInterfaceWrapper) DeleteNotification(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "notificationId" -------------
+	var notificationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "notificationId", ctx.Param("notificationId"), &notificationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter notificationId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeleteNotification(ctx, notificationId)
 	return err
 }
 
@@ -2243,7 +2274,9 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/api/groups/:groupId/audits", wrapper.ListGroupAudits, options.OperationMiddlewares["listGroupAudits"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/audits", wrapper.QueueGroupAudit, options.OperationMiddlewares["queueGroupAudit"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
+	router.DELETE(options.BaseURL+"/api/notifications", wrapper.DeleteAllNotifications, options.OperationMiddlewares["deleteAllNotifications"]...)
 	router.GET(options.BaseURL+"/api/notifications", wrapper.ListNotifications, options.OperationMiddlewares["listNotifications"]...)
+	router.DELETE(options.BaseURL+"/api/notifications/:notificationId", wrapper.DeleteNotification, options.OperationMiddlewares["deleteNotification"]...)
 	router.POST(options.BaseURL+"/api/notifications/:notificationId/read", wrapper.MarkNotificationRead, options.OperationMiddlewares["markNotificationRead"]...)
 	router.POST(options.BaseURL+"/api/notifications/read-all", wrapper.MarkAllNotificationsRead, options.OperationMiddlewares["markAllNotificationsRead"]...)
 	router.GET(options.BaseURL+"/api/announcement-templates", wrapper.ListAnnouncementTemplates, options.OperationMiddlewares["listAnnouncementTemplates"]...)

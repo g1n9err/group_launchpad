@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Card, Chip, PageTitle } from "../components/ui";
+import { DateTimePicker } from "../components/DateTimePicker";
 import { useSettings } from "../i18n";
 import type { TranslationKey } from "../i18n/en";
 import { api } from "../lib/api";
@@ -128,10 +129,21 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
     setSaved(false);
     setError(undefined);
     setServerError("");
-    const date = new Date(localTime);
     const channelName = channel.trim().replace(/^#/, "");
-    if (!channelName || !message.trim() || !Number.isFinite(date.getTime())) {
+    if (!channelName || !message.trim() || !Number.isFinite(new Date(localTime).getTime())) {
       setError("announcements.invalid");
+      return;
+    }
+    // Եթե ընտրած ժամանակն արդեն անցել է (օրինակ՝ էջը երկար բաց է մնացել
+    // և ավտոմատ լցված «հիմա+15ր»-ը հնացել է)՝ ավտոմատ թարմացնում ենք և
+    // տեղեկացնում, որ ուղարկվելու է նոր ժամանակով։
+    let date = new Date(localTime);
+    if (date.getTime() <= Date.now()) {
+      const bumped = new Date(Date.now() + 15 * 60_000);
+      const pad = (value: number) => String(value).padStart(2, "0");
+      setLocalTime(`${bumped.getFullYear()}-${pad(bumped.getMonth() + 1)}-${pad(bumped.getDate())}T${pad(bumped.getHours())}:${pad(bumped.getMinutes())}`);
+      date = bumped;
+      setError("announcements.timeInPast");
       return;
     }
 
@@ -198,8 +210,7 @@ function GroupAnnouncements({ groupId, authorization, onUnauthorized }: {
                 onChange={(event) => setMessage(event.target.value)} />
             </label>
             <label className="block">{t("announcements.localTime")}
-              <input type="datetime-local" className={`mt-1 ${intakeInputClass}`} required value={localTime}
-                onChange={(event) => setLocalTime(event.target.value)} />
+              <DateTimePicker value={localTime} onChange={setLocalTime} required />
             </label>
             <button type="submit" className={intakeActionClass}>{t("announcements.submit")}</button>
           </fieldset>

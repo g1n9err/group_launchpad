@@ -2,7 +2,7 @@
 // header and footer are isolated components, easy to modify or remove.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "../i18n";
 import { useRoute } from "../lib/router";
 import { api } from "../lib/api";
@@ -197,6 +197,7 @@ function NotificationControl() {
   const canReadNotifications = user?.role === "admin" || user?.role === "coordinator";
   const [unlocked, setUnlocked] = useState(isUnlocked());
   const [open, setOpen] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   useEffect(() => onAuthChange(() => {
@@ -217,15 +218,20 @@ function NotificationControl() {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [open]);
-  const feed = useQuery({
+  const feed = useInfiniteQuery({
     queryKey: ["coordinator-notifications"],
     enabled: unlocked && canReadNotifications,
     retry: false,
     refetchInterval: 60_000,
-    queryFn: async () => {
-      const { data, error } = await api.GET("/api/notifications", { params: { query: { limit: 10, offset: 0 } } });
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const { data, error } = await api.GET("/api/notifications", { params: { query: { limit: 50, offset: pageParam } } });
       if (!data) throw error ?? new Error("Could not load notifications");
       return data;
+    },
+    getNextPageParam: (lastPage) => {
+      const nextOffset = lastPage.page.offset + lastPage.data.length;
+      return nextOffset < lastPage.page.total ? nextOffset : undefined;
     },
   });
   const markRead = useMutation({
@@ -244,7 +250,27 @@ function NotificationControl() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["coordinator-notifications"] }),
   });
-  const unreadCount = feed.data?.unreadCount ?? 0;
+  const deleteOne = useMutation({
+    mutationFn: async (id: string) => {
+      const { error, response } = await api.DELETE("/api/notifications/{notificationId}", {
+        params: { path: { notificationId: id } },
+      });
+      if (!response.ok) throw error ?? new Error("Could not delete notification");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["coordinator-notifications"] }),
+  });
+  const deleteAll = useMutation({
+    mutationFn: async () => {
+      const { error, response } = await api.DELETE("/api/notifications");
+      if (!response.ok) throw error ?? new Error("Could not delete notifications");
+    },
+    onSuccess: () => {
+      setConfirmDeleteAll(false);
+      queryClient.invalidateQueries({ queryKey: ["coordinator-notifications"] });
+    },
+  });
+  const notifications = feed.data?.pages.flatMap((page) => page.data) ?? [];
+  const unreadCount = feed.data?.pages[0]?.unreadCount ?? 0;
 
   if (user?.role !== "admin" && user?.role !== "coordinator") return null;
 
@@ -260,29 +286,60 @@ function NotificationControl() {
       </button>
       {open && (
         <section role="dialog" aria-label={t("nav.notifications")}
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold text-text">{t("nav.notifications")}</h2>
-            {unreadCount > 0 && <button type="button" disabled={markAllRead.isPending}
-              className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
-              onClick={() => markAllRead.mutate()}>{t("notifications.markAllRead")}</button>}
+          className="notification-popover absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-text">{t("nav.notifications")}</h2>
+              <p className="mt-0.5 text-[0.68rem] text-muted">{t("notifications.count", { count: feed.data?.pages[0]?.page.total ?? 0 })}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              {unreadCount > 0 && <button type="button" disabled={markAllRead.isPending}
+                className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+                onClick={() => markAllRead.mutate()}>{t("notifications.markAllRead")}</button>}
+              {notifications.length > 0 && <button type="button" disabled={deleteAll.isPending}
+                className="text-xs font-semibold text-danger-text hover:underline disabled:opacity-50"
+                onClick={() => setConfirmDeleteAll((current) => !current)}>{t("notifications.deleteAll")}</button>}
+            </div>
           </div>
+          {confirmDeleteAll && <div className="notification-confirm border-b border-border px-4 py-3">
+            <p className="text-xs text-text">{t("notifications.deleteAllPrompt")}</p>
+            <div className="mt-2 flex justify-end gap-2">
+              <button type="button" className="notification-confirm-cancel" onClick={() => setConfirmDeleteAll(false)}>{t("notifications.cancel")}</button>
+              <button type="button" disabled={deleteAll.isPending} className="notification-confirm-delete"
+                onClick={() => deleteAll.mutate()}>{t("notifications.deleteAllConfirm")}</button>
+            </div>
+          </div>}
           {!unlocked && <p className="px-4 py-5 text-sm text-muted">{t("notifications.unlockNeeded")}</p>}
           {unlocked && feed.isPending && <p className="px-4 py-5 text-sm text-muted">{t("notifications.loading")}</p>}
           {unlocked && feed.isError && <p role="alert" className="px-4 py-5 text-sm text-danger-text">{t("notifications.loadFailed")}</p>}
-          {unlocked && feed.data?.data.length === 0 && <p className="px-4 py-5 text-sm text-muted">{t("notifications.empty")}</p>}
-          {feed.data?.data.map((notification) => (
-            <button key={notification.id} type="button" disabled={!!notification.readAt || markRead.isPending}
-              onClick={() => markRead.mutate(notification.id)}
-              className={`block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-surface-muted disabled:cursor-default ${notification.readAt ? "opacity-70" : ""}`}>
-              <span className="flex items-start justify-between gap-3">
-                <span className="text-sm font-semibold text-text">{notification.title}</span>
-                {!notification.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label={t("notifications.unread")} />}
-              </span>
-              {notification.detail && <span className="mt-1 block line-clamp-2 text-xs text-muted">{notification.detail}</span>}
-              <span className="mt-1 block text-[0.7rem] text-muted">{new Date(notification.createdAt).toLocaleString(lang)}</span>
+          {unlocked && notifications.length === 0 && !feed.isPending && <p className="px-4 py-5 text-sm text-muted">{t("notifications.empty")}</p>}
+          {deleteOne.isError || deleteAll.isError ? <p role="alert" className="px-4 py-2 text-xs text-danger-text">{t("notifications.deleteFailed")}</p> : null}
+          {notifications.length > 0 && <div className="notification-list min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {notifications.map((notification) => (
+              <article key={notification.id} className={`notification-row ${notification.readAt ? "is-read" : "is-unread"}`}>
+                <button type="button" disabled={!!notification.readAt || markRead.isPending}
+                  onClick={() => markRead.mutate(notification.id)}
+                  className="notification-row-content min-w-0 flex-1 text-left disabled:cursor-default">
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="text-sm font-semibold text-text">{notification.title}</span>
+                    {!notification.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label={t("notifications.unread")} />}
+                  </span>
+                  {notification.detail && <span className="mt-1 block line-clamp-2 text-xs text-muted">{notification.detail}</span>}
+                  <span className="mt-1 block text-[0.7rem] text-muted">{new Date(notification.createdAt).toLocaleString(lang)}</span>
+                </button>
+                <button type="button" className="notification-delete-one" aria-label={t("notifications.deleteOne", { title: notification.title })}
+                  title={t("notifications.deleteOneTitle")} disabled={deleteOne.isPending}
+                  onClick={() => deleteOne.mutate(notification.id)}>
+                  <span aria-hidden="true">×</span>
+                </button>
+              </article>
+            ))}
+          </div>}
+          {feed.hasNextPage && <div className="notification-load-more border-t border-border px-4 py-2">
+            <button type="button" disabled={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>
+              {feed.isFetchingNextPage ? t("notifications.loadingMore") : t("notifications.loadMore")}
             </button>
-          ))}
+          </div>}
         </section>
       )}
     </div>

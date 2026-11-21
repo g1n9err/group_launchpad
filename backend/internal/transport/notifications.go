@@ -22,6 +22,8 @@ type NotificationStore interface {
 	ListNotifications(ctx context.Context, limit, offset int) ([]NotificationRow, int, int, error)
 	MarkNotificationRead(ctx context.Context, id uuid.UUID) (bool, error)
 	MarkAllNotificationsRead(ctx context.Context) error
+	DeleteNotification(ctx context.Context, id uuid.UUID) (bool, error)
+	DeleteAllNotifications(ctx context.Context) (int64, error)
 }
 
 // NotificationRow is the transport-level notification model.
@@ -96,6 +98,40 @@ func (h *Handlers) MarkAllNotificationsRead(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "all_read"})
+}
+
+// DeleteNotification DELETE /api/notifications/{notificationId} — removes a
+// notification the coordinator no longer needs (read or unread).
+func (h *Handlers) DeleteNotification(c echo.Context, notificationId openapi_types.UUID) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.notifications == nil {
+		return errNotReady("notifications are unavailable")
+	}
+	found, err := h.notifications.DeleteNotification(c.Request().Context(), uuid.UUID(notificationId))
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errNotFound("notification")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// DeleteAllNotifications DELETE /api/notifications
+func (h *Handlers) DeleteAllNotifications(c echo.Context) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.notifications == nil {
+		return errNotReady("notifications are unavailable")
+	}
+	deleted, err := h.notifications.DeleteAllNotifications(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, map[string]int64{"deleted": deleted})
 }
 
 func toAPINotification(n NotificationRow) gen.Notification {

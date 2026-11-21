@@ -87,6 +87,23 @@ func (r *Repo) MarkAllNotificationsRead(ctx context.Context) error {
 	return nil
 }
 
+// DeleteNotification removes one coordinator notification permanently.
+func (r *Repo) DeleteNotification(ctx context.Context, id uuid.UUID) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM notifications WHERE id = $1`, id)
+	if err != nil {
+		return false, fmt.Errorf("store: delete notification: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (r *Repo) DeleteAllNotifications(ctx context.Context) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM notifications`)
+	if err != nil {
+		return 0, fmt.Errorf("store: delete all notifications: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // ── TemplateStore ──────────────────────────────────────────────────────────
 
 func (r *Repo) CreateTemplate(ctx context.Context, name, body, kind string) (transport.TemplateRow, error) {

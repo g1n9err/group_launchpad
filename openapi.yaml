@@ -1052,6 +1052,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationPage"
+    delete:
+      tags: [notifications]
+      operationId: deleteAllNotifications
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Delete all coordinator notifications
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "200":
+          description: number of notifications deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: integer
+                    format: int64
+  /api/notifications/{notificationId}:
+    delete:
+      tags: [notifications]
+      operationId: deleteNotification
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      summary: Delete one notification
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "401":
+          description: Coordinator credentials required
+        "204":
+          description: notification deleted
+        "404":
+          description: notification not found
   /api/notifications/{notificationId}/read:
     post:
       tags: [notifications]

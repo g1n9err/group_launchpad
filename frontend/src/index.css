@@ -265,6 +265,115 @@ body {
   box-shadow: 0 0 0 2px color-mix(in srgb, #51cf91 20%, transparent);
 }
 
+.notification-popover {
+  display: flex;
+  max-height: min(80vh, 42rem);
+  flex-direction: column;
+}
+
+.notification-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--primary) 48%, var(--border)) transparent;
+}
+
+.notification-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.72rem 0.72rem 0.72rem 1rem;
+  transition: background-color 140ms ease;
+}
+
+.notification-row:hover {
+  background: var(--surface-muted);
+}
+
+.notification-row.is-read .notification-row-content {
+  opacity: 0.68;
+}
+
+.notification-row-content {
+  border-radius: 0.35rem;
+  padding: 0.05rem 0;
+}
+
+.notification-delete-one {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  opacity: 0.7;
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease, opacity 120ms ease;
+}
+
+.notification-delete-one:hover,
+.notification-delete-one:focus-visible {
+  border-color: var(--danger-ring);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  opacity: 1;
+}
+
+.notification-delete-one:disabled {
+  cursor: wait;
+  opacity: 0.4;
+}
+
+.notification-confirm {
+  background: color-mix(in srgb, var(--danger-bg) 55%, var(--surface));
+}
+
+.notification-confirm-cancel,
+.notification-confirm-delete,
+.notification-load-more button {
+  border-radius: 0.55rem;
+  padding: 0.42rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.notification-confirm-cancel {
+  color: var(--text-muted);
+}
+
+.notification-confirm-cancel:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.notification-confirm-delete {
+  background: var(--danger-text);
+  color: var(--surface);
+}
+
+.notification-confirm-delete:hover {
+  filter: brightness(1.08);
+}
+
+.notification-load-more {
+  flex: none;
+  text-align: center;
+}
+
+.notification-load-more button {
+  color: var(--primary);
+}
+
+.notification-load-more button:hover {
+  background: var(--surface-muted);
+}
+
+.notification-load-more button:disabled {
+  opacity: 0.65;
+}
+
 .app-sidebar-account {
   flex: 0 0 auto;
 }
@@ -956,6 +1065,234 @@ body {
 .app-shell button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
+}
+
+.datetime-picker {
+  position: relative;
+  margin-top: 0.25rem;
+  width: 100%;
+}
+
+.datetime-picker-trigger {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.7rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.datetime-picker-trigger:hover {
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border));
+}
+
+.datetime-picker-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+  stroke: var(--primary);
+  stroke-width: 1.6;
+}
+
+.datetime-picker-trigger > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.datetime-picker-placeholder,
+.datetime-picker-caret {
+  color: var(--text-muted);
+}
+
+.datetime-picker-caret {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.datetime-popover {
+  position: absolute;
+  z-index: 50;
+  bottom: calc(100% + 0.55rem);
+  left: 0;
+  width: min(20rem, calc(100vw - 2rem));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface) 96%, var(--info-bg));
+  box-shadow: 0 18px 48px rgb(0 0 0 / 24%), 0 0 0 1px rgb(255 255 255 / 2%) inset;
+  color: var(--text);
+  animation: datetime-pop-in 140ms ease-out;
+}
+
+@keyframes datetime-pop-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.datetime-popover-header,
+.datetime-time-section,
+.datetime-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.datetime-popover-header {
+  padding: 1rem 1rem 0.65rem;
+}
+
+.datetime-overline {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", "Noto Sans Armenian", monospace;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+}
+
+.datetime-month {
+  margin-top: 0.15rem;
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.datetime-month-nav {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.datetime-month-nav button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.datetime-month-nav button:hover {
+  border-color: var(--primary);
+  background: var(--info-bg);
+  color: var(--primary);
+}
+
+.datetime-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.2rem;
+  padding: 0.3rem 0.8rem 0.85rem;
+}
+
+.datetime-weekday {
+  display: grid;
+  height: 1.7rem;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.datetime-day {
+  display: grid;
+  min-width: 0;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.datetime-day:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: var(--info-bg);
+}
+
+.datetime-day.is-outside {
+  color: color-mix(in srgb, var(--text-muted) 50%, transparent);
+}
+
+.datetime-day.is-today:not(.is-selected) {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.datetime-day.is-selected {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 750;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+.datetime-time-section {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+}
+
+.datetime-time-preview {
+  margin-top: 0.1rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.datetime-time-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.datetime-time-controls select {
+  min-width: 3.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: var(--surface-muted);
+  padding: 0.4rem 0.35rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.datetime-popover-footer {
+  border-top: 1px solid var(--border);
+  padding: 0.7rem 1rem;
+}
+
+.datetime-today,
+.datetime-done {
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.datetime-today {
+  color: var(--text-muted);
+}
+
+.datetime-today:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.datetime-done {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.datetime-done:hover {
+  background: var(--primary-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {
