@@ -51,45 +51,58 @@ type ClassroomService struct {
 
 func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, name, section string, startDate time.Time) (string, error) {
 	alias := "p:launchpad-" + groupID.String()
+	var courseID string
 	resource, found, err := s.Store.GetResource(ctx, groupID, classroomProvider, classroomCourseType, alias)
 	if err != nil {
 		return "", err
 	}
 	if found && resource.Status == ResourceStatusActive && resource.ExternalID != "" {
-		return resource.ExternalID, nil
+		courseID = resource.ExternalID
+	} else {
+		token, err := s.Tokens.AccessToken(ctx)
+		if err != nil {
+			return "", err
+		}
+		started := time.Now()
+		id, err := s.Gateway.EnsureCourse(ctx, token, ClassroomCourseInput{
+			Alias: alias, Name: name, Section: section,
+			Description: "Group starts " + startDate.Format(time.DateOnly) + ".",
+		})
+		op := ExternalOperation{GroupID: &groupID, Provider: classroomProvider, Operation: "classroom.ensure_course", DurationMS: time.Since(started).Milliseconds()}
+		if err != nil {
+			op.Error = err.Error()
+		}
+		_ = s.Operations.RecordExternalOperation(ctx, op)
+		if err != nil {
+			return "", &core.AppError{Code: core.CodeUpstream, Message: err.Error()}
+		}
+		courseID = id
 	}
 
+	// A course is only usable when ACTIVE: freshly created ones are
+	// PROVISIONED (a draft invisible to students, enrollment rejected), and
+	// courses recorded by older versions may never have been activated. The
+	// PATCH is idempotent, so it runs on EVERY provision — including the
+	// registry fast path — before any roster writes.
 	token, err := s.Tokens.AccessToken(ctx)
 	if err != nil {
 		return "", err
 	}
 	started := time.Now()
-	id, err := s.Gateway.EnsureCourse(ctx, token, ClassroomCourseInput{
-		Alias: alias, Name: name, Section: section,
-		Description: "Group starts " + startDate.Format(time.DateOnly) + ".",
-	})
-	op := ExternalOperation{GroupID: &groupID, Provider: classroomProvider, Operation: "classroom.ensure_course", DurationMS: time.Since(started).Milliseconds()}
-	if err != nil {
-		op.Error = err.Error()
-	}
-	_ = s.Operations.RecordExternalOperation(ctx, op)
-	if err != nil {
-		return "", &core.AppError{Code: core.CodeUpstream, Message: err.Error()}
-	}
-	// A freshly created course is PROVISIONED (a draft invisible to
-	// students); activate it so enrollment and the audit see a live course.
-	started = time.Now()
-	activateErr := s.Gateway.ActivateCourse(ctx, token, id)
+	activateErr := s.Gateway.ActivateCourse(ctx, token, courseID)
 	s.record(ctx, groupID, "classroom.activate_course", started, activateErr)
 	if activateErr != nil {
 		return "", &core.AppError{Code: core.CodeUpstream, Message: activateErr.Error()}
 	}
-	if err := s.Store.SaveClassroomCourse(ctx, groupID, GroupResource{
-		Provider: classroomProvider, Type: classroomCourseType, Name: alias, Status: ResourceStatusActive, ExternalID: id,
-	}); err != nil {
-		return "", err
+
+	if !found || resource.ExternalID != courseID || resource.Status != ResourceStatusActive {
+		if err := s.Store.SaveClassroomCourse(ctx, groupID, GroupResource{
+			Provider: classroomProvider, Type: classroomCourseType, Name: alias, Status: ResourceStatusActive, ExternalID: courseID,
+		}); err != nil {
+			return "", err
+		}
 	}
-	return id, nil
+	return courseID, nil
 }
 
 // EnrollAll enrolls every student email into the course. Individual failures
