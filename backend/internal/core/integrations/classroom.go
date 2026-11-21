@@ -3,6 +3,7 @@ package integrations
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -84,6 +85,12 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 	// courses recorded by older versions may never have been activated. The
 	// PATCH is idempotent, so it runs on EVERY provision — including the
 	// registry fast path — before any roster writes.
+	//
+	// Best-effort: consumer (non-Workspace for Education) accounts cannot
+	// transition courses to ACTIVE — Google answers 403 @CourseStateDenied —
+	// and must keep working with a PROVISIONED course (the audit treats it
+	// as an existing course per PRD §4.7). The outcome is recorded either
+	// way; only transient failures surface as errors.
 	token, err := s.Tokens.AccessToken(ctx)
 	if err != nil {
 		return "", err
@@ -91,7 +98,7 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 	started := time.Now()
 	activateErr := s.Gateway.ActivateCourse(ctx, token, courseID)
 	s.record(ctx, groupID, "classroom.activate_course", started, activateErr)
-	if activateErr != nil {
+	if activateErr != nil && !isCourseStateDenied(activateErr) {
 		return "", &core.AppError{Code: core.CodeUpstream, Message: activateErr.Error()}
 	}
 
@@ -103,6 +110,13 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 		}
 	}
 	return courseID, nil
+}
+
+// isCourseStateDenied reports Google's permanent refusal to transition a
+// course into ACTIVE for this account type (consumer accounts). Retrying
+// cannot succeed; provisioning continues with a PROVISIONED course.
+func isCourseStateDenied(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "@CourseStateDenied")
 }
 
 // EnrollAll enrolls every student email into the course. Individual failures

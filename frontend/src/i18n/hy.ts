@@ -252,6 +252,7 @@ const hy: Dictionary = {
   "audit.unavailable": "Ստուգումն անհասանելի է",
   "audit.archived": "Արխիվացված է",
   "audit.inactive": "Ակտիվ չէ",
+  "audit.provisioned": "Սևագիր (ակտիվացման համար պետք է Google Workspace for Education հաշիվ)",
   "audit.trashed": "Աղբարկղում է",
   "audit.misconfigured": "Սխալ է կարգավորված",
   "audit.emailDisabled": "Նամակն անջատված է",

@@ -1800,7 +1800,7 @@ components:
           type: string
         status:
           type: string
-          enum: [ok, unlinked, missing_or_inaccessible, unavailable, archived, inactive, trashed, misconfigured]
+          enum: [ok, provisioned, unlinked, missing_or_inaccessible, unavailable, archived, inactive, trashed, misconfigured]
     IntakeResponseSummary:
       type: object
       required: [saved, unchanged, ignored]

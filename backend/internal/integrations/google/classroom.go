@@ -64,6 +64,18 @@ func (g *ClassroomGateway) ActivateCourse(ctx context.Context, token, courseID s
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Surface Google's own reason (e.g. course needs a teacher before
+		// it can be ACTIVE) — it is the operator's actionable detail.
+		var googleErr struct {
+			Error struct {
+				Message string `json:"message"`
+				Status  string `json:"status"`
+			} `json:"error"`
+		}
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&googleErr)
+		if reason := strings.TrimSpace(googleErr.Error.Message); reason != "" {
+			return fmt.Errorf("classroom: activate course: HTTP %d: %s", resp.StatusCode, reason)
+		}
 		return fmt.Errorf("classroom: activate course: HTTP %d", resp.StatusCode)
 	}
 	return nil

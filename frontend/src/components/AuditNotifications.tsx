@@ -14,6 +14,7 @@ const statusLabels: Record<string, TranslationKey> = {
   missing_or_inaccessible: "audit.missing",
   unavailable: "audit.unavailable",
   archived: "audit.archived",
+  provisioned: "audit.provisioned",
   inactive: "audit.inactive",
   trashed: "audit.trashed",
   misconfigured: "audit.misconfigured",

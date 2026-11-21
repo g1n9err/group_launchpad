@@ -170,6 +170,7 @@ const (
 	GroupAuditResourceStatusMisconfigured         GroupAuditResourceStatus = "misconfigured"
 	GroupAuditResourceStatusMissingOrInaccessible GroupAuditResourceStatus = "missing_or_inaccessible"
 	GroupAuditResourceStatusOk                    GroupAuditResourceStatus = "ok"
+	GroupAuditResourceStatusProvisioned           GroupAuditResourceStatus = "provisioned"
 	GroupAuditResourceStatusTrashed               GroupAuditResourceStatus = "trashed"
 	GroupAuditResourceStatusUnavailable           GroupAuditResourceStatus = "unavailable"
 	GroupAuditResourceStatusUnlinked              GroupAuditResourceStatus = "unlinked"
@@ -187,6 +188,8 @@ func (e GroupAuditResourceStatus) Valid() bool {
 	case GroupAuditResourceStatusMissingOrInaccessible:
 		return true
 	case GroupAuditResourceStatusOk:
+		return true
+	case GroupAuditResourceStatusProvisioned:
 		return true
 	case GroupAuditResourceStatusTrashed:
 		return true

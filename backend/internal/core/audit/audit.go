@@ -135,7 +135,7 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 			}
 		}
 		snapshot.Results = append(snapshot.Results, result)
-		if result.Status != "ok" {
+		if !resourceAcceptable(result) {
 			snapshot.Issues = append(snapshot.Issues, result)
 		}
 	}
@@ -147,12 +147,28 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 	memberResults := s.auditMembership(ctx, inventory)
 	snapshot.Results = append(snapshot.Results, memberResults...)
 	for _, result := range memberResults {
-		if result.Status != "ok" {
+		if !resourceAcceptable(result) {
 			snapshot.Issues = append(snapshot.Issues, result)
 		}
 	}
 
 	return s.Store.SaveAudit(ctx, jobID, snapshot, expected, emailEnabled)
+}
+
+// StatusProvisioned marks a Classroom course that exists in the PROVISIONED
+// state. Consumer Google accounts cannot activate courses via the API
+// (403 @CourseStateDenied), and PRD §4.7 only audits that the course
+// exists — so provisioned counts as acceptable, while still being visible
+// in the results (not silently collapsed into ok).
+const StatusProvisioned = "provisioned"
+
+// resourceAcceptable reports whether a checked resource state counts as
+// healthy for issue tracking.
+func resourceAcceptable(result Result) bool {
+	if result.Status == StatusOK {
+		return true
+	}
+	return result.Provider == "google_classroom" && result.Status == StatusProvisioned
 }
 
 // auditMembership produces one result per expected member role plus the

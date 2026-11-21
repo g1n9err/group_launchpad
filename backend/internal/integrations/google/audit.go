@@ -14,8 +14,9 @@ import (
 )
 
 type AuditChecker struct {
-	tokens integrations.GoogleAccessTokenSource
-	client *http.Client
+	tokens  integrations.GoogleAccessTokenSource
+	client  *http.Client
+	baseURL string // overrides the hardcoded endpoints (tests)
 }
 
 func NewAuditChecker(tokens integrations.GoogleAccessTokenSource) *AuditChecker {
@@ -25,13 +26,23 @@ func NewAuditChecker(tokens integrations.GoogleAccessTokenSource) *AuditChecker 
 func (g *AuditChecker) CheckResource(ctx context.Context, resource audit.Resource) string {
 	id := url.PathEscape(resource.ID)
 	var endpoint string
+	base := g.baseURL
 	switch resource.Provider {
 	case "google_classroom":
-		endpoint = "https://classroom.googleapis.com/v1/courses/" + id + "?fields=id,courseState"
+		if base == "" {
+			base = "https://classroom.googleapis.com"
+		}
+		endpoint = base + "/v1/courses/" + id + "?fields=id,courseState"
 	case "google_drive":
-		endpoint = "https://www.googleapis.com/drive/v3/files/" + id + "?fields=id,mimeType,trashed,parents"
+		if base == "" {
+			base = "https://www.googleapis.com"
+		}
+		endpoint = base + "/drive/v3/files/" + id + "?fields=id,mimeType,trashed,parents"
 	case "google_forms":
-		endpoint = "https://forms.googleapis.com/v1/forms/" + id + "?fields=formId,publishSettings"
+		if base == "" {
+			base = "https://forms.googleapis.com"
+		}
+		endpoint = base + "/v1/forms/" + id + "?fields=formId,publishSettings"
 	default:
 		return "unavailable"
 	}
@@ -78,10 +89,19 @@ func (g *AuditChecker) CheckResource(ctx context.Context, resource audit.Resourc
 	}
 	switch resource.Provider {
 	case "google_classroom":
-		if metadata.CourseState == "ARCHIVED" {
+		switch metadata.CourseState {
+		case "ACTIVE":
+			// ok — fall through
+		case "PROVISIONED":
+			// Consumer (non-Workspace for Education) accounts cannot
+			// transition courses to ACTIVE via the API (403
+			// @CourseStateDenied); a PROVISIONED course EXISTS, which is
+			// what PRD §4.7 audits for. Reported as its own status, not an
+			// inconsistency.
+			return "provisioned"
+		case "ARCHIVED":
 			return "archived"
-		}
-		if metadata.CourseState != "ACTIVE" {
+		default:
 			return "inactive"
 		}
 	case "google_drive":
@@ -98,4 +118,11 @@ func (g *AuditChecker) CheckResource(ctx context.Context, resource audit.Resourc
 		}
 	}
 	return "ok"
+}
+
+// WithHTTPClient binds a custom client and base URL (test fixture support).
+func (g *AuditChecker) WithHTTPClient(client *http.Client, baseURL string) *AuditChecker {
+	g.client = client
+	g.baseURL = baseURL
+	return g
 }

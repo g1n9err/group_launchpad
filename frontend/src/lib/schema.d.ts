@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a sign-in across page refreshes (HttpOnly session cookie)
+         * @description The browser holds an HttpOnly, Path=/api/auth, SameSite=Strict cookie set at login. This endpoint rotates that cookie atomically (one-time use — replay fails) and returns a fresh bearer session. No Authorization header, no JS-readable storage, no token in URLs.
+         */
+        post: operations["resumeSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -911,7 +931,7 @@ export interface components {
             kind: string;
             key: string;
             /** @enum {string} */
-            status: "ok" | "unlinked" | "missing_or_inaccessible" | "unavailable" | "archived" | "inactive" | "trashed" | "misconfigured";
+            status: "ok" | "provisioned" | "unlinked" | "missing_or_inaccessible" | "unavailable" | "archived" | "inactive" | "trashed" | "misconfigured";
         };
         IntakeResponseSummary: {
             saved: number;
@@ -1218,6 +1238,35 @@ export interface operations {
             };
             /** @description malformed request */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    resumeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description a new session token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            /** @description no cookie, or the cookie is expired/revoked (it is cleared) */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

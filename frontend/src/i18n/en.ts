@@ -251,6 +251,7 @@ const en = {
   "audit.unavailable": "Check unavailable",
   "audit.archived": "Archived",
   "audit.inactive": "Inactive",
+  "audit.provisioned": "Provisioned (needs a Google Workspace for Education account to activate)",
   "audit.trashed": "In trash",
   "audit.misconfigured": "Misconfigured",
   "audit.emailDisabled": "Email off",

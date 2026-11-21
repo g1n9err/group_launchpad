@@ -252,6 +252,7 @@ const ru: Dictionary = {
   "audit.unavailable": "Проверка недоступна",
   "audit.archived": "В архиве",
   "audit.inactive": "Неактивно",
+  "audit.provisioned": "Черновик (для активации нужен Google Workspace for Education)",
   "audit.trashed": "В корзине",
   "audit.misconfigured": "Неверная конфигурация",
   "audit.emailDisabled": "Почта отключена",
