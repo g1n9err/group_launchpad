@@ -396,7 +396,7 @@ func (r *Repo) SaveClassroomCourse(ctx context.Context, groupID uuid.UUID, res c
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO group_resources (group_id, provider, resource_type, external_resource_id, resource_name, status)
 		VALUES ($1,$2,$3,$4,$5,$6)
-		ON CONFLICT ON CONSTRAINT uq_group_resources_per_group DO UPDATE
+		ON CONFLICT (group_id, provider, resource_type, resource_name) DO UPDATE
 		SET external_resource_id = EXCLUDED.external_resource_id, status = EXCLUDED.status, updated_at = now()
 	`, groupID, res.Provider, res.Type, res.ExternalID, res.Name, res.Status)
 	return err
@@ -408,7 +408,7 @@ func (r *Repo) ReserveDriveFolder(ctx context.Context, groupID uuid.UUID, res co
 		INSERT INTO group_resources AS existing
 		    (group_id, provider, resource_type, resource_name, external_resource_id, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT ON CONSTRAINT uq_group_resources_per_group DO UPDATE
+		ON CONFLICT (group_id, provider, resource_type, resource_name) DO UPDATE
 		SET external_resource_id = existing.external_resource_id
 		RETURNING external_resource_id, status
 	`, groupID, res.Provider, res.Type, res.Name, res.ExternalID, res.Status).Scan(&res.ExternalID, &res.Status)
