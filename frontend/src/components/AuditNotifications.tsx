@@ -1,3 +1,4 @@
+import { auditProviders, auditStatusLabels } from "../lib/auditDetail";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSettings } from "../i18n";
 import type { TranslationKey } from "../i18n/en";
@@ -10,25 +11,9 @@ import { useWorkspaceScope } from "../lib/workspaceScope";
 
 type Feed = components["schemas"]["AuditNotifications"];
 
-const statusLabels: Record<string, TranslationKey> = {
-  ok: "audit.resolved",
-  unlinked: "audit.unlinked",
-  missing_or_inaccessible: "audit.missing",
-  unavailable: "audit.unavailable",
-  archived: "audit.archived",
-  provisioned: "audit.provisioned",
-  inactive: "audit.inactive",
-  trashed: "audit.trashed",
-  misconfigured: "audit.misconfigured",
-};
-
 const emailLabels: Record<components["schemas"]["AuditNotification"]["emailStatus"], TranslationKey> = {
   disabled: "audit.emailDisabled", pending: "audit.emailPending", sending: "audit.emailPending",
   sent: "audit.emailSent", failed: "audit.emailFailed", unknown: "audit.emailUnknown",
-};
-
-const providers: Record<string, string> = {
-  slack: "Slack", google_classroom: "Classroom", google_drive: "Drive", google_forms: "Forms",
 };
 
 export function AuditNotifications({ children, loadNotifications = true, showFeed = true }: {
@@ -100,7 +85,7 @@ export function AuditNotifications({ children, loadNotifications = true, showFee
     };
   }, [authorization, groupName, reload, rejectAuthorization, loadNotifications]);
 
-  const label = (status: string) => statusLabels[status] ? t(statusLabels[status]) : status;
+  const label = (status: string) => auditStatusLabels[status] ? t(auditStatusLabels[status]) : status;
   const dateFormat = new Intl.DateTimeFormat({ hy: "hy-AM", en: "en-US", ru: "ru-RU" }[lang], { dateStyle: "medium", timeStyle: "short" });
   const time = (value: string) => dateFormat.format(new Date(value));
 
@@ -161,7 +146,7 @@ export function AuditNotifications({ children, loadNotifications = true, showFee
                 <ul className="mt-2 space-y-1 text-sm">
                   {group.issues.map((issue) => (
                     <li className="flex flex-wrap items-center justify-between gap-2" key={`${issue.provider}/${issue.key}`}>
-                      <span>{providers[issue.provider] ?? issue.provider} · {issue.key}</span>
+                      <span>{auditProviders[issue.provider] ?? issue.provider} · {issue.key}</span>
                       <Chip tone="warn">{label(issue.status)}</Chip>
                     </li>
                   ))}
@@ -183,7 +168,7 @@ export function AuditNotifications({ children, loadNotifications = true, showFee
                 <ul className="mt-2 space-y-1 text-sm">
                   {notification.changes.map((change) => (
                     <li className="flex flex-wrap items-center justify-between gap-2" key={`${change.provider}/${change.key}`}>
-                      <span>{providers[change.provider] ?? change.provider} · {change.key}</span>
+                      <span>{auditProviders[change.provider] ?? change.provider} · {change.key}</span>
                       <Chip tone={change.after === "ok" ? "success" : "warn"}>
                         {change.before && change.before !== "ok" && change.after !== "ok" ? `${label(change.before)} → ${label(change.after)}` : label(change.after)}
                       </Chip>

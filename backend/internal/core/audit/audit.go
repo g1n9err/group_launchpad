@@ -79,17 +79,28 @@ const (
 	StatusUnlinked              = "unlinked"
 )
 
+type SlackChecker interface {
+	Checker
+	MemberChecker
+}
+
 type Service struct {
-	Store   Store
-	Slack   Checker
-	Google  Checker
-	Members MemberChecker // optional — nil reports "unavailable"
+	ResolveSlack func(context.Context, uuid.UUID) SlackChecker
+	Store        Store
+	Slack        Checker
+	Google       Checker
+	Members      MemberChecker // optional — nil reports "unavailable"
 }
 
 func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigger string, emailEnabled bool) (uuid.UUID, error) {
 	inventory, err := s.Store.AuditInventory(ctx, groupID)
 	if err != nil {
 		return uuid.Nil, err
+	}
+	slackChecker, memberChecker := s.Slack, s.Members
+	if s.ResolveSlack != nil {
+		checker := s.ResolveSlack(ctx, groupID)
+		slackChecker, memberChecker = checker, checker
 	}
 	expected := []Resource{
 		{Provider: "google_classroom", Kind: "course", Key: "course"},
@@ -125,7 +136,7 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 		if resource.ID != "" {
 			checker := s.Google
 			if resource.Provider == "slack" {
-				checker = s.Slack
+				checker = slackChecker
 			}
 			result.Status = "unavailable"
 			if checker != nil {
@@ -144,7 +155,7 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 	// Staff/lecturers/TAs must be channel members; the student roster must
 	// exist and be tracked. Aggregate results only — member emails never
 	// enter audit rows or notifications (PII-safe by construction).
-	memberResults := s.auditMembership(ctx, inventory)
+	memberResults := auditMembership(ctx, inventory, memberChecker)
 	snapshot.Results = append(snapshot.Results, memberResults...)
 	for _, result := range memberResults {
 		if !resourceAcceptable(result) {
@@ -173,7 +184,7 @@ func resourceAcceptable(result Result) bool {
 
 // auditMembership produces one result per expected member role plus the
 // student-roster tracking row.
-func (s *Service) auditMembership(ctx context.Context, inventory Inventory) []Result {
+func auditMembership(ctx context.Context, inventory Inventory, members MemberChecker) []Result {
 	var results []Result
 	if len(inventory.Members) > 0 {
 		channels := make([]Resource, 0, 4)
@@ -183,9 +194,9 @@ func (s *Service) auditMembership(ctx context.Context, inventory Inventory) []Re
 			}
 		}
 		byRole := map[string][]Result{}
-		if s.Members != nil && len(channels) > 0 {
+		if members != nil && len(channels) > 0 {
 			checkCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			byRole = groupByRole(s.Members.CheckMembers(checkCtx, channels, inventory.Members))
+			byRole = groupByRole(members.CheckMembers(checkCtx, channels, inventory.Members))
 			cancel()
 		}
 		roles := map[string]bool{}
@@ -196,7 +207,7 @@ func (s *Service) auditMembership(ctx context.Context, inventory Inventory) []Re
 			status := StatusUnavailable
 			if len(channels) == 0 {
 				status = StatusUnlinked // channels not provisioned yet
-			} else if s.Members != nil {
+			} else if members != nil {
 				if roleResults, ok := byRole[role]; ok && len(roleResults) > 0 {
 					status = roleResults[0].Status
 				}

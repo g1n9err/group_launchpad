@@ -1,3 +1,4 @@
+import { auditNotificationLines } from "../lib/auditDetail";
 // App shell: sidebar + header + footer + routed content. Modular pieces —
 // header and footer are isolated components, easy to modify or remove.
 
@@ -320,25 +321,33 @@ function NotificationControl() {
           {unlocked && notifications.length === 0 && !feed.isPending && <p className="px-4 py-5 text-sm text-muted">{t("notifications.empty")}</p>}
           {deleteOne.isError || deleteAll.isError ? <p role="alert" className="px-4 py-2 text-xs text-danger-text">{t("notifications.deleteFailed")}</p> : null}
           {notifications.length > 0 && <div className="notification-list min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {notifications.map((notification) => (
-              <article key={notification.id} className={`notification-row ${notification.readAt ? "is-read" : "is-unread"}`}>
+            {notifications.map((notification) => {
+              let title = notification.title;
+              let detail = notification.detail;
+              const auditLines = notification.kind === "audit_inconsistency" ? auditNotificationLines(detail, t) : [];
+              switch (notification.kind) {
+                case "audit_inconsistency":
+                  title = t("notifications.auditTitle"); detail = auditLines.length ? undefined : t("notifications.auditDetail"); break;
+              }
+              return <article key={notification.id} className={`notification-row ${notification.readAt ? "is-read" : "is-unread"}`}>
                 <button type="button" disabled={!!notification.readAt || markRead.isPending}
                   onClick={() => markRead.mutate(notification.id)}
                   className="notification-row-content min-w-0 flex-1 text-left disabled:cursor-default">
                   <span className="flex items-start justify-between gap-3">
-                    <span className="text-sm font-semibold text-text">{notification.title}</span>
+                    <span className="text-sm font-semibold text-text">{title}</span>
                     {!notification.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label={t("notifications.unread")} />}
                   </span>
-                  {notification.detail && <span className="mt-1 block line-clamp-2 text-xs text-muted">{notification.detail}</span>}
+                  {auditLines.map((line, index) => <span key={index} className="mt-1 block break-words text-xs text-muted">{line}</span>)}
+                  {detail && <span className="mt-1 block line-clamp-2 text-xs text-muted">{detail}</span>}
                   <span className="mt-1 block text-[0.7rem] text-muted">{new Date(notification.createdAt).toLocaleString(lang)}</span>
                 </button>
-                <button type="button" className="notification-delete-one" aria-label={t("notifications.deleteOne", { title: notification.title })}
+                <button type="button" className="notification-delete-one" aria-label={t("notifications.deleteOne", { title })}
                   title={t("notifications.deleteOneTitle")} disabled={deleteOne.isPending}
                   onClick={() => deleteOne.mutate(notification.id)}>
                   <span aria-hidden="true">×</span>
                 </button>
-              </article>
-            ))}
+              </article>;
+            })}
           </div>}
           {feed.hasNextPage && <div className="notification-load-more border-t border-border px-4 py-2">
             <button type="button" disabled={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>

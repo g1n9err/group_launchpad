@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"launchpad/internal/core/audit"
 	coreintegrations "launchpad/internal/core/integrations"
 	"launchpad/internal/jobs"
 )
@@ -104,4 +105,13 @@ func (r AnnouncementResolver) ForGroup(ctx context.Context, groupID uuid.UUID) (
 		return nil, fmt.Errorf("Slack workspace does not support announcements")
 	}
 	return publisher, nil
+}
+
+func (r *WorkspaceResolver) AuditChecker(ctx context.Context, groupID uuid.UUID) audit.SlackChecker {
+	gateway, err := r.ForGroup(ctx, groupID)
+	if err != nil {
+		return nil
+	}
+	checker, _ := gateway.(audit.SlackChecker)
+	return checker
 }

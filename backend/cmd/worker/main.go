@@ -65,14 +65,10 @@ func run() error {
 
 	// Slack
 	slack := integrations.NewSlackChannelsService(nil, repo, repo, false)
-	var slackChecker audit.Checker
-	var memberChecker audit.MemberChecker
 	if cfg.SlackConfigured() {
 		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
 		slack = integrations.NewSlackChannelsService(slackGateway, repo, repo, true)
 		slack.Joins = repo // successful invites reconcile onboarding joins
-		slackChecker = slackGateway
-		memberChecker = slackGateway
 	}
 	var slackCipher *secrets.Cipher
 	if cfg.TokenEncryptionKey != "" {
@@ -165,7 +161,7 @@ func run() error {
 		jobConfig.AuditEmailEnabled = true
 		river.AddWorker(workers, &jobs.AuditEmailWorker{Store: repo, Mailer: mailer, Recipient: cfg.AuditNotificationEmail})
 	}
-	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, Slack: slackChecker, Google: google.NewAuditChecker(auth), Members: memberChecker}, EmailEnabled: auditEmailEnabled})
+	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, ResolveSlack: slackResolver.AuditChecker, Google: google.NewAuditChecker(auth)}, EmailEnabled: auditEmailEnabled})
 
 	client, err := jobs.NewClient(pool, workers, jobConfig)
 	if err != nil {
