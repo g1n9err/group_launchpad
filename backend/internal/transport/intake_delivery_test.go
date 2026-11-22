@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,14 +18,16 @@ import (
 	"launchpad/internal/transport"
 )
 
+const customIntakeMessage = "Բարև։\nԽնդրում եմ լրացնել ձևաթուղթը։"
+
 type fakeIntakeMailer struct {
 	mu    sync.Mutex
 	calls map[string]int
 }
 
 func (m *fakeIntakeMailer) Send(_ context.Context, email integrations.IntakeEmail) (bool, error) {
-	if email.ResponderURL != testResponderURL {
-		return false, errors.New("unexpected responder URL")
+	if email.ResponderURL != testResponderURL || email.Message != customIntakeMessage {
+		return false, errors.New("unexpected intake email content")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -69,8 +72,11 @@ func TestIntakeDeliveryQueuesRosterAndRetriesOnlyRejectedMail(t *testing.T) {
 	if _, err := pool.Exec(t.Context(), "UPDATE intake_forms SET external_form_id='test-form', form_url=$2 WHERE group_id=$1", groupID, testResponderURL); err != nil {
 		t.Fatal(err)
 	}
-	for range 2 {
-		code, result := doJSON(t, srv, http.MethodPost, path+"/distribute", "")
+	if code, _ := doJSON(t, srv, http.MethodPost, path+"/distribute", `{"message":"`+strings.Repeat("ա", 4001)+`"}`); code != http.StatusBadRequest {
+		t.Fatalf("oversized email message: %d, want 400", code)
+	}
+	for _, payload := range []string{`{"message":"Բարև։\nԽնդրում եմ լրացնել ձևաթուղթը։"}`, ""} {
+		code, result := doJSON(t, srv, http.MethodPost, path+"/distribute", payload)
 		if code != http.StatusAccepted || len(result["deliveries"].([]any)) != 3 {
 			t.Fatalf("queue: %d %v", code, result)
 		}

@@ -1,3 +1,4 @@
+import { HomeLogo } from "../components/HomeLogo";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "../components/ui";
@@ -42,10 +43,7 @@ export function LoginPage() {
   return (
     <main className="login-page">
       <div className="login-wrap">
-        <a href="#/" aria-label="Group Launchpad" className="login-brand">
-          <img src="/favicon.png" width="50" height="50" alt="" />
-          <span className="app-wordmark">Group <strong>Launchpad</strong></span>
-        </a>
+        <HomeLogo size={50} wordmark className="login-brand" />
         <Card className="login-card">
           <div className="login-card-heading">
             <p className="login-eyebrow">{t("login.coordinator")}</p>
@@ -80,6 +78,7 @@ export function LoginPage() {
               {t(submitting ? "login.working" : "login.submit")}
             </button>
           </form>
+          <p className="mt-5 text-center text-sm text-muted">{t("signup.needAccount")} <a href="#/signup" className="font-semibold text-primary hover:underline">{t("signup.submit")}</a></p>
           <a href="#/" className="login-back">{t("login.back")}</a>
         </Card>
       </div>

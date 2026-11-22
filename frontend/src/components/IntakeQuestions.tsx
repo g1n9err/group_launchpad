@@ -1,4 +1,5 @@
 import { useSettings } from "../i18n";
+import { AppSelect } from "./AppSelect";
 import { editableQuestion, intakeButtonClass, intakeInputClass, type EditableQuestion, type IntakeQuestion } from "../lib/intakeForm";
 
 export function IntakeQuestions({ questions, setQuestions, disabled }: {
@@ -29,12 +30,13 @@ export function IntakeQuestions({ questions, setQuestions, disabled }: {
             </label>
             <label className="text-sm font-medium text-text">
               {t("intake.type")}
-              <select className={`mt-1 ${intakeInputClass}`} value={question.type}
-                onChange={(event) => update(question.id, { type: event.target.value as IntakeQuestion["type"] })}>
-                <option value="text">{t("intake.text")}</option>
-                <option value="paragraph">{t("intake.paragraph")}</option>
-                <option value="single_choice">{t("intake.single_choice")}</option>
-              </select>
+              <AppSelect className={`mt-1 ${intakeInputClass}`} ariaLabel={t("intake.type")} value={question.type}
+                options={[
+                  { value: "text", label: t("intake.text") },
+                  { value: "paragraph", label: t("intake.paragraph") },
+                  { value: "single_choice", label: t("intake.single_choice") },
+                ]}
+                onChange={(value) => update(question.id, { type: value as IntakeQuestion["type"] })} />
             </label>
           </div>
           {question.type === "single_choice" && (

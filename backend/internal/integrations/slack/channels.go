@@ -176,6 +176,19 @@ func (g *Gateway) InviteUserToChannel(ctx context.Context, channelID, userID str
 	return coreintegrations.InviteOutcomeInvited, nil
 }
 
+func (g *Gateway) RemoveUserFromChannel(ctx context.Context, channelID, userID string) error {
+	_, err := withRateLimit(ctx, func() (struct{}, error) {
+		return struct{}{}, g.client.KickUserFromConversationContext(ctx, channelID, userID)
+	})
+	if err != nil {
+		if code, ok := apiErrorCode(err); ok && (code == "not_in_channel" || code == "user_not_found") {
+			return nil
+		}
+		return classify(err)
+	}
+	return nil
+}
+
 // PostMessage publishes one message and returns its timestamp.
 func (g *Gateway) PostMessage(ctx context.Context, channelID, text string) (string, error) {
 	res, err := withRateLimit(ctx, func() (string, error) {

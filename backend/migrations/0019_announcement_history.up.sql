@@ -1,0 +1,1 @@
+ALTER TABLE scheduled_announcements ADD COLUMN history_cleared_at timestamptz;

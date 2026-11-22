@@ -38,6 +38,26 @@ type LaunchStep struct {
 	Detail   string           `json:"detail,omitempty"`
 }
 
+func LaunchStatusForSteps(steps []LaunchStep) string {
+	failed, partial := 0, 0
+	for _, step := range steps {
+		switch step.Status {
+		case StepFailed:
+			failed++
+		case StepPartiallyFailed:
+			partial++
+		}
+	}
+	switch {
+	case failed == 0 && partial == 0:
+		return "completed"
+	case failed == len(steps):
+		return "failed"
+	default:
+		return "partially_failed"
+	}
+}
+
 // LaunchResult is the complete unified launch outcome.
 type LaunchResult struct {
 	GroupID uuid.UUID    `json:"groupId"`
@@ -177,21 +197,7 @@ func (w *GroupLaunchWorker) Work(ctx context.Context, job *river.Job[GroupLaunch
 		}
 	}
 
-	// Determine overall status.
-	partial := 0
-	for _, s := range result.Steps {
-		if s.Status == StepPartiallyFailed {
-			partial++
-		}
-	}
-	switch {
-	case failed == 0 && partial == 0:
-		result.Status = "completed"
-	case failed == len(result.Steps):
-		result.Status = "failed"
-	default:
-		result.Status = "partially_failed"
-	}
+	result.Status = LaunchStatusForSteps(result.Steps)
 
 	logger.Info("group_launch finished", "status", result.Status, "failed_steps", failed)
 
@@ -380,9 +386,15 @@ func (w *GroupLaunchWorker) provisionSlackStepDetailed(ctx context.Context, data
 			channelFailures++
 		}
 	}
+	failedRecipients := make(map[string]bool)
+	missingAccounts := make(map[string]bool)
 	for _, inv := range result.Invites {
 		if inv.Status == integrations.InviteFailed {
 			inviteFailures++
+			failedRecipients[inv.Email] = true
+			if inv.Error == "user_not_found" {
+				missingAccounts[inv.Email] = true
+			}
 		}
 	}
 	for _, welcome := range result.Welcomes {
@@ -394,8 +406,12 @@ func (w *GroupLaunchWorker) provisionSlackStepDetailed(ctx context.Context, data
 		return LaunchStep{Platform: "slack", Status: StepFailed, Detail: "all Slack channels failed"}, inviteFailures
 	}
 	if channelFailures+inviteFailures+welcomeFailures > 0 {
-		return LaunchStep{Platform: "slack", Status: StepPartiallyFailed,
-			Detail: fmt.Sprintf("%d channel, %d invite, %d welcome failures", channelFailures, inviteFailures, welcomeFailures)}, inviteFailures
+		detail := fmt.Sprintf("%d channel and %d welcome failures", channelFailures, welcomeFailures)
+		if inviteFailures > 0 {
+			detail = fmt.Sprintf("%d unsuccessful channel invitations for %d addresses. %d Slack accounts not found. %s",
+				inviteFailures, len(failedRecipients), len(missingAccounts), detail)
+		}
+		return LaunchStep{Platform: "slack", Status: StepPartiallyFailed, Detail: detail}, inviteFailures
 	}
 	return LaunchStep{Platform: "slack", Status: StepSucceeded}, 0
 }

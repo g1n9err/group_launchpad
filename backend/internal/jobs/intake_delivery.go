@@ -50,7 +50,7 @@ func (w *IntakeDeliveryWorker) Work(ctx context.Context, job *river.Job[IntakeDe
 }
 
 type IntakeDeliveryQueue interface {
-	QueueIntakeDeliveries(context.Context, uuid.UUID, func(pgx.Tx, uuid.UUID) error) ([]integrations.IntakeDelivery, error)
+	QueueIntakeDeliveries(context.Context, uuid.UUID, *string, func(pgx.Tx, uuid.UUID) error) ([]integrations.IntakeDelivery, error)
 	IntakeDeliveries(context.Context, uuid.UUID) ([]integrations.IntakeDelivery, error)
 }
 
@@ -60,13 +60,13 @@ type IntakeDeliveryService struct {
 	CheckReady func(context.Context) error
 }
 
-func (s *IntakeDeliveryService) QueueDeliveries(ctx context.Context, groupID uuid.UUID) ([]integrations.IntakeDelivery, error) {
+func (s *IntakeDeliveryService) QueueDeliveries(ctx context.Context, groupID uuid.UUID, message *string) ([]integrations.IntakeDelivery, error) {
 	if s.CheckReady != nil {
 		if err := s.CheckReady(ctx); err != nil {
 			return nil, err
 		}
 	}
-	return s.Queue.QueueIntakeDeliveries(ctx, groupID, func(tx pgx.Tx, id uuid.UUID) error {
+	return s.Queue.QueueIntakeDeliveries(ctx, groupID, message, func(tx pgx.Tx, id uuid.UUID) error {
 		_, err := s.River.InsertTx(ctx, tx, IntakeDeliveryArgs{DeliveryID: id}, &river.InsertOpts{Queue: IntakeEmailQueue})
 		return err
 	})

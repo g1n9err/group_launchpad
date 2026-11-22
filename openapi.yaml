@@ -18,6 +18,36 @@ tags:
   - name: groups
   - name: integrations
 paths:
+  /api/auth/register:
+    post:
+      tags: [auth]
+      operationId: registerCoordinator
+      summary: Create a private coordinator workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoordinatorRegistrationInput"
+      responses:
+        "201":
+          description: account created and signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "409":
+          description: email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: invalid account details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/auth/login:
     post:
       tags: [auth]
@@ -810,6 +840,11 @@ paths:
       summary: Queue the published intake link for the group's saved students
       parameters:
         - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeDistributionRequest"
       responses:
         "202":
           description: Current delivery records
@@ -817,6 +852,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IntakeDeliveries"
+        "400":
+          description: Invalid message
         "401":
           description: Coordinator credentials are missing or invalid
         "403":
@@ -936,6 +973,27 @@ paths:
           description: Invalid announcement
         "503":
           description: Slack or announcement access is unavailable
+  /api/groups/{groupId}/announcements/history:
+    delete:
+      tags: [groups]
+      operationId: clearGroupAnnouncementHistory
+      summary: Clear finished entries from this group's announcement history
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "204":
+          description: Finished entries cleared from the Launchpad history
+        "401":
+          description: Coordinator credentials required
+        "403":
+          description: Coordinator access required
+        "404":
+          description: Unknown group
+        "503":
+          description: Announcement access is unavailable
   /api/audit-notifications:
     get:
       tags: [groups]
@@ -944,6 +1002,12 @@ paths:
       security:
         - BearerAuth: []
         - CoordinatorBasic: []
+      parameters:
+        - name: groupName
+          in: query
+          description: Case-insensitive substring of the group name
+          schema:
+            type: string
       responses:
         "200":
           description: Current issues and recent notifications, up to 50 of each
@@ -1002,6 +1066,45 @@ paths:
           description: Unknown group
         "503":
           description: Audit access is unavailable
+  /api/groups/{groupId}/roster:
+    post:
+      tags: [groups]
+      operationId: updateGroupRoster
+      summary: Add students or replace lecturers and update access to existing group resources
+      security:
+        - BearerAuth: []
+        - CoordinatorBasic: []
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupRosterUpdate"
+      responses:
+        "200":
+          description: Roster saved, with the Slack outcome reported separately
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupRosterUpdateResult"
+        "400":
+          description: Invalid request body
+        "401":
+          description: Authentication required
+        "403":
+          description: Coordinator access required
+        "404":
+          description: Unknown group
+        "409":
+          description: Group is archived or a submitted address has another staff role
+        "422":
+          description: Invalid email list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/groups/{groupId}/onboarding:
     get:
       tags: [groups]
@@ -1499,6 +1602,21 @@ components:
           type: string
           minLength: 1
           maxLength: 256
+    CoordinatorRegistrationInput:
+      type: object
+      required: [fullName, email, password]
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 72
     AuthUser:
       type: object
       required: [role]
@@ -1663,6 +1781,13 @@ components:
           type: string
         editUrl:
           type: string
+    IntakeDistributionRequest:
+      type: object
+      properties:
+        message:
+          type: string
+          maxLength: 4000
+          description: Optional plain-text email message. The form link is appended automatically.
     IntakeDeliveries:
       type: object
       required: [deliveries]
@@ -2255,6 +2380,46 @@ components:
         challenge:
           type: string
           description: echo of Slack's challenge (url_verification only)
+    GroupRosterUpdate:
+      type: object
+      properties:
+        studentEmails:
+          description: Complete student list for this group; an empty list removes all students
+          type: array
+          items:
+            type: string
+        lecturerEmails:
+          description: Complete lecturer list for this group; an empty list removes all lecturers
+          type: array
+          items:
+            type: string
+        taEmails:
+          description: Complete TA list for this group; an empty list removes all TAs
+          type: array
+          items:
+            type: string
+    GroupRosterUpdateResult:
+      type: object
+      properties:
+        slack:
+          $ref: "#/components/schemas/SlackProvisionResult"
+        slackError:
+          type: string
+        driveAccess:
+          $ref: "#/components/schemas/RosterAccessStatus"
+        classroomAccess:
+          $ref: "#/components/schemas/RosterAccessStatus"
+        classroomEmail:
+          $ref: "#/components/schemas/RosterAccessStatus"
+        driveRemoval:
+          $ref: "#/components/schemas/RosterAccessStatus"
+        classroomRemoval:
+          $ref: "#/components/schemas/RosterAccessStatus"
+        slackRemoval:
+          $ref: "#/components/schemas/RosterAccessStatus"
+    RosterAccessStatus:
+      type: string
+      enum: [ready, partial, unavailable, not_provisioned]
     GroupOnboarding:
       type: object
       required: [group, summary, students]
@@ -2278,6 +2443,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GroupOnboardingStudent"
+        staff:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupOnboardingStaff"
+    GroupOnboardingStaff:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [teaching_staff, lecturer, ta]
     GroupOnboardingStudent:
       type: object
       required: [userId, fullName, email, onboardingStatus]

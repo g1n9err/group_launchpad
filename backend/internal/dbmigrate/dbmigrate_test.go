@@ -31,7 +31,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		if err := dbmigrate.Up(dsn); err != nil {
 			t.Fatal(err)
 		}
-		checkVersion(16)
+		checkVersion(24)
 	}
 	down := func(steps int, want uint) {
 		t.Helper()
@@ -43,6 +43,18 @@ func TestMigrationRoundTrip(t *testing.T) {
 
 	up()
 	up()
+	var messageColumn bool
+	checkMessageColumn := func(want bool) {
+		t.Helper()
+		err := conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+			WHERE table_schema=current_schema() AND table_name='intake_form_deliveries' AND column_name='message')`).Scan(&messageColumn)
+		if err != nil || messageColumn != want {
+			t.Fatalf("migration 0017 message column: exists=%t err=%v, want %t", messageColumn, err, want)
+		}
+	}
+	checkMessageColumn(true)
+	down(8, 16)
+	checkMessageColumn(false)
 	var dedupeColumn, dedupeIndex bool
 	err = conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
 		WHERE table_schema=current_schema() AND table_name='notifications' AND column_name='dedupe_key'),
@@ -67,7 +79,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 			credentialsTable, sessionsTable, predefinedStaffTable, err)
 	}
 	up()
-	down(2, 14)
+	down(10, 14)
 	err = conn.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns
 		WHERE table_schema=current_schema() AND table_name='notifications' AND column_name='dedupe_key'),
 		to_regclass('uq_notifications_dedupe_key') IS NULL`).Scan(&dedupeColumn, &dedupeIndex)
@@ -82,7 +94,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 	if err != nil || !staffTable || !notificationsTable || !templatesTable {
 		t.Fatalf("migration 0014 tables: staff=%t notifications=%t templates=%t err=%v", staffTable, notificationsTable, templatesTable, err)
 	}
-	down(3, 13)
+	down(11, 13)
 	err = conn.QueryRow(ctx, `SELECT to_regclass('staff_assignments') IS NULL,
 		to_regclass('notifications') IS NULL, to_regclass('announcement_templates') IS NULL`).
 		Scan(&staffTable, &notificationsTable, &templatesTable)
@@ -90,7 +102,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		t.Fatalf("migration 0014 rollback: staff=%t notifications=%t templates=%t err=%v", staffTable, notificationsTable, templatesTable, err)
 	}
 	up()
-	down(5, 11) // roll back migrations 0016 through 0012.
+	down(13, 11) // roll back migrations 0024 through 0012.
 	var announcementColumnGone bool
 	err = conn.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns
 	    WHERE table_schema=current_schema() AND table_name='scheduled_announcements' AND column_name='request_id')`).Scan(&announcementColumnGone)
@@ -130,7 +142,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 		t.Fatalf("intake question rollback: column exists=%t err=%v", questionsColumn, err)
 	}
 	up()
-	down(11, 5)
+	down(19, 5)
 	if _, err := conn.Exec(ctx, "INSERT INTO groups (name, course_name, start_date) VALUES ('preserved', 'Go', CURRENT_DATE)"); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +151,7 @@ func TestMigrationRoundTrip(t *testing.T) {
 	if _, err := conn.Exec(ctx, "INSERT INTO river_job (state, args, kind) VALUES ('pending', '{}', 'ping')"); err != nil {
 		t.Fatalf("insert pending job: %v", err)
 	}
-	down(11, 5)
+	down(19, 5)
 
 	var riverGone, groupPresent, emailIndexPresent bool
 	err = conn.QueryRow(ctx, `

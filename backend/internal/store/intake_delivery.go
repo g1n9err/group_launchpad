@@ -11,7 +11,7 @@ import (
 	"launchpad/internal/core/integrations"
 )
 
-func (r *Repo) QueueIntakeDeliveries(ctx context.Context, groupID uuid.UUID, enqueue func(pgx.Tx, uuid.UUID) error) ([]integrations.IntakeDelivery, error) {
+func (r *Repo) QueueIntakeDeliveries(ctx context.Context, groupID uuid.UUID, message *string, enqueue func(pgx.Tx, uuid.UUID) error) ([]integrations.IntakeDelivery, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -33,14 +33,15 @@ func (r *Repo) QueueIntakeDeliveries(ctx context.Context, groupID uuid.UUID, enq
 	}
 
 	rows, err := tx.Query(ctx, `
-		INSERT INTO intake_form_deliveries (intake_form_id, user_id, recipient)
-		SELECT $1, u.id, u.email FROM group_members gm JOIN users u ON u.id=gm.user_id
+		INSERT INTO intake_form_deliveries (intake_form_id, user_id, recipient, message)
+		SELECT $1, u.id, u.email, COALESCE($3::text, '') FROM group_members gm JOIN users u ON u.id=gm.user_id
 		WHERE gm.group_id=$2 AND gm.member_role='student'
 		ON CONFLICT (intake_form_id, user_id) DO UPDATE
-		SET status='pending', recipient=EXCLUDED.recipient, error_message=NULL, updated_at=now()
+		SET status='pending', recipient=EXCLUDED.recipient,
+		    message=COALESCE($3::text, intake_form_deliveries.message), error_message=NULL, updated_at=now()
 		WHERE intake_form_deliveries.status='failed'
 		RETURNING id
-	`, formID, groupID)
+	`, formID, groupID, message)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +99,8 @@ func (r *Repo) StartIntakeDelivery(ctx context.Context, id uuid.UUID) (integrati
 		FROM intake_forms f JOIN groups g ON g.id=f.group_id
 		WHERE d.id=$1 AND d.status='pending' AND f.id=d.intake_form_id
 		  AND f.status IN ('created', 'distributed') AND NULLIF(f.form_url, '') IS NOT NULL
-		RETURNING d.recipient, g.name, f.form_url
-	`, id).Scan(&email.Recipient, &email.GroupName, &email.ResponderURL)
+		RETURNING d.recipient, g.name, f.form_url, d.message
+	`, id).Scan(&email.Recipient, &email.GroupName, &email.ResponderURL, &email.Message)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return email, false, nil
 	}

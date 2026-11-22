@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,10 @@ type AnnouncementPublisher interface {
 	PostAnnouncement(ctx context.Context, channelID, text string) (messageID string, outcomeUnknown bool, err error)
 }
 
+type AnnouncementPublisherResolver interface {
+	ForGroup(context.Context, uuid.UUID) (AnnouncementPublisher, error)
+}
+
 type AnnouncementWorker struct {
 	river.WorkerDefaults[AnnouncementArgs]
 	Store interface {
@@ -30,7 +35,8 @@ type AnnouncementWorker struct {
 		FinishAnnouncement(context.Context, uuid.UUID, string, string, string) error
 		EnsureAnnouncementNotification(context.Context, uuid.UUID) error
 	}
-	Slack AnnouncementPublisher
+	Slack         AnnouncementPublisher
+	SlackResolver AnnouncementPublisherResolver
 }
 
 func (w *AnnouncementWorker) Work(ctx context.Context, job *river.Job[AnnouncementArgs]) error {
@@ -50,12 +56,52 @@ func (w *AnnouncementWorker) Work(ctx context.Context, job *river.Job[Announceme
 		}
 		return nil
 	}
-	externalID, unknown, postErr := w.Slack.PostAnnouncement(ctx, item.ChannelID, item.Message)
-	status, message := "published", ""
-	if postErr != nil {
-		status, message = "failed", postErr.Error()
-		if unknown {
+	publisher := w.Slack
+	if w.SlackResolver != nil {
+		publisher, err = w.SlackResolver.ForGroup(ctx, item.GroupID)
+		if err != nil {
+			return w.Store.FinishAnnouncement(ctx, item.ID, "failed", "", "Slack workspace is not available")
+		}
+	}
+	if publisher == nil {
+		return w.Store.FinishAnnouncement(ctx, item.ID, "failed", "", "Slack is not configured")
+	}
+	channelIDs := item.ChannelIDs
+	if len(channelIDs) == 0 {
+		channelIDs = []string{item.ChannelID}
+	}
+	deliveries := make([]map[string]string, 0, len(channelIDs))
+	failed, unknownCount := 0, 0
+	var firstError string
+	for _, channelID := range channelIDs {
+		id, unknown, postErr := publisher.PostAnnouncement(ctx, channelID, item.Message)
+		if postErr != nil {
+			failed++
+			if firstError == "" {
+				firstError = postErr.Error()
+			}
+			if unknown {
+				unknownCount++
+			}
+			continue
+		}
+		deliveries = append(deliveries, map[string]string{"channelId": channelID, "messageId": id})
+	}
+	status, message, externalID := "published", "", ""
+	if len(channelIDs) > 1 {
+		encoded, _ := json.Marshal(deliveries)
+		externalID = string(encoded)
+	} else if len(deliveries) == 1 {
+		externalID = deliveries[0]["messageId"]
+	}
+	if failed > 0 {
+		status = "failed"
+		message = firstError
+		if unknownCount > 0 {
 			status = "unknown"
+		}
+		if len(deliveries) > 0 && unknownCount == 0 {
+			message = "announcement was delivered to only some group channels"
 		}
 	}
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -68,6 +114,7 @@ type AnnouncementService struct {
 	Store interface {
 		ScheduleAnnouncement(context.Context, uuid.UUID, announcements.Schedule, func(pgx.Tx, uuid.UUID) error) (announcements.Announcement, error)
 		Announcements(context.Context, uuid.UUID) ([]announcements.Announcement, error)
+		ClearAnnouncementHistory(context.Context, uuid.UUID) error
 	}
 }
 
@@ -75,6 +122,9 @@ func (s *AnnouncementService) Schedule(ctx context.Context, groupID uuid.UUID, r
 	request, err := request.Validate()
 	if err != nil {
 		return announcements.Announcement{}, err
+	}
+	if request.Type == "general" {
+		request.ChannelName = "all"
 	}
 	return s.Store.ScheduleAnnouncement(ctx, groupID, request, func(tx pgx.Tx, id uuid.UUID) error {
 		_, err := s.River.InsertTx(ctx, tx, AnnouncementArgs{ID: id}, &river.InsertOpts{
@@ -86,4 +136,8 @@ func (s *AnnouncementService) Schedule(ctx context.Context, groupID uuid.UUID, r
 
 func (s *AnnouncementService) List(ctx context.Context, groupID uuid.UUID) ([]announcements.Announcement, error) {
 	return s.Store.Announcements(ctx, groupID)
+}
+
+func (s *AnnouncementService) ClearHistory(ctx context.Context, groupID uuid.UUID) error {
+	return s.Store.ClearAnnouncementHistory(ctx, groupID)
 }

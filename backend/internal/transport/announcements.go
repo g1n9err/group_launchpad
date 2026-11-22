@@ -15,6 +15,7 @@ import (
 type AnnouncementService interface {
 	Schedule(context.Context, uuid.UUID, announcements.Schedule) (announcements.Announcement, error)
 	List(context.Context, uuid.UUID) ([]announcements.Announcement, error)
+	ClearHistory(context.Context, uuid.UUID) error
 }
 
 func (h *Handlers) ScheduleGroupAnnouncement(c echo.Context, groupID gen.GroupId) error {
@@ -86,6 +87,23 @@ func (h *Handlers) ListGroupAnnouncements(c echo.Context, groupID gen.GroupId) e
 		result = append(result, toAnnouncement(item))
 	}
 	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) ClearGroupAnnouncementHistory(c echo.Context, groupID gen.GroupId) error {
+	if _, err := h.requireGroupWrite(c, groupID); err != nil {
+		return err
+	}
+	if h.announcements == nil {
+		return errNotReady("Slack announcement access is unavailable")
+	}
+	ctx := c.Request().Context()
+	if _, err := h.groups.Get(ctx, groupID.String()); err != nil {
+		return err
+	}
+	if err := h.announcements.ClearHistory(ctx, groupID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func toAnnouncement(item announcements.Announcement) gen.ScheduledAnnouncement {

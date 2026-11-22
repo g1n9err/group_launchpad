@@ -7,6 +7,7 @@ import { useSettings } from "../i18n";
 import { useRoute } from "../lib/router";
 import { api } from "../lib/api";
 import { isUnlocked, onAuthChange, useAuthUser } from "../lib/auth";
+import { HomeLogo } from "./HomeLogo";
 import { CoordinatorSessionControl, useCoordinatorLock } from "./auth";
 import {
   IconAnnouncements,
@@ -17,6 +18,8 @@ import {
   IconHome,
   IconIntegrations,
   IconIntakeForms,
+  IconMenu,
+  IconClose,
   IconOverview,
   IconSettings,
   IconSearch,
@@ -81,10 +84,7 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
     <nav aria-label={t("nav.primary")} className={mobile ? "mobile-nav" : "flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5"}>
       {!mobile && (
         <>
-          <a href="#/" aria-label="Group Launchpad" className="mb-4 flex items-center gap-3 border-b border-border px-2 pb-5 pt-1 text-rail-text">
-            <img src="/favicon.png" width="38" height="38" alt="" />
-            <span className="app-wordmark">Group <strong>Launchpad</strong></span>
-          </a>
+          <HomeLogo size={38} wordmark className="mb-4 flex items-center gap-3 border-b border-border px-2 pb-5 pt-1 text-rail-text" />
           <label className="app-sidebar-search mb-5 flex min-h-11 items-center gap-2 border border-border bg-surface-muted px-3 text-rail-muted">
             <IconSearch className="h-4 w-4" />
             <input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)}
@@ -134,7 +134,7 @@ function SidebarAccount() {
 
 // ── Header ─────────────────────────────────────────────────────────────────
 
-function Header() {
+function Header({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolean; onToggleSidebar: () => void }) {
   const { t, theme, toggleTheme } = useSettings();
   const route = useRoute();
   useCoordinatorLock(); // attaches the cache-clearing listener
@@ -160,9 +160,14 @@ function Header() {
   return (
     <header className="border-b border-border bg-surface/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-[100rem] items-center gap-3 px-4 py-3 sm:px-7 lg:px-10">
-        <a href="#/" aria-label="Group Launchpad" className="shrink-0 lg:hidden">
-          <img src="/favicon.png" width="33" height="33" alt="" />
-        </a>
+        <button type="button" onClick={onToggleSidebar}
+          aria-label={t(sidebarOpen ? "nav.sidebarHide" : "nav.sidebarShow")}
+          aria-expanded={sidebarOpen} aria-controls="primary-sidebar"
+          title={t(sidebarOpen ? "nav.sidebarHide" : "nav.sidebarShow")}
+          className="app-header-control hidden h-10 w-10 shrink-0 items-center justify-center p-0 lg:inline-flex">
+          {sidebarOpen ? <IconClose className="h-4 w-4" /> : <IconMenu className="h-4 w-4" />}
+        </button>
+        <HomeLogo size={33} className="shrink-0 lg:hidden" />
 
         <div className="min-w-0 flex-1">
           {!parent && <span className="block truncate text-sm font-semibold text-muted">{title}</span>}
@@ -360,10 +365,19 @@ function Footer() {
 // ── Shell ──────────────────────────────────────────────────────────────────
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try { return window.localStorage.getItem("launchpad.sidebar-hidden") !== "true"; }
+    catch { return true; }
+  });
+  const toggleSidebar = () => setSidebarOpen((open) => {
+    const next = !open;
+    try { window.localStorage.setItem("launchpad.sidebar-hidden", String(!next)); } catch { /* storage is optional */ }
+    return next;
+  });
   return (
     <div className="app-shell flex min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="app-sidebar fixed inset-y-0 left-0 z-30 hidden w-60 bg-rail lg:block">
+      <aside id="primary-sidebar" className={`app-sidebar fixed inset-y-0 left-0 z-30 hidden w-60 bg-rail transition-transform duration-200 lg:block ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`} aria-hidden={!sidebarOpen} inert={!sidebarOpen}>
         <div className="flex h-full flex-col">
           <Navigation />
           <SidebarAccount />
@@ -371,9 +385,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Content column: full available width, sidebar offset on desktop */}
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-60">
+      <div className={`flex min-h-screen min-w-0 flex-1 flex-col transition-[padding] duration-200 ${sidebarOpen ? "lg:pl-60" : "lg:pl-0"}`}>
         <div className="sticky top-0 z-20">
-          <Header />
+          <Header sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
           <Navigation mobile />
         </div>
         <main id="main-content" className="mx-auto w-full max-w-[100rem] flex-1 px-4 py-6 sm:px-7 lg:px-10 lg:py-8">{children}</main>

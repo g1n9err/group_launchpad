@@ -18,6 +18,7 @@ type IntakeEmail struct {
 	Recipient    string
 	GroupName    string
 	ResponderURL string
+	Message      string
 }
 
 type IntakeMailer interface {

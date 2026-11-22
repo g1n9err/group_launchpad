@@ -47,14 +47,14 @@ func seedRoles(t *testing.T, authSvc *auth.Service) map[string]string {
 
 // createGroupForRoles creates a group whose lecturer/TA emails belong to the
 // given lecturer and TA users.
-func createGroupForRoles(t *testing.T, srv *httptest.Server, name, lecturerEmail, taEmail string) string {
+func createGroupForRoles(t *testing.T, srv *httptest.Server, token, name, lecturerEmail, taEmail string) string {
 	t.Helper()
 	body := `{"name":"` + name + `","courseName":"Course","startDate":"2026-12-01","staffEmails":["staff@roles.test"],"lecturerEmails":["` + lecturerEmail + `"]`
 	if taEmail != "" {
 		body += `,"taEmails":["` + taEmail + `"]`
 	}
 	body += `}`
-	status, out := doJSON(t, srv, http.MethodPost, "/api/groups", body)
+	status, out := doBearerJSON(t, srv, token, http.MethodPost, "/api/groups", body)
 	if status != http.StatusCreated {
 		t.Fatalf("create group %s: %d %v", name, status, out)
 	}
@@ -70,8 +70,8 @@ func TestAuthorizationMatrix(t *testing.T) {
 	tokens := seedRoles(t, authSvc)
 
 	// Two groups: only the first has our lecturer/TA assigned.
-	ownGroup := createGroupForRoles(t, srv, "Matrix Own Group", "lecturer@roles.test", "ta@roles.test")
-	otherGroup := createGroupForRoles(t, srv, "Matrix Other Group", "other-lecturer@roles.test", "")
+	ownGroup := createGroupForRoles(t, srv, tokens[auth.RoleCoordinator], "Matrix Own Group", "lecturer@roles.test", "ta@roles.test")
+	otherGroup := createGroupForRoles(t, srv, tokens[auth.RoleCoordinator], "Matrix Other Group", "other-lecturer@roles.test", "")
 
 	admin := &bearerClient{t: t, token: tokens[auth.RoleAdmin], Client: http.Client{Timeout: 5 * time.Second}}
 	coordinator := &bearerClient{t: t, token: tokens[auth.RoleCoordinator], Client: http.Client{Timeout: 5 * time.Second}}
@@ -167,7 +167,6 @@ func TestAuthorizationMatrix(t *testing.T) {
 
 func TestBasicCoordinatorCompatibility(t *testing.T) {
 	srv, _, _ := newAuthApp(t)
-	createGroupForRoles(t, srv, "Compat Group", "lecturer@roles.test", "")
 
 	// The legacy Basic flow still authorizes the coordinator role.
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -178,8 +177,8 @@ func TestBasicCoordinatorCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("basic coordinator notifications: %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("shared Basic coordinator notifications: %d, want 401", resp.StatusCode)
 	}
 	// /api/auth/me reports the coordinator identity over Basic.
 	req, _ = http.NewRequest(http.MethodGet, srv.URL+"/api/auth/me", nil)
@@ -189,13 +188,8 @@ func TestBasicCoordinatorCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("basic coordinator /me: %d", resp.StatusCode)
-	}
-	var body map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&body)
-	if body["role"] != auth.RoleCoordinator {
-		t.Errorf("basic /me role=%v, want coordinator", body["role"])
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("shared Basic /me: %d, want 401", resp.StatusCode)
 	}
 }
 
@@ -282,7 +276,7 @@ func TestAdminUserAndStaffManagement(t *testing.T) {
 func TestExpiredAndLoggedOutTokensFailClosed(t *testing.T) {
 	srv, authSvc, pool := newAuthApp(t)
 	tokens := seedRoles(t, authSvc)
-	createGroupForRoles(t, srv, "Expiry Group", "lecturer@roles.test", "")
+	createGroupForRoles(t, srv, tokens[auth.RoleCoordinator], "Expiry Group", "lecturer@roles.test", "")
 
 	// Expire the admin session directly in the database.
 	session, err := authSvc.Login(context.Background(), "admin@roles.test", "role-password-123456")
@@ -325,7 +319,7 @@ func TestExpiredAndLoggedOutTokensFailClosed(t *testing.T) {
 func TestGroupResourcesEndpoint(t *testing.T) {
 	srv, authSvc, pool := newAuthApp(t)
 	tokens := seedRoles(t, authSvc)
-	groupID := createGroupForRoles(t, srv, "Resources Group", "lecturer@roles.test", "")
+	groupID := createGroupForRoles(t, srv, tokens[auth.RoleCoordinator], "Resources Group", "lecturer@roles.test", "")
 
 	// Seed one active external resource + a distributed intake form.
 	if _, err := pool.Exec(context.Background(), `
@@ -389,9 +383,10 @@ func TestStaffRoleMembershipScoping(t *testing.T) {
 
 	// A lecturer and a TA account (API roles), plus one student account.
 	users := map[string]string{
-		auth.RoleLecturer: "scoped-lecturer@roles.test",
-		auth.RoleTA:       "scoped-ta@roles.test",
-		auth.RoleStudent:  "scoped-student@roles.test",
+		auth.RoleCoordinator: "scoped-coordinator@roles.test",
+		auth.RoleLecturer:    "scoped-lecturer@roles.test",
+		auth.RoleTA:          "scoped-ta@roles.test",
+		auth.RoleStudent:     "scoped-student@roles.test",
 	}
 	tokens := map[string]string{}
 	for role, email := range users {
@@ -406,22 +401,26 @@ func TestStaffRoleMembershipScoping(t *testing.T) {
 	}
 	lecturerID := userIDByEmail(t, pool, users[auth.RoleLecturer])
 	taID := userIDByEmail(t, pool, users[auth.RoleTA])
+	coordinatorSession, err := authSvc.Login(ctx, users[auth.RoleCoordinator], password)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// G1: the lecturer is assigned as LECTURER (staff_assignments) — allowed.
-	g1 := createGroupForRoles(t, srv, "Scoping Lecturer Group", users[auth.RoleLecturer], "")
+	g1 := createGroupForRoles(t, srv, coordinatorSession.Token, "Scoping Lecturer Group", users[auth.RoleLecturer], "")
 	// G2: the TA is assigned as TA — allowed for the TA only.
-	g2 := createGroupForRoles(t, srv, "Scoping TA Group", "someone-else@roles.test", users[auth.RoleTA])
+	g2 := createGroupForRoles(t, srv, coordinatorSession.Token, "Scoping TA Group", "someone-else@roles.test", users[auth.RoleTA])
 	// G3: unrelated to both.
-	g3 := createGroupForRoles(t, srv, "Scoping Other Group", "other@roles.test", "")
+	g3 := createGroupForRoles(t, srv, coordinatorSession.Token, "Scoping Other Group", "other@roles.test", "")
 	// G4: the lecturer appears ONLY as a rostered STUDENT member.
-	g4 := createGroupForRoles(t, srv, "Scoping Student Member Group", "other@roles.test", "")
+	g4 := createGroupForRoles(t, srv, coordinatorSession.Token, "Scoping Student Member Group", "other@roles.test", "")
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO group_members (group_id, user_id, member_role) VALUES ($1, $2, 'student')`,
 		g4, lecturerID); err != nil {
 		t.Fatal(err)
 	}
 	// G5: the lecturer appears ONLY as a teaching_staff assignment.
-	g5 := createGroupForRoles(t, srv, "Scoping Teaching Staff Group", "other@roles.test", "")
+	g5 := createGroupForRoles(t, srv, coordinatorSession.Token, "Scoping Teaching Staff Group", "other@roles.test", "")
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO staff_assignments (group_id, email, role) VALUES ($1, $2, 'teaching_staff')`,
 		g5, users[auth.RoleLecturer]); err != nil {
@@ -429,7 +428,7 @@ func TestStaffRoleMembershipScoping(t *testing.T) {
 	}
 	// G6: the lecturer is BOTH a student member AND a teaching_staff
 	// assignment — still no lecturer/TA grant, so denied.
-	g6 := createGroupForRoles(t, srv, "Scoping Both Non Grants Group", "other@roles.test", "")
+	g6 := createGroupForRoles(t, srv, coordinatorSession.Token, "Scoping Both Non Grants Group", "other@roles.test", "")
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO group_members (group_id, user_id, member_role) VALUES ($1, $2, 'student')`,
 		g6, lecturerID); err != nil {

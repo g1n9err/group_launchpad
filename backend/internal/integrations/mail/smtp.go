@@ -95,6 +95,9 @@ func (r *Relay) SendMessage(ctx context.Context, recipient, subject, body string
 const intakeSubject = "Group Launchpad student intake"
 
 func intakeBody(email integrations.IntakeEmail) string {
+	if email.Message != "" {
+		return email.Message + "\n\n" + email.ResponderURL + "\n"
+	}
 	return fmt.Sprintf("Hello,\n\nPlease complete the intake form for %s:\n\n%s\n", email.GroupName, email.ResponderURL)
 }
 

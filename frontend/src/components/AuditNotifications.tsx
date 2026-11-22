@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSettings } from "../i18n";
 import type { TranslationKey } from "../i18n/en";
 import { api } from "../lib/api";
+import { intakeInputClass } from "../lib/intakeForm";
 import { fireLock, getAuthHeader, isUnlocked, onAuthChange } from "../lib/auth";
 import type { components } from "../lib/schema";
 import { Card, Chip } from "./ui";
+import { useWorkspaceScope } from "../lib/workspaceScope";
 
 type Feed = components["schemas"]["AuditNotifications"];
 
@@ -29,8 +31,10 @@ const providers: Record<string, string> = {
   slack: "Slack", google_classroom: "Classroom", google_drive: "Drive", google_forms: "Forms",
 };
 
-export function AuditNotifications({ children }: {
+export function AuditNotifications({ children, loadNotifications = true, showFeed = true }: {
   children?: (authorization: string, onUnauthorized: () => void, reload: number) => ReactNode;
+  loadNotifications?: boolean;
+  showFeed?: boolean;
 } = {}) {
   const { t, lang } = useSettings();
   const [authorized, setAuthorized] = useState(isUnlocked());
@@ -38,10 +42,18 @@ export function AuditNotifications({ children }: {
   const [error, setError] = useState<TranslationKey>();
   const [loading, setLoading] = useState(false);
   const [reload, setReload] = useState(0);
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const workspaceScope = useWorkspaceScope();
+  const workspaceFilter = workspaceScope.selectedWorkspaceId;
 
   const authorization = authorized ? getAuthHeader().Authorization ?? "" : "";
 
   useEffect(() => onAuthChange(() => setAuthorized(isUnlocked())), []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setGroupName(groupSearch.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [groupSearch]);
 
   const rejectAuthorization = useCallback(() => {
     fireLock();
@@ -51,7 +63,7 @@ export function AuditNotifications({ children }: {
   }, []);
 
   useEffect(() => {
-    if (!authorization) return;
+    if (!authorization || !loadNotifications) return;
     const controller = new AbortController();
     let loading = false;
     async function refresh() {
@@ -61,6 +73,7 @@ export function AuditNotifications({ children }: {
       try {
         const { data, response } = await api.GET("/api/audit-notifications", {
           headers: { Authorization: authorization },
+          params: { query: { groupName: groupName || undefined } },
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
@@ -85,7 +98,7 @@ export function AuditNotifications({ children }: {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [authorization, reload, rejectAuthorization]);
+  }, [authorization, groupName, reload, rejectAuthorization, loadNotifications]);
 
   const label = (status: string) => statusLabels[status] ? t(statusLabels[status]) : status;
   const dateFormat = new Intl.DateTimeFormat({ hy: "hy-AM", en: "en-US", ru: "ru-RU" }[lang], { dateStyle: "medium", timeStyle: "short" });
@@ -110,18 +123,40 @@ export function AuditNotifications({ children }: {
       </div>
 
       {!authorization && <a href="#/login" className="app-action">{t("auth.signIn")}</a>}
+      {authorization && (
+        <div className="flex flex-wrap gap-4">
+          <label className="block w-80 max-w-full text-sm font-medium text-text">
+            {t("audit.groupSearch")}
+            <input type="search" className={`mt-1 ${intakeInputClass}`}
+              value={groupSearch} onChange={(event) => setGroupSearch(event.target.value)} />
+          </label>
+          <label className="block w-80 max-w-full text-sm font-medium text-text">
+            {t("audit.workspaceFilter")}
+            <select className={`mt-1 ${intakeInputClass}`} value={workspaceFilter} onChange={(event) => workspaceScope.setSelectedWorkspaceId(event.target.value)}>
+              <option value="">{t("workspace.all")}</option>
+              <option value="__default__">{t("workspace.default")}</option>
+              {workspaceScope.workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.teamName}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
 
       {error && <p className="text-sm text-danger-text" role="alert">{t(error)}</p>}
       {authorization && loading && !feed && <p className="text-sm text-muted" role="status">{t("audit.loading")}</p>}
 
       {feed && (
+        (() => {
+          const openIssues = feed.openIssues.filter((item) => !workspaceFilter || ((workspaceScope.assignmentByGroup.get(item.groupId)?.workspaceId ?? "__default__") === workspaceFilter));
+          const notifications = feed.notifications.filter((item) => !workspaceFilter || ((workspaceScope.assignmentByGroup.get(item.groupId)?.workspaceId ?? "__default__") === workspaceFilter));
+          return (
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-text">{t("audit.open")}</h3>
-            {feed.openIssues.length === 0 && <p className="text-sm text-muted">{t("audit.noOpen")}</p>}
-            {feed.openIssues.map((group) => (
+            {openIssues.length === 0 && <p className="text-sm text-muted">{t("audit.noOpen")}</p>}
+            {openIssues.map((group) => (
               <div className="rounded-lg border border-border p-3" key={group.groupId}>
                 <p className="text-sm font-medium text-text">{group.groupName}</p>
+                <p className="text-xs text-muted">{t("audit.workspaceFilter")}: {workspaceScope.assignmentByGroup.get(group.groupId)?.workspaceName ?? t("groups.defaultSlackWorkspace")}</p>
                 <p className="text-xs text-muted">{time(group.checkedAt)}</p>
                 <ul className="mt-2 space-y-1 text-sm">
                   {group.issues.map((issue) => (
@@ -136,13 +171,14 @@ export function AuditNotifications({ children }: {
           </section>
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-text">{t("audit.recent")}</h3>
-            {feed.notifications.length === 0 && <p className="text-sm text-muted">{t("audit.noChanges")}</p>}
-            {feed.notifications.map((notification) => (
+            {notifications.length === 0 && <p className="text-sm text-muted">{t("audit.noChanges")}</p>}
+            {notifications.map((notification) => (
               <div className="rounded-lg border border-border p-3" key={notification.id}>
                 <div className="flex flex-wrap justify-between gap-2">
                   <p className="text-sm font-medium text-text">{notification.groupName}</p>
                   <Chip tone={notification.emailStatus === "failed" ? "danger" : "muted"}>{t(emailLabels[notification.emailStatus])}</Chip>
                 </div>
+                <p className="text-xs text-muted">{t("audit.workspaceFilter")}: {workspaceScope.assignmentByGroup.get(notification.groupId)?.workspaceName ?? t("groups.defaultSlackWorkspace")}</p>
                 <p className="text-xs text-muted">{time(notification.checkedAt)}</p>
                 <ul className="mt-2 space-y-1 text-sm">
                   {notification.changes.map((change) => (
@@ -158,13 +194,16 @@ export function AuditNotifications({ children }: {
             ))}
           </section>
         </div>
+          );
+        })()
       )}
     </Card>
   );
 
   return (
     <>
-      {notifications}
+      {!showFeed && !authorization && <a href="#/login" className="app-action">{t("auth.signIn")}</a>}
+      {showFeed && notifications}
       {authorization && feed && children?.(authorization, rejectAuthorization, reload)}
     </>
   );

@@ -49,6 +49,8 @@ func (failingClassroomGW) EnsureCourse(context.Context, string, integrations.Cla
 func (failingClassroomGW) ActivateCourse(context.Context, string, string) error        { return nil }
 func (failingClassroomGW) EnrollStudent(context.Context, string, string, string) error { return nil }
 func (failingClassroomGW) AssignTeacher(context.Context, string, string, string) error { return nil }
+func (failingClassroomGW) RemoveStudent(context.Context, string, string, string) error { return nil }
+func (failingClassroomGW) RemoveTeacher(context.Context, string, string, string) error { return nil }
 
 type failingDriveGW struct{}
 
@@ -61,6 +63,7 @@ func (failingDriveGW) EnsureFolder(_ context.Context, _ string, _ string, _, _ s
 func (failingDriveGW) GrantAccess(context.Context, string, string, string, string) error {
 	return nil
 }
+func (failingDriveGW) RevokeAccess(context.Context, string, string, string) error { return nil }
 
 type failingFormsGW struct{}
 
@@ -70,7 +73,7 @@ func (failingFormsGW) CreateDraft(context.Context, string, string, string) (stri
 func (failingFormsGW) FindDraft(_ context.Context, _, _ string) (string, error) {
 	return "", integrations.ErrSlackUnavailable
 }
-func (failingFormsGW) EnsureQuestions(context.Context, string, string, []integrations.IntakeQuestion) error {
+func (failingFormsGW) EnsureQuestions(context.Context, string, string, []integrations.IntakeQuestion, bool) error {
 	return nil
 }
 func (failingFormsGW) EnableVerifiedEmail(context.Context, string, string) error   { return nil }

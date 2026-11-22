@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppSelect } from "./AppSelect";
 import { useSettings } from "../i18n";
 import { intakeInputClass } from "../lib/intakeForm";
 
@@ -150,16 +151,16 @@ export function DateTimePicker({ value, onChange, required }: Props) {
             <div className="datetime-time-controls">
               <label>
                 <span className="sr-only">{t("datetime.hour")}</span>
-                <select aria-label={t("datetime.hour")} value={hour} onChange={(event) => setTime(Number(event.target.value), minute)}>
-                  {Array.from({ length: 24 }, (_, value) => <option key={value} value={value}>{pad(value)}</option>)}
-                </select>
+                <AppSelect ariaLabel={t("datetime.hour")} className="datetime-time-select" menuClassName="datetime-time-menu"
+                  value={String(hour)} options={Array.from({ length: 24 }, (_, value) => ({ value: String(value), label: pad(value) }))}
+                  onChange={(value) => setTime(Number(value), minute)} />
               </label>
               <span aria-hidden="true">:</span>
               <label>
                 <span className="sr-only">{t("datetime.minute")}</span>
-                <select aria-label={t("datetime.minute")} value={minute} onChange={(event) => setTime(hour, Number(event.target.value))}>
-                  {Array.from({ length: 60 }, (_, value) => <option key={value} value={value}>{pad(value)}</option>)}
-                </select>
+                <AppSelect ariaLabel={t("datetime.minute")} className="datetime-time-select" menuClassName="datetime-time-menu"
+                  value={String(minute)} options={Array.from({ length: 60 }, (_, value) => ({ value: String(value), label: pad(value) }))}
+                  onChange={(value) => setTime(hour, Number(value))} />
               </label>
             </div>
           </div>

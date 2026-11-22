@@ -10,15 +10,16 @@ import (
 	"launchpad/internal/core/audit"
 )
 
-func (r *Repo) AuditNotifications(ctx context.Context) ([]audit.Notification, error) {
+func (r *Repo) AuditNotifications(ctx context.Context, groupName string) ([]audit.Notification, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT n.id,a.group_id,g.name,a.created_at,n.changes,
 		       CASE WHEN n.email_status='sending' AND n.updated_at < now() - interval '2 minutes'
 		            THEN 'unknown' ELSE n.email_status END,
 		       COALESCE(n.email_error,'')
 		FROM audit_notifications n JOIN audit_logs a ON a.id=n.audit_id JOIN groups g ON g.id=a.group_id
+		WHERE strpos(lower(g.name), lower($1)) > 0 AND ($2::uuid IS NULL OR g.workspace_owner_id=$2)
 		ORDER BY a.created_at DESC,n.id DESC LIMIT 50
-	`)
+	`, groupName, nullableOwnerFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +30,7 @@ func (r *Repo) AuditNotifications(ctx context.Context) ([]audit.Notification, er
 	})
 }
 
-func (r *Repo) CurrentAuditIssues(ctx context.Context) ([]audit.OpenIssues, error) {
+func (r *Repo) CurrentAuditIssues(ctx context.Context, groupName string) ([]audit.OpenIssues, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT g.id,g.name,latest.created_at,latest.differences
 		FROM groups g JOIN LATERAL (
@@ -38,8 +39,9 @@ func (r *Repo) CurrentAuditIssues(ctx context.Context) ([]audit.OpenIssues, erro
 		    ORDER BY created_at DESC,id DESC LIMIT 1
 		) latest ON true
 		WHERE g.status <> 'archived' AND latest.differences <> '[]'::jsonb
+		  AND strpos(lower(g.name), lower($1)) > 0 AND ($2::uuid IS NULL OR g.workspace_owner_id=$2)
 		ORDER BY latest.created_at DESC,g.id LIMIT 50
-	`)
+	`, groupName, nullableOwnerFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}

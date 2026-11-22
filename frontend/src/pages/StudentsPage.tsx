@@ -8,6 +8,7 @@ import { AuthGate } from "../components/AuthGate";
 import { useSettings } from "../i18n";
 import { useQueries } from "@tanstack/react-query";
 import { Card, OnboardingBadge, PageTitle } from "../components/ui";
+import { useWorkspaceScope } from "../lib/workspaceScope";
 
 interface StudentRow {
   userId: string;
@@ -19,7 +20,9 @@ interface StudentRow {
 
 function useAllStudents(): { rows: StudentRow[]; loading: boolean; loadFailed: boolean } {
   const groups = useAllGroups();
-  const ids = groups.data?.map((g) => ({ id: g.id, name: g.name })) ?? [];
+  const workspaceScope = useWorkspaceScope();
+  const visibleGroups = workspaceScope.filterGroups(groups.data);
+  const ids = visibleGroups?.map((g) => ({ id: g.id, name: g.name })) ?? [];
   const reports = useQueries({
     queries: ids.map((group) => groupOnboardingOptions(group.id)),
   });

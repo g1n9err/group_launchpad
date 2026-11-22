@@ -34,7 +34,7 @@ type FormsGateway interface {
 	Publish(ctx context.Context, token, id string) (string, error)
 	CreateDraft(ctx context.Context, token, title, documentTitle string) (id string, rejected bool, err error)
 	FindDraft(ctx context.Context, token, documentTitle string) (id string, err error)
-	EnsureQuestions(ctx context.Context, token, id string, questions []IntakeQuestion) error
+	EnsureQuestions(ctx context.Context, token, id string, questions []IntakeQuestion, appendOnly bool) error
 }
 
 type IntakeFormStore interface {
@@ -43,8 +43,7 @@ type IntakeFormStore interface {
 	GetIntakeForm(context.Context, uuid.UUID) (IntakeForm, error)
 	SaveIntakeResponderURL(context.Context, uuid.UUID, string, string) (string, error)
 	ClaimIntakeForm(context.Context, uuid.UUID, []IntakeQuestion) (IntakeForm, bool, error)
-	// UpdateIntakeQuestions persists an append-only extension of a draft
-	// form's questions; it must refuse published forms.
+	// UpdateIntakeQuestions persists questions synchronized with Google.
 	UpdateIntakeQuestions(context.Context, uuid.UUID, []IntakeQuestion) error
 	ReleaseIntakeForm(context.Context, uuid.UUID) error
 	SaveIntakeFormID(context.Context, uuid.UUID, string) error
@@ -52,10 +51,20 @@ type IntakeFormStore interface {
 }
 
 type FormsService struct {
-	Tokens     GoogleAccessTokenSource
+	Tokens      GoogleAccessTokenSource
+	GroupTokens interface {
+		AccessTokenForGroup(context.Context, uuid.UUID) (string, error)
+	}
 	Gateway    FormsGateway
 	Store      IntakeFormStore
 	Operations ExternalOperationRecorder
+}
+
+func (s *FormsService) accessToken(ctx context.Context, groupID uuid.UUID) (string, error) {
+	if s.GroupTokens != nil {
+		return s.GroupTokens.AccessTokenForGroup(ctx, groupID)
+	}
+	return s.Tokens.AccessToken(ctx)
 }
 
 func (s *FormsService) State(ctx context.Context, groupID uuid.UUID) (IntakeForm, error) {
@@ -67,7 +76,7 @@ func (s *FormsService) Provision(ctx context.Context, groupID uuid.UUID, name st
 	if err != nil {
 		return "", err
 	}
-	token, err := s.Tokens.AccessToken(ctx)
+	token, err := s.accessToken(ctx, groupID)
 	if err != nil {
 		return "", err
 	}
@@ -75,23 +84,15 @@ func (s *FormsService) Provision(ctx context.Context, groupID uuid.UUID, name st
 	if err != nil {
 		return "", err
 	}
-	extended := false
-	if !reflect.DeepEqual(form.Questions, questions) {
+	// Automated launches omit questions and reuse any saved configuration.
+	if input == nil && len(form.Questions) > 0 {
+		questions = form.Questions
+	}
+	changed := !reflect.DeepEqual(form.Questions, questions)
+	if changed {
 		if err := allowQuestionChange(form, questions); err != nil {
 			return "", err
 		}
-		// The form is an unpublished draft: persist the new question set
-		// before touching Google, so a crash mid-way never loses it.
-		if err := s.Store.UpdateIntakeQuestions(ctx, groupID, questions); err != nil {
-			return "", err
-		}
-		form.Questions = questions
-		extended = true
-	}
-	// Fast path: an already-created form with the SAME questions needs no
-	// Google call; an extended draft must continue to append the new items.
-	if form.ID != "" && !extended && (form.Status == "created" || form.Status == "distributed" || form.Status == "closed") {
-		return form.ID, nil
 	}
 
 	id := form.ID
@@ -123,9 +124,14 @@ func (s *FormsService) Provision(ctx context.Context, groupID uuid.UUID, name st
 	}
 
 	started := time.Now()
-	err = s.Gateway.EnsureQuestions(ctx, token, id, questions)
+	err = s.Gateway.EnsureQuestions(ctx, token, id, questions, form.published())
 	if err := s.record(ctx, groupID, "forms.ensure_questions", started, err); err != nil {
 		return "", err
+	}
+	if changed {
+		if err := s.Store.UpdateIntakeQuestions(ctx, groupID, questions); err != nil {
+			return "", err
+		}
 	}
 	if err := s.Store.CompleteIntakeForm(ctx, groupID, id); err != nil {
 		return "", err
@@ -146,7 +152,7 @@ func (s *FormsService) Publish(ctx context.Context, groupID uuid.UUID) (IntakeFo
 		return form, nil
 	}
 
-	token, err := s.Tokens.AccessToken(ctx)
+	token, err := s.accessToken(ctx, groupID)
 	if err != nil {
 		return IntakeForm{}, err
 	}
@@ -175,6 +181,10 @@ func (s *FormsService) record(ctx context.Context, groupID uuid.UUID, operation 
 		op.Error = err.Error()
 	}
 	_ = s.Operations.RecordExternalOperation(ctx, op)
+	var appErr *core.AppError
+	if errors.As(err, &appErr) && appErr.Code == core.CodeConflict {
+		return err
+	}
 	if err != nil {
 		return &core.AppError{Code: core.CodeUpstream, Message: err.Error()}
 	}
@@ -189,15 +199,18 @@ func (s *FormsService) record(ctx context.Context, groupID uuid.UUID, operation 
 //     by question), but changing or removing existing questions would
 //     orphan already-collected responses.
 func allowQuestionChange(form IntakeForm, next []IntakeQuestion) error {
-	published := form.ResponderURL != "" || form.VerifiedSince != nil ||
-		form.Status == "distributed" || form.Status == "closed"
-	if !published {
+	if !form.published() {
 		return nil
 	}
 	if len(next) < len(form.Questions) || !reflect.DeepEqual(next[:len(form.Questions)], form.Questions) {
 		return &core.AppError{Code: core.CodeConflict, Message: "the form was already sent to students: new questions can be added, but existing ones cannot be changed or removed"}
 	}
 	return nil
+}
+
+func (form IntakeForm) published() bool {
+	return form.ResponderURL != "" || form.VerifiedSince != nil ||
+		form.Status == "distributed" || form.Status == "closed"
 }
 
 // ── Mandatory identity questions ───────────────────────────────────────────

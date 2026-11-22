@@ -26,6 +26,7 @@ import (
 	mailgw "launchpad/internal/integrations/mail"
 	slackgw "launchpad/internal/integrations/slack"
 	"launchpad/internal/jobs"
+	"launchpad/internal/secrets"
 	"launchpad/internal/store"
 )
 
@@ -73,32 +74,52 @@ func run() error {
 		slackChecker = slackGateway
 		memberChecker = slackGateway
 	}
+	var slackCipher *secrets.Cipher
+	if cfg.TokenEncryptionKey != "" {
+		slackCipher, err = secrets.New(cfg.TokenEncryptionKey)
+		if err != nil {
+			return err
+		}
+	}
+	var fallbackSlack integrations.SlackGateway
+	if cfg.SlackConfigured() {
+		fallbackSlack = slackgw.NewGateway(cfg.SlackBotToken)
+	}
+	slackResolver := slackgw.NewWorkspaceResolver(repo, slackCipher, fallbackSlack)
+	slackEnabled := cfg.SlackConfigured() || cfg.SlackOAuthConfigured()
+	if slackEnabled {
+		slack.SetGatewayResolver(slackResolver)
+	}
 
 	// Google (Classroom, Drive, Forms share the OAuth token source)
 	auth := google.NewAuthService(cfg, repo, logger)
+	classroomGateway := google.NewClassroomGateway()
 	var classroomSvc *integrations.ClassroomService
 	var driveSvc *integrations.DriveService
 	var formsSvc *integrations.FormsService
 	if auth.Configured() {
-		classroomSvc = &integrations.ClassroomService{Tokens: auth, Gateway: google.NewClassroomGateway(), Store: repo, Operations: repo}
+		classroomSvc = &integrations.ClassroomService{Tokens: auth, Gateway: classroomGateway, Store: repo, Operations: repo}
 		driveSvc = &integrations.DriveService{Tokens: auth, Gateway: google.NewDriveGateway(), Store: repo, Operations: repo}
-		formsSvc = &integrations.FormsService{Tokens: auth, Gateway: google.NewFormsGateway(), Store: repo, Operations: repo}
+		formsSvc = &integrations.FormsService{Tokens: auth, GroupTokens: auth, Gateway: google.NewFormsGateway(), Store: repo, Operations: repo}
 	}
 
 	// ── Register workers ──────────────────────────────────────────────
-	workers := jobs.NewLaunchWorkers(logger, slack, cfg.SlackConfigured(), classroomSvc, driveSvc, formsSvc, groupsSvc, staffEmails, repo, repo, repo)
+	workers := jobs.NewLaunchWorkers(logger, slack, slackEnabled, classroomSvc, driveSvc, formsSvc, groupsSvc, staffEmails, repo, repo, repo)
 
 	// Slack-only launch worker (legacy, still needed for older queue entries)
 	river.AddWorker(workers, &jobs.SlackLaunchWorker{Store: repo, Slack: slack})
 
-	if cfg.SlackConfigured() {
-		slackGateway := slackgw.NewGateway(cfg.SlackBotToken)
-		river.AddWorker(workers, &jobs.AnnouncementWorker{Store: repo, Slack: slackGateway})
+	if slackEnabled {
+		var publisher jobs.AnnouncementPublisher
+		if fallbackSlack != nil {
+			publisher = fallbackSlack.(jobs.AnnouncementPublisher)
+		}
+		river.AddWorker(workers, &jobs.AnnouncementWorker{Store: repo, Slack: publisher, SlackResolver: slackgw.AnnouncementResolver{Workspaces: slackResolver}})
 	}
 
 	river.AddWorker(workers, &jobs.DailyAuditWorker{Groups: repo})
 
-	jobConfig := jobs.Config{WorkerID: cfg.WorkerID(), SlackAnnouncementsEnabled: cfg.SlackConfigured()}
+	jobConfig := jobs.Config{WorkerID: cfg.WorkerID(), SlackAnnouncementsEnabled: slackEnabled}
 
 	var mailer interface {
 		integrations.IntakeMailer
@@ -127,6 +148,17 @@ func run() error {
 	}
 	if mailer != nil {
 		river.AddWorker(workers, &jobs.IntakeDeliveryWorker{Store: repo, Mailer: mailer})
+		river.AddWorker(workers, &jobs.ClassroomJoinDeliveryWorker{
+			Store:  repo,
+			Mailer: mailer,
+			JoinCode: func(ctx context.Context, courseID string) (string, error) {
+				token, err := auth.AccessToken(ctx)
+				if err != nil {
+					return "", err
+				}
+				return classroomGateway.JoinCode(ctx, token, courseID)
+			},
+		})
 		jobConfig.IntakeEmailWorkers = 2
 	}
 	if auditEmailEnabled {
@@ -138,6 +170,9 @@ func run() error {
 	client, err := jobs.NewClient(pool, workers, jobConfig)
 	if err != nil {
 		return err
+	}
+	if mailer != nil && classroomSvc != nil {
+		classroomSvc.QueueJoinEmails = jobs.QueueClassroomJoinEmails(repo, client)
 	}
 
 	if _, err := client.PeriodicJobs().AddSafely(jobs.DailyAuditSchedule()); err != nil {

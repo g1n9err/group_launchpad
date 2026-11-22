@@ -113,6 +113,12 @@ func (f *fakeChannelGateway) InviteUserToChannel(_ context.Context, channelID, u
 		return InviteOutcomeInvited, nil
 	}
 }
+func (f *fakeChannelGateway) RemoveUserFromChannel(_ context.Context, channelID, userID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.members, channelID+"|"+userID)
+	return nil
+}
 
 func (f *fakeChannelGateway) PostMessage(_ context.Context, channelID, text string) (string, error) {
 	f.mu.Lock()

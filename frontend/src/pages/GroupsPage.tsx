@@ -2,7 +2,7 @@
 // functionality (student ingestion, onboarding panel, statuses).
 
 import { useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateGroup, useGroupOnboarding, useAllGroups } from "../lib/queries";
 import { AuthGate } from "../components/AuthGate";
 import { useSettings } from "../i18n";
@@ -12,6 +12,59 @@ import { navigate, useRoute } from "../lib/router";
 import { Card, OnboardingBadge, PageTitle, StatusBadge } from "../components/ui";
 import { IconBack } from "../components/icons";
 import { GroupLaunch } from "../components/GroupLaunch";
+import { GroupRosterEditor } from "../components/GroupRosterEditor";
+import { GroupAnnouncementsPanel } from "../components/GroupAnnouncementsPanel";
+import { apiUrl } from "../lib/api";
+import { getAuthHeader } from "../lib/auth";
+import { useWorkspaceScope } from "../lib/workspaceScope";
+
+function GroupSlackWorkspace({ groupId }: { groupId: string }) {
+  const { t } = useSettings();
+  const queryClient = useQueryClient();
+  const assignment = useQuery({
+    queryKey: ["group-slack-workspace", groupId],
+    queryFn: async () => {
+      const response = await fetch(apiUrl(`/api/groups/${groupId}/slack/workspace`), { headers: getAuthHeader(), cache: "no-store" });
+      if (!response.ok) throw new Error(String(response.status));
+      return (await response.json()) as { workspaceId: string };
+    },
+  });
+  const workspaces = useQuery({
+    queryKey: ["slack-workspaces"],
+    queryFn: async () => {
+      const response = await fetch(apiUrl("/api/integrations/slack/workspaces"), { headers: getAuthHeader(), cache: "no-store" });
+      if (!response.ok) throw new Error(String(response.status));
+      return (await response.json()) as { data: { id: string; teamName: string }[] };
+    },
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function choose(workspaceId: string) {
+    setSaving(true); setError("");
+    try {
+      const response = await fetch(apiUrl(`/api/groups/${groupId}/slack/workspace`), {
+        method: "PUT", headers: { ...getAuthHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+      if (!response.ok) throw new Error("save");
+      await queryClient.invalidateQueries({ queryKey: ["group-slack-workspace", groupId] });
+      await queryClient.invalidateQueries({ queryKey: ["group-slack-workspaces"] });
+    } catch { setError(t("groups.slackWorkspaceSaveFailed")); }
+    finally { setSaving(false); }
+  }
+  if (workspaces.data?.data.length === 0) return null;
+  return <Card className="p-5">
+    <h2 className="text-sm font-semibold text-text">{t("groups.slackWorkspace")}</h2>
+    <p className="mt-1 text-xs text-muted">{t("groups.slackWorkspaceHint")}</p>
+    <select aria-label={t("groups.slackWorkspace")} disabled={saving || workspaces.isPending || assignment.isPending}
+      className="mt-3 min-h-10 w-full max-w-md rounded-md border border-border bg-surface px-3 text-sm text-text"
+      value={assignment.data?.workspaceId ?? ""} onChange={(e) => void choose(e.target.value)}>
+      <option value="">{t("groups.defaultSlackWorkspace")}</option>
+      {(workspaces.data?.data ?? []).map((w) => <option key={w.id} value={w.id}>{w.teamName}</option>)}
+    </select>
+    {error && <p className="mt-2 text-xs text-danger-text">{error}</p>}
+  </Card>;
+}
 
 function CreateGroupForm() {
   const { t } = useSettings();
@@ -54,7 +107,7 @@ function CreateGroupForm() {
     <Card className="p-6">
 
       <form onSubmit={onSubmit}>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
           <div>
             <label htmlFor="name" className="mb-1 block text-sm font-medium text-text">{t("form.name")}</label>
             <input id="name" className={inputClass("name")} value={name} onChange={(e) => setName(e.target.value)} placeholder={t("form.namePlaceholder")} />
@@ -111,19 +164,21 @@ function CreateGroupForm() {
 function GroupsList() {
   const { t, formatDate } = useSettings();
   const { data, isPending, isError } = useAllGroups();
+  const workspaceScope = useWorkspaceScope();
+  const visibleGroups = workspaceScope.filterGroups(data);
 
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between px-6 py-4">
         <h2 className="text-base font-semibold text-text">{t("list.title")}</h2>
-        {data && <span className="text-sm text-muted">{t("list.total", { count: data.length })}</span>}
+        {visibleGroups && <span className="text-sm text-muted">{t("list.total", { count: visibleGroups.length })}</span>}
       </div>
 
       {isPending && <p className="px-6 pb-6 text-sm text-muted">{t("list.loading")}</p>}
       {isError && <p className="px-6 pb-6 text-sm text-danger-text">{t("list.error")}</p>}
-      {data && data.length === 0 && <p className="px-6 pb-6 text-sm text-muted">{t("list.empty")}</p>}
+      {visibleGroups && visibleGroups.length === 0 && <p className="px-6 pb-6 text-sm text-muted">{t("list.empty")}</p>}
 
-      {data && data.length > 0 && (
+      {visibleGroups && visibleGroups.length > 0 && (
         <div className="overflow-x-auto">
           <table className="app-table w-full text-left text-sm">
             <thead>
@@ -132,11 +187,12 @@ function GroupsList() {
                 <th className="px-4 py-2 font-semibold">{t("list.colCourse")}</th>
                 <th className="px-4 py-2 font-semibold">{t("list.colStarts")}</th>
                 <th className="px-4 py-2 font-semibold">{t("list.colStatus")}</th>
+                <th className="px-4 py-2 font-semibold">{t("list.colSlackWorkspace")}</th>
                 <th className="px-4 py-2 font-semibold">{t("list.colCreated")}</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((group) => (
+              {visibleGroups.map((group) => (
                 <tr
                   key={group.id}
                   className="border-t border-border transition-colors hover:bg-surface-muted/60"
@@ -147,6 +203,7 @@ function GroupsList() {
                   <td className="px-4 py-3 text-muted">{group.courseName}</td>
                   <td className="px-4 py-3 text-muted">{group.startDate}</td>
                   <td className="px-4 py-3"><StatusBadge status={group.status} t={t} /></td>
+                  <td className="px-4 py-3 text-muted">{workspaceScope.assignmentByGroup.get(group.id)?.workspaceName ?? t("groups.defaultSlackWorkspace")}</td>
                   <td className="px-4 py-3 text-muted">{formatDate(group.createdAt)}</td>
                 </tr>
               ))}
@@ -160,6 +217,8 @@ function GroupsList() {
 
 function GroupDetails({ groupId }: { groupId: string }) {
   const { t } = useSettings();
+  const [rosterView, setRosterView] = useState<"students" | "staff">("students");
+  const [groupView, setGroupView] = useState<"launch" | "members" | "announcements">("launch");
   const user = useAuthUser();
   const isStaff = user?.role === "admin" || user?.role === "coordinator";
   const isGroupReader = user?.role === "lecturer" || user?.role === "ta";
@@ -200,7 +259,20 @@ function GroupDetails({ groupId }: { groupId: string }) {
         </Card>
       )}
 
-      {isStaff && <GroupLaunch key={groupId} groupId={groupId} />}
+      {isStaff && (
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("groups.details")}>
+          {(["launch", "members", "announcements"] as const).map((view) => (
+            <button key={view} type="button" role="tab" aria-selected={groupView === view}
+              className={`min-h-10 rounded-lg border px-4 text-sm font-semibold transition ${groupView === view ? "border-primary bg-primary text-on-primary" : "border-border bg-surface text-text hover:border-primary"}`}
+              onClick={() => setGroupView(view)}>
+              {t(view === "launch" ? "launch.title" : view === "members" ? "onboarding.membersTitle" : "announcements.title")}
+            </button>
+          ))}
+        </div>
+      )}
+      {isStaff && groupView === "launch" && <GroupLaunch key={groupId} groupId={groupId} />}
+      {isStaff && group && <GroupSlackWorkspace key={groupId} groupId={groupId} />}
+      {group && (isGroupReader || (isStaff && groupView === "announcements")) && <GroupAnnouncementsPanel key={groupId} groupId={groupId} />}
 
       {isGroupReader && (
         <Card className="p-6">
@@ -227,9 +299,23 @@ function GroupDetails({ groupId }: { groupId: string }) {
         </Card>
       )}
 
-      {isStaff && <Card className="p-6">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-text">{t("onboarding.progressTitle")}</h2>
+      {isStaff && groupView === "members" && <Card className="p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-base font-semibold text-text">{t("onboarding.membersTitle")}</h2>
+            <div className="inline-flex rounded-md border border-border p-0.5" role="group" aria-label={t("onboarding.membersTitle")}>
+              {([
+                ["students", "nav.students"],
+                ["staff", "onboarding.teachingStaff"],
+              ] as const).map(([view, label]) => (
+                <button key={view} type="button" aria-pressed={rosterView === view} onClick={() => setRosterView(view)}
+                  className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${rosterView === view
+                    ? "bg-primary text-on-primary" : "text-text hover:bg-surface-muted"}`}>
+                  {t(label)}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             onClick={() => refetch()}
             className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-text transition-colors hover:bg-surface-muted"
@@ -251,7 +337,12 @@ function GroupDetails({ groupId }: { groupId: string }) {
           </div>
         )}
 
-        {data && (
+        {data && group?.status !== "archived" && (
+          <GroupRosterEditor key={rosterView} groupId={groupId} mode={rosterView}
+            staff={data.staff ?? []} students={data.students.map(({ email }) => email)} onSaved={() => void refetch()} />
+        )}
+
+        {data && rosterView === "students" && (
           <>
             <div className="mt-4 grid grid-cols-3 gap-3">
               <div className="rounded-lg bg-surface-muted p-3 text-center">
@@ -307,6 +398,28 @@ function GroupDetails({ groupId }: { groupId: string }) {
             )}
           </>
         )}
+        {data && rosterView === "staff" && (
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {([
+              ["lecturer", "onboarding.lecturer"],
+              ["ta", "onboarding.ta"],
+            ] as const).map(([role, label]) => {
+              const emails = new Set(data.staff?.filter((member) =>
+                member.role === role || (role === "ta" && member.role === "teaching_staff"),
+              ).map(({ email }) => email));
+              return (
+                <section key={role} className="rounded-md border border-border p-3 text-sm">
+                  <h3 className="font-semibold text-text">{t(label)}</h3>
+                  {emails.size > 0 ? (
+                    <ul className="mt-2 space-y-1 text-muted">
+                      {[...emails].map((email) => <li key={email} className="break-all">{email}</li>)}
+                    </ul>
+                  ) : <p className="mt-2 text-muted">{t("onboarding.noStaffRole")}</p>}
+                </section>
+              );
+            })}
+          </div>
+        )}
       </Card>}
     </div>
   );
@@ -321,7 +434,7 @@ export function GroupsPage() {
   if (route.page === "group-details" && route.id) {
     return (
       <AuthGate roles={["admin", "coordinator", "lecturer", "ta"]}>
-        <GroupDetails groupId={route.id} />
+        <GroupDetails key={route.id} groupId={route.id} />
       </AuthGate>
     );
   }
@@ -339,7 +452,7 @@ export function GroupsPage() {
   }
   if (route.page === "groups" && route.id) return (
     <AuthGate roles={["admin", "coordinator", "lecturer", "ta"]}>
-      <GroupDetails groupId={route.id} />
+      <GroupDetails key={route.id} groupId={route.id} />
     </AuthGate>
   );
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"launchpad/internal/core"
 	"launchpad/internal/core/integrations"
 )
 
@@ -110,19 +111,23 @@ type formQuestionItem struct {
 }
 
 type googleForm struct {
-	Revision string             `json:"revisionId"`
-	Items    []formQuestionItem `json:"items"`
+	Revision        string             `json:"revisionId"`
+	Items           []formQuestionItem `json:"items"`
+	PublishSettings struct {
+		PublishState struct {
+			Published bool `json:"isPublished"`
+		} `json:"publishState"`
+	} `json:"publishSettings"`
 }
 
-func (g *FormsGateway) EnsureQuestions(ctx context.Context, token, id string, questions []integrations.IntakeQuestion) error {
+func (g *FormsGateway) EnsureQuestions(ctx context.Context, token, id string, questions []integrations.IntakeQuestion, appendOnly bool) error {
 	endpoint := g.formsURL + "/" + url.PathEscape(id)
 	var form googleForm
 	if _, err := g.request(ctx, token, http.MethodGet, endpoint, nil, &form); err != nil {
 		return err
 	}
 	expected := make([]formQuestionItem, 0, len(questions))
-	requests := make([]map[string]any, 0, len(questions))
-	for i, q := range questions {
+	for _, q := range questions {
 		var item formQuestionItem
 		item.Title = q.Title
 		question := &item.QuestionItem.Question
@@ -137,7 +142,6 @@ func (g *FormsGateway) EnsureQuestions(ctx context.Context, token, id string, qu
 			question.TextQuestion = &formTextQuestion{Paragraph: q.Type == "paragraph"}
 		}
 		expected = append(expected, item)
-		requests = append(requests, map[string]any{"createItem": map[string]any{"item": item, "location": map[string]int{"index": i}}})
 	}
 	if reflect.DeepEqual(form.Items, expected) {
 		return nil
@@ -155,8 +159,11 @@ func (g *FormsGateway) EnsureQuestions(ctx context.Context, token, id string, qu
 			prefix = false
 		}
 	}
-	requests = make([]map[string]any, 0, len(form.Items)+len(expected))
+	requests := make([]map[string]any, 0, len(form.Items)+len(expected))
 	if !prefix {
+		if appendOnly || form.PublishSettings.PublishState.Published {
+			return &core.AppError{Code: core.CodeConflict, Message: "the published Google form has different questions; adding questions would require changing existing items"}
+		}
 		for i := len(form.Items) - 1; i >= 0; i-- { // reverse order keeps earlier indexes valid
 			requests = append(requests, map[string]any{"deleteItem": map[string]any{"location": map[string]int{"index": i}}})
 		}

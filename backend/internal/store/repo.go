@@ -47,11 +47,12 @@ func (r *Repo) Create(ctx context.Context, params groups.CreateParams) (groups.G
 	defer tx.Rollback(ctx) //nolint:errcheck — no-op after commit
 
 	qtx := r.q.WithTx(tx)
-	row, err := qtx.CreateGroup(ctx, gen.CreateGroupParams{
-		Name:       params.Name,
-		CourseName: params.CourseName,
-		StartDate:  params.StartDate,
-	})
+	var owner any
+	if id, ok := core.WorkspaceOwner(ctx); ok { owner = id }
+	var row gen.Group
+	err = tx.QueryRow(ctx, `INSERT INTO groups(name,course_name,start_date,status,workspace_owner_id)
+		VALUES ($1,$2,$3,'draft',$4) RETURNING id,name,course_name,start_date,status,created_at`,
+		params.Name, params.CourseName, params.StartDate, owner).Scan(&row.ID,&row.Name,&row.CourseName,&row.StartDate,&row.Status,&row.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return groups.Group{}, core.DuplicateGroup(params.Name)
@@ -143,19 +144,38 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (groups.Group, error) 
 }
 
 func (r *Repo) List(ctx context.Context, limit, offset int) ([]groups.Group, int, error) {
-	rows, err := r.q.ListGroups(ctx, gen.ListGroupsParams{Limit: int32(limit), Offset: int32(offset)})
+	var rows []gen.Group
+	var total int64
+	var err error
+	if owner, scoped := core.WorkspaceOwner(ctx); scoped {
+		var dbRows pgx.Rows
+		dbRows, err = r.pool.Query(ctx, `SELECT id,name,course_name,start_date,status,created_at FROM groups WHERE workspace_owner_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`, owner, limit, offset)
+		if err == nil {
+			rows, err = pgx.CollectRows(dbRows, func(row pgx.CollectableRow) (gen.Group, error) {
+				var item gen.Group
+				e := row.Scan(&item.ID, &item.Name, &item.CourseName, &item.StartDate, &item.Status, &item.CreatedAt)
+				return item, e
+			})
+		}
+		if err == nil { err = r.pool.QueryRow(ctx, `SELECT count(*) FROM groups WHERE workspace_owner_id=$1`, owner).Scan(&total) }
+	} else {
+		rows, err = r.q.ListGroups(ctx, gen.ListGroupsParams{Limit: int32(limit), Offset: int32(offset)})
+		if err == nil { total, err = r.q.CountGroups(ctx) }
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: list groups: %w", err)
-	}
-	total, err := r.q.CountGroups(ctx)
-	if err != nil {
-		return nil, 0, fmt.Errorf("store: count groups: %w", err)
 	}
 	out := make([]groups.Group, len(rows))
 	for i, row := range rows {
 		out[i] = groupFromRow(row)
 	}
 	return out, int(total), nil
+}
+
+func (r *Repo) GroupOwnedBy(ctx context.Context, groupID, ownerID uuid.UUID) (bool, error) {
+	var owned bool
+	err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM groups WHERE id=$1 AND workspace_owner_id=$2)`, groupID, ownerID).Scan(&owned)
+	return owned, err
 }
 
 // StudentRoster returns the group's student roster in one query.

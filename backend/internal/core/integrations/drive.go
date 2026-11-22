@@ -2,6 +2,8 @@ package integrations
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +22,7 @@ type DriveGateway interface {
 	// Permissions API. role: "writer" (editor) or "reader" (viewer).
 	// Sending to an already-permitted user returns success (idempotent).
 	GrantAccess(ctx context.Context, token, folderID, email, role string) error
+	RevokeAccess(ctx context.Context, token, folderID, email string) error
 }
 
 type DriveFolderStore interface {
@@ -57,7 +60,7 @@ func (s *DriveService) Provision(ctx context.Context, groupID uuid.UUID, groupNa
 			return DriveFolder{ID: resource.ExternalID, Name: name}, nil
 		}
 		if token == "" {
-			token, err = s.Tokens.AccessToken(ctx)
+			token, err = googleTokenForGroup(ctx, s.Tokens, groupID)
 			if err != nil {
 				return DriveFolder{}, err
 			}
@@ -104,6 +107,25 @@ func (s *DriveService) Provision(ctx context.Context, groupID uuid.UUID, groupNa
 	return result, nil
 }
 
+// ExistingFolders reads the registered folders without creating missing ones.
+func (s *DriveService) ExistingFolders(ctx context.Context, groupID uuid.UUID, groupName string) (DriveFolders, bool, error) {
+	root, found, err := s.Store.GetResource(ctx, groupID, driveProvider, "folder", "root")
+	if err != nil || !found || root.Status != ResourceStatusActive || root.ExternalID == "" {
+		return DriveFolders{}, false, err
+	}
+	folders := DriveFolders{Root: DriveFolder{ID: root.ExternalID, Name: groupName}}
+	for _, name := range driveSubfolders {
+		resource, found, err := s.Store.GetResource(ctx, groupID, driveProvider, "folder", "root/"+name)
+		if err != nil {
+			return DriveFolders{}, false, err
+		}
+		if found && resource.Status == ResourceStatusActive && resource.ExternalID != "" {
+			folders.Subfolders = append(folders.Subfolders, DriveFolder{ID: resource.ExternalID, Name: name})
+		}
+	}
+	return folders, true, nil
+}
+
 // DriveAccessRules defines who gets what permission on which folders.
 // Per PRD §4.4: "Configure appropriate access permissions" and "Restricted
 // data is not accessible to unauthorized users."
@@ -135,45 +157,84 @@ var driveStudentAccessible = map[string]bool{
 // ApplyAccessRules grants Drive permissions per the rules after folder
 // creation. Safe to re-run: GrantAccess is idempotent on the Drive API.
 func (s *DriveService) ApplyAccessRules(ctx context.Context, groupID uuid.UUID, folders DriveFolders, rules DriveAccessRules) error {
-	token, err := s.Tokens.AccessToken(ctx)
+	token, err := googleTokenForGroup(ctx, s.Tokens, groupID)
 	if err != nil {
 		return err
 	}
 
-	// Staff: editor on root + ALL subfolders (including Student Data).
-	for _, email := range rules.StaffEmails {
+	var firstFailure error
+	var failures int
+	grant := func(folderID, email, role string) {
+		if ctx.Err() != nil {
+			return
+		}
 		started := time.Now()
-		err := s.Gateway.GrantAccess(ctx, token, folders.Root.ID, email, "writer")
-		s.record(ctx, groupID, "drive.grant_access", started, err)
+		err := s.Gateway.GrantAccess(ctx, token, folderID, email, role)
+		_ = s.record(ctx, groupID, "drive.grant_access", started, err)
 		if err != nil {
-			return err
-		}
-		for _, sub := range folders.Subfolders {
-			started := time.Now()
-			err := s.Gateway.GrantAccess(ctx, token, sub.ID, email, "writer")
-			s.record(ctx, groupID, "drive.grant_access", started, err)
-			if err != nil {
-				return err
+			failures++
+			if firstFailure == nil {
+				firstFailure = err
 			}
 		}
 	}
 
-	// Students: reader on accessible folders ONLY — never Student Data.
-	for _, email := range rules.StudentEmails {
+	seen := make(map[string]bool, len(rules.StaffEmails)+len(rules.StudentEmails))
+	// Staff get editor access to the root and every subfolder.
+	for _, raw := range rules.StaffEmails {
+		email := NormalizeEmail(raw)
+		if email == "" || seen[email] {
+			continue
+		}
+		seen[email] = true
+		grant(folders.Root.ID, email, "writer")
 		for _, sub := range folders.Subfolders {
-			if !driveStudentAccessible[sub.Name] {
-				continue // Student Data: skip
-			}
-			started := time.Now()
-			err := s.Gateway.GrantAccess(ctx, token, sub.ID, email, "reader")
-			s.record(ctx, groupID, "drive.grant_access", started, err)
-			if err != nil {
-				return err
+			grant(sub.ID, email, "writer")
+		}
+	}
+
+	// Students get reader access on shared subfolders. Sharing the root
+	// would let its permissions propagate to the private Student Data folder.
+	for _, raw := range rules.StudentEmails {
+		email := NormalizeEmail(raw)
+		if email == "" || seen[email] {
+			continue
+		}
+		seen[email] = true
+		for _, sub := range folders.Subfolders {
+			if driveStudentAccessible[sub.Name] {
+				grant(sub.ID, email, "reader")
 			}
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if firstFailure != nil {
+		return fmt.Errorf("%d Drive permission grants failed (first error: %w)", failures, firstFailure)
+	}
 	return nil
+}
+
+// RevokeAccess removes direct permissions for a former group member from the
+// registered folder tree. Inherited grants are removed at their parent folder.
+func (s *DriveService) RevokeAccess(ctx context.Context, groupID uuid.UUID, folders DriveFolders, email string) error {
+	token, err := googleTokenForGroup(ctx, s.Tokens, groupID)
+	if err != nil {
+		return err
+	}
+	all := append([]DriveFolder{folders.Root}, folders.Subfolders...)
+	var failures []error
+	for _, folder := range all {
+		started := time.Now()
+		err := s.Gateway.RevokeAccess(ctx, token, folder.ID, NormalizeEmail(email))
+		_ = s.record(ctx, groupID, "drive.revoke_access", started, err)
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (s *DriveService) record(ctx context.Context, groupID uuid.UUID, operation string, started time.Time, err error) error {

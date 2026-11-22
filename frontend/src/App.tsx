@@ -8,6 +8,7 @@ import { AutomationPage } from "./pages/AutomationPage";
 import { AnnouncementsPage } from "./pages/AnnouncementsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
+import { SignupPage } from "./pages/SignupPage";
 import { AccountPage } from "./pages/AccountPage";
 import { HomePage } from "./pages/HomePage";
 import { useRoute } from "./lib/router";
@@ -23,6 +24,7 @@ export default function App() {
   const { t } = useSettings();
 
   if (route.page === "login") return <LoginPage />;
+  if (route.page === "signup") return <SignupPage />;
   if (route.page === "home") return <AppShell><HomePage /></AppShell>;
   if (route.page === "account") return <AppShell><AccountPage /></AppShell>;
 

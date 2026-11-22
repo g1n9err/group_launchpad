@@ -52,3 +52,33 @@ func TestDriveRecoversExistingFolderByReservedID(t *testing.T) {
 		}
 	}
 }
+
+func TestDriveRevokeDeletesOnlyDirectMatchingPermission(t *testing.T) {
+	var deleted atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Error("missing token")
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/files/folder/permissions":
+			if r.URL.Query().Get("fields") == "" {
+				t.Error("permissions fields were not requested")
+			}
+			_, _ = w.Write([]byte(`{"permissions":[{"id":"direct","emailAddress":"remove@example.test","permissionDetails":[{"inherited":false}]},{"id":"inherited","emailAddress":"remove@example.test","permissionDetails":[{"inherited":true}]},{"id":"other","emailAddress":"keep@example.test","permissionDetails":[{"inherited":false}]}]}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/files/folder/permissions/direct":
+			deleted.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	gateway := &DriveGateway{filesURL: server.URL + "/files", client: server.Client()}
+	if err := gateway.RevokeAccess(t.Context(), "token", "folder", "remove@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if deleted.Load() != 1 {
+		t.Fatalf("deleted %d permissions, want only the direct permission", deleted.Load())
+	}
+}

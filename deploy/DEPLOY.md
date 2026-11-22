@@ -24,10 +24,10 @@ cp deploy/env.production.example deploy/.env.production
 ```bash
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d postgres
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production \
-  exec postgres pg_dump -U launchpad -Fc launchpad > backup-$(date +%F).dump
+  exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > backup-$(date +%F).dump
 ```
 
-## 3. Մեկնարկ (միգրացիաները կիրառվում են բուտի ժամանակ՝ մինչև v16)
+## 3. Մեկնարկ (միգրացիաները կիրառվում են բուտի ժամանակ՝ մինչև v19)
 
 ```bash
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production \
@@ -35,7 +35,7 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.producti
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production \
   exec api wget -qO- http://localhost:8080/readyz   # {"status":"ready"}
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production \
-  exec postgres psql -U launchpad -d launchpad -tAc "SELECT version FROM schema_migrations;"  # 16
+  exec postgres psql -U launchpad -d launchpad -tAc "SELECT version FROM schema_migrations;"  # 19
 ```
 
 Այլընտրանք՝ միգրացիան առանձին, բուտից առաջ (պահանջում է Go toolchain կամ
@@ -45,8 +45,8 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.producti
 
 1. Բրաուզերով բացիր `https://<domain>/` → «Մուտք գործել» → `ADMIN_EMAIL` +
    `ADMIN_INITIAL_PASSWORD` (bootstrap-ը ստեղծում է admin-ը միայն եթե ոչ մի admin չկա)։
-2. Նույն սեսիայով ստեղծիր քո մշտական հաշիվները (օր. coordinator)` 
-   `POST /api/admin/users` (Account → կառավարում, կամ curl)։
+2. Admin-ի session token-ով ստեղծիր մշտական հաշիվները (օր. coordinator)՝
+   `POST /api/admin/users` հարցումով։
 3. **Delete** `ADMIN_EMAIL`/`ADMIN_INITIAL_PASSWORD` տողերը `.env.production`-ից և
    `docker compose ... --profile full up -d` → api կոնտեյները վերաստեղծվում է առանց դրանց։
 
@@ -57,7 +57,8 @@ API-ն լսում է միայն `127.0.0.1:8080`։ Caddy-ի նվազագույն
 ```
 launchpad.example.am {
     encode zstd gzip
-    handle /api/* {
+    @launchpad_api path /api/* /health /readyz
+    handle @launchpad_api {
         reverse_proxy 127.0.0.1:8080
     }
     handle {
@@ -81,14 +82,23 @@ listener-ը (8081) բաց արա միայն թունելով/proxy-ով՝ signin
 
 ## 6. Ինտեգրումներ (երբ որոշես միացնել)
 
-- Slack. `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` (Slack app-ի կարգավորումներից)։
+- Slack. Մի քանի workspace միացնելու համար Slack App-ում միացրու OAuth v2-ը և սահմանիր
+  `SLACK_OAUTH_CLIENT_ID/SECRET`, `PUBLIC_API_BASE_URL` և `TOKEN_ENCRYPTION_KEY`։
+  Callback URI-ն ավտոմատ կազմվում է որպես
+  `${PUBLIC_API_BASE_URL}/api/integrations/slack/callback`։ Այդ ճշգրիտ HTTPS URI-ն
+  գրանցիր Slack App-ի OAuth & Permissions էջում։ Անհրաժեշտության դեպքում ամբողջ URI-ն
+  կարող ես ուղղակի տալ `SLACK_OAUTH_REDIRECT_URI`-ով։ Հին մեկ workspace-ի
+  տեղակայման համար `SLACK_BOT_TOKEN`-ը շարունակում է աշխատել։
 - Google. `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_REDIRECT_URL`
   (`https://<domain>/api/integrations/google/callback`), `TOKEN_ENCRYPTION_KEY`։
+  Կարելի է միացնել մի քանի Google հաշիվ, ապա Integration էջում Google հաշիվը
+  կապել համապատասխան Slack workspace-ին։ Խմբի համար ընտրված Slack workspace-ը
+  կօգտագործվի նաև intake Form-ի համար։
 - Լրացնելուց հետո` `--profile full up -d` → Integration էջից Google Connect։
 
 ## 7. Ծխափորձ տեղակայումից հետո
 
-- `/health`, `/readyz` → 200
+- `/health`, `/readyz` → HTTP 200 և API-ի JSON պատասխան։
 - Մուտք էկրանից, խմբի ստեղծում, launch (Slack/Google-ը միացված են՝ իրական
   ռեսուրսներ կստեղծվեն. նախ տվյալները ստուգիր), notification-ներ, մեկ աուդիտ
 - Worker-ի լոգերում՝ «river worker started»
@@ -96,11 +106,19 @@ listener-ը (8081) բաց արա միայն թունելով/proxy-ով՝ signin
 ## 8. Rollback
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production \
-  --profile full down            # կանգնեցնել
-docker compose ... exec postgres pg_restore -U launchpad -d launchpad --clean backup-<date>.dump
-git checkout <նախորդ tag/main commit> && docker compose ... up -d --build
+compose=(docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production --profile full)
+restore_db="launchpad_restore_$(date +%Y%m%d%H%M%S)"
+"${compose[@]}" stop api worker
+"${compose[@]}" exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" -T template0 "$1"' sh "$restore_db" &&
+  "${compose[@]}" exec -T postgres sh -c \
+    'pg_restore -U "$POSTGRES_USER" -d "$1" --single-transaction' sh "$restore_db" \
+    < backup-YYYY-MM-DD.dump
 ```
+
+Restore-ը հաջող ավարտելուց հետո `deploy/.env.production`-ում `POSTGRES_DB`-ը
+դարձրու `$restore_db`-ի արժեքը։ Checkout արա backup-ին համապատասխանող release-ը,
+գործարկիր `"${compose[@]}" up -d --build` և հրապարակիր նույն release-ի frontend
+build-ը։ Հին բազան մնում է նույն PostgreSQL volume-ում։
 
 Միգրացիաների հետքայլ՝ `cd backend && go run ./cmd/migrate down 1` (փուլ առ փուլ,
 0016-ի down-ը կջնջի միայն auth աղյուսակները)։

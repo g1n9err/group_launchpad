@@ -119,6 +119,84 @@ type SlackWorkspace struct {
 	BotUserID string // the bot's own Slack user ID (classifies bot joins)
 }
 
+// SlackWorkspaceConnection is safe workspace metadata for the coordinator UI.
+// Credentials are deliberately never included in this projection.
+type SlackWorkspaceConnection struct {
+	ID                 uuid.UUID  `json:"id"`
+	TeamID             string     `json:"teamId"`
+	TeamName           string     `json:"teamName"`
+	BotUserID          string     `json:"botUserId"`
+	Status             string     `json:"status"`
+	Scopes             []string   `json:"scopes"`
+	ConnectedAt        time.Time  `json:"connectedAt"`
+	GoogleAccountID    *uuid.UUID `json:"googleAccountId,omitempty"`
+	GoogleAccountEmail string     `json:"googleAccountEmail,omitempty"`
+}
+
+// SlackWorkspaceCredential is the encrypted bot credential used by the
+// runtime gateway resolver. Token material is never serialized to clients.
+type SlackWorkspaceCredential struct {
+	SlackWorkspaceConnection
+	TokenEncrypted string
+	KeyID          string
+}
+
+type GroupSlackWorkspaceAssignment struct {
+	GroupID       uuid.UUID  `json:"groupId"`
+	WorkspaceID   *uuid.UUID `json:"workspaceId,omitempty"`
+	WorkspaceName string     `json:"workspaceName"`
+}
+
+// SlackWorkspaceRepository persists installs and assigns one workspace to a
+// group. A nil group assignment is reserved for the legacy env-token install.
+type SlackWorkspaceRepository interface {
+	CreateSlackOAuthState(context.Context, string, time.Time) error
+	ConsumeSlackOAuthState(context.Context, string) error
+	ListSlackWorkspaces(context.Context) ([]SlackWorkspaceConnection, error)
+	SaveSlackWorkspace(context.Context, SlackWorkspace, []string, string, string) (SlackWorkspaceConnection, error)
+	SlackWorkspaceCredential(context.Context, uuid.UUID) (SlackWorkspaceCredential, error)
+	GroupSlackWorkspace(context.Context, uuid.UUID) (uuid.UUID, bool, error)
+	SetGroupSlackWorkspace(context.Context, uuid.UUID, uuid.UUID) error
+	ListGroupSlackWorkspaceAssignments(context.Context) ([]GroupSlackWorkspaceAssignment, error)
+	SetSlackWorkspaceGoogleAccount(context.Context, uuid.UUID, uuid.UUID) error
+}
+
+// SlackWorkspaceStateOwnerRepository carries the coordinator owner through
+// Slack's unauthenticated redirect callback using the single-use OAuth state.
+type SlackWorkspaceStateOwnerRepository interface {
+	ConsumeSlackOAuthStateOwner(context.Context, string) (uuid.UUID, error)
+}
+
+type SlackInstallBundle struct {
+	Workspace SlackWorkspace
+	BotToken  string
+	Scopes    []string
+}
+
+type SlackOAuthGateway interface {
+	AuthCodeURL(state string) string
+	ExchangeOAuth(context.Context, string) (SlackInstallBundle, error)
+}
+
+type GoogleWorkspaceConnection struct {
+	ID           uuid.UUID `json:"id"`
+	AccountEmail string    `json:"accountEmail"`
+	Status       string    `json:"status"`
+	Scopes       []string  `json:"scopes"`
+}
+
+type GoogleWorkspaceCredential struct {
+	GoogleWorkspaceConnection
+	RefreshTokenEncrypted string
+	KeyID                 string
+}
+
+type GoogleWorkspaceRepository interface {
+	ListGoogleWorkspaces(context.Context) ([]GoogleWorkspaceConnection, error)
+	GoogleWorkspaceCredential(context.Context, uuid.UUID) (GoogleWorkspaceCredential, error)
+	GroupGoogleWorkspace(context.Context, uuid.UUID) (uuid.UUID, bool, error)
+}
+
 // SlackEventStatus values for slack_events.process_status.
 const (
 	EventStatusPending    = "pending"
@@ -216,10 +294,15 @@ type SlackGateway interface {
 	// InviteUserToChannel idempotently invites one user to one channel —
 	// already_in is returned as InviteOutcomeAlreadyMember, not an error.
 	InviteUserToChannel(ctx context.Context, channelID, userID string) (InviteOutcome, error)
+	RemoveUserFromChannel(ctx context.Context, channelID, userID string) error
 
 	// PostMessage publishes one message and returns its timestamp (used as
 	// the external resource ID for welcome-message dedup).
 	PostMessage(ctx context.Context, channelID, text string) (messageTS string, err error)
+}
+
+type SlackTeamGatewayResolver interface {
+	ForTeam(context.Context, string) (SlackGateway, error)
 }
 
 // SlackResourceRepository persists the per-group idempotency registry
@@ -235,8 +318,8 @@ type SlackResourceRepository interface {
 	UpdateResourceResult(ctx context.Context, groupID uuid.UUID, r GroupResource) error
 }
 
-// SlackRepository is the persistence port for the Slack connection (impl:
-// internal/store). The bot token is NEVER persisted — only workspace metadata.
+// SlackRepository persists Slack connection metadata. Bot tokens are stored
+// only in encrypted integration credential rows.
 type SlackRepository interface {
 	// UpsertSlackConnection upserts provider='slack' with account_identifier
 	// = team_id, status 'connected', and the bot's Slack user ID; returns the
@@ -312,4 +395,8 @@ type GoogleAuthRepository interface {
 	GoogleConnection(ctx context.Context) (StoredGoogleConnection, error)
 	// MarkGoogleError flags the connection as errored (refresh rejected).
 	MarkGoogleError(ctx context.Context) error
+}
+
+type GoogleWorkspaceStateOwnerRepository interface {
+	ConsumeWorkspaceState(context.Context, string) (verifierEnc string, ownerID uuid.UUID, err error)
 }

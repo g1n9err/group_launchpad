@@ -7,6 +7,7 @@ import { AuditNotifications } from "../components/AuditNotifications";
 import { DashboardAnnouncements } from "../components/DashboardAnnouncements";
 import { AuthGate } from "../components/AuthGate";
 import { IconAutomation, IconBack, IconGroups, IconOverview, IconStudents } from "../components/icons";
+import { useWorkspaceScope } from "../lib/workspaceScope";
 
 const launchStages = [
   { key: "attention", color: "bg-warn-text", label: "overview.needsAttention" },
@@ -16,6 +17,8 @@ const launchStages = [
 ] as const;
 
 type LaunchStage = (typeof launchStages)[number]["key"];
+type OverviewSection = "launch" | "audit" | "announcements";
+type AnnouncementFilter = "upcoming" | "published" | "failed";
 
 function launchStage(status: LaunchStage | "failed" | "partially_failed" | "archived"): LaunchStage | undefined {
   if (status === "failed" || status === "partially_failed") return "attention";
@@ -33,24 +36,28 @@ export function OverviewPage() {
 function OverviewContent() {
   const { t, formatNumber } = useSettings();
   const groups = useAllGroups();
+  const workspaceScope = useWorkspaceScope();
+  const visibleGroups = workspaceScope.filterGroups(groups.data);
   const google = useGoogleStatus();
   const slack = useSlackStatus();
   const [stageFilter, setStageFilter] = useState<LaunchStage>();
+  const [section, setSection] = useState<OverviewSection>("launch");
+  const [announcementFilter, setAnnouncementFilter] = useState<AnnouncementFilter>("upcoming");
   const onboarding = useQueries({
-    queries: (groups.data ?? []).map((group) => groupOnboardingOptions(group.id)),
+    queries: (visibleGroups ?? []).map((group) => groupOnboardingOptions(group.id)),
   });
   const onboardingFailed = groups.isError || onboarding.some((report) => report.isError);
   const onboardingPending = groups.isPending || onboarding.some((report) => report.isPending);
   const totalStudents = onboarding.reduce((total, report) => total + (report.data?.summary.expectedCount ?? 0), 0);
   const joinedStudents = onboarding.reduce((total, report) => total + (report.data?.summary.joinedCount ?? 0), 0);
-  const activeGroups = groups.data?.filter((group) => group.status !== "draft" && group.status !== "archived");
+  const activeGroups = visibleGroups?.filter((group) => group.status !== "draft" && group.status !== "archived");
   const stages = launchStages.map((stage) => ({
-    ...stage, count: groups.data?.filter((group) => launchStage(group.status) === stage.key).length ?? 0,
+    ...stage, count: visibleGroups?.filter((group) => launchStage(group.status) === stage.key).length ?? 0,
   }));
   const displayStages = stages.filter(({ count }) => count > 0);
   const filter = displayStages.some(({ key }) => key === stageFilter) ? stageFilter : undefined;
   const attentionCount = stages[0].count;
-  const recentGroups = groups.data?.filter((group) => {
+  const recentGroups = visibleGroups?.filter((group) => {
     const stage = launchStage(group.status);
     return stage && (!filter || stage === filter);
   }).sort((a, b) => {
@@ -68,6 +75,38 @@ function OverviewContent() {
         <a href="#/groups/new" className="app-action">{t("form.title")} <IconBack className="h-4 w-4 rotate-180" /></a>
       </div>
 
+      <Card className="flex flex-wrap items-center justify-between gap-4 p-4">
+        <div><h2 className="text-sm font-semibold text-text">{t("workspace.selector")}</h2>
+          <p className="mt-1 text-xs text-muted">{t("workspace.scopeHint")}</p></div>
+        <div className="flex flex-wrap items-center gap-3">
+          {workspaceScope.workspacesFailed ? (
+            <a href="#/integrations" className="rounded-full border border-border bg-warn-bg px-3 py-1 text-xs font-semibold text-warn-text">
+              {t("workspace.loadFailed")}
+            </a>
+          ) : (
+            <span className="rounded-full border border-border bg-success-bg px-3 py-1 text-xs font-semibold text-success-text" role="status">
+              {t("integrations.connectedSlackWorkspaces", { count: workspaceScope.workspacesPending ? "…" : workspaceScope.workspaces.length })}
+            </span>
+          )}
+          <select aria-label={t("workspace.selector")} className="min-h-10 min-w-64 rounded-md border border-border bg-surface px-3 text-sm text-text"
+            value={workspaceScope.selectedWorkspaceId} disabled={workspaceScope.workspacesPending || workspaceScope.assignmentsPending}
+            onChange={(event) => workspaceScope.setSelectedWorkspaceId(event.target.value)}>
+            <option value="">{t("workspace.all")}</option>
+            <option value="__default__">{t("workspace.default")}</option>
+            {workspaceScope.workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.teamName}</option>)}
+          </select>
+        </div>
+      </Card>
+
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("overview.sections")}>
+        {(["launch", "audit", "announcements"] as const).map((key) => (
+          <button key={key} type="button" role="tab" aria-selected={section === key}
+            className={`min-h-10 rounded-lg border px-4 text-sm font-semibold transition ${section === key ? "border-primary bg-primary text-on-primary" : "border-border bg-surface text-text hover:border-primary"}`}
+            onClick={() => setSection(key)}>{t(`overview.section.${key}`)}</button>
+        ))}
+      </div>
+
+      {section === "launch" && <>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card className="p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -149,7 +188,7 @@ function OverviewContent() {
       </div>
 
       <div className="dashboard-metrics grid grid-cols-2 gap-px xl:grid-cols-4">
-        <StatCard icon={<IconGroups />} label={t("overview.totalGroups")} value={groups.data ? formatNumber(groups.data.length) : "—"} />
+        <StatCard icon={<IconGroups />} label={t("overview.totalGroups")} value={visibleGroups ? formatNumber(visibleGroups.length) : "—"} />
         <StatCard icon={<IconStudents />} label={t("overview.totalStudents")} value={rosterReady ? formatNumber(totalStudents) : "—"} />
         <StatCard icon={<IconAutomation />} label={t("overview.activeGroups")} value={activeGroups ? formatNumber(activeGroups.length) : "—"} />
         <StatCard
@@ -161,13 +200,24 @@ function OverviewContent() {
             style={{ background: `conic-gradient(var(--primary) 0 ${Math.min(percent, 100)}%, var(--border) 0)` }} />}
         />
       </div>
+      </>}
 
-      <AuditNotifications>
-        {(authorization, onUnauthorized, reload) => groups.data && (
-          <DashboardAnnouncements groups={groups.data} authorization={authorization}
-            onUnauthorized={onUnauthorized} reload={reload} />
-        )}
-      </AuditNotifications>
+      {section === "audit" && <AuditNotifications />}
+      {section === "announcements" && <>
+        <div className="flex flex-wrap gap-2 border-b border-border pb-2" role="tablist" aria-label={t("announcements.filter")}>
+          {(["upcoming", "published", "failed"] as const).map((key) => (
+            <button key={key} type="button" role="tab" aria-selected={announcementFilter === key}
+              className={`min-h-10 border-b-2 px-4 text-sm font-semibold transition ${announcementFilter === key ? "border-primary text-primary" : "border-transparent text-muted hover:border-border hover:text-text"}`}
+              onClick={() => setAnnouncementFilter(key)}>{t(`announcements.filter.${key}`)}</button>
+          ))}
+        </div>
+        <AuditNotifications key="announcements" loadNotifications={false} showFeed={false}>
+          {(authorization, onUnauthorized, reload) => visibleGroups && (
+            <DashboardAnnouncements groups={visibleGroups} authorization={authorization}
+              onUnauthorized={onUnauthorized} reload={reload} filter={announcementFilter} />
+          )}
+        </AuditNotifications>
+      </>}
     </div>
   );
 }

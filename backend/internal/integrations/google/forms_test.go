@@ -3,12 +3,14 @@ package google
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"launchpad/internal/core"
 	"launchpad/internal/core/integrations"
 )
 
@@ -59,7 +61,7 @@ func TestGoogleFormsCreatesUnpublishedDraftAndResumesQuestions(t *testing.T) {
 		{Title: "Time", Type: "single_choice", Options: []string{"Morning", "Evening"}},
 	}
 	for range 2 {
-		if err := gateway.EnsureQuestions(t.Context(), "token", id, questions); err != nil {
+		if err := gateway.EnsureQuestions(t.Context(), "token", id, questions, false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -132,7 +134,7 @@ func TestEnsureQuestionsAppendsMissingTail(t *testing.T) {
 		{Title: "Full name", Type: "text", Required: true},
 		{Title: "Email address", Type: "text", Required: true},
 		{Title: "Phone", Type: "text"},
-	})
+	}, true)
 	if err != nil {
 		t.Fatalf("append: %v", err)
 	}
@@ -166,7 +168,7 @@ func TestEnsureQuestionsRebuildsDraftFromScratch(t *testing.T) {
 		{Title: "Full name", Type: "text", Required: true},
 		{Title: "Email address", Type: "text", Required: true},
 		{Title: "City", Type: "text"},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
@@ -182,5 +184,38 @@ func TestEnsureQuestionsRebuildsDraftFromScratch(t *testing.T) {
 	}
 	if deletes != 1 || creates != 3 {
 		t.Fatalf("requests: %d deletes, %d creates; want 1/3 (delete old, create new set)", deletes, creates)
+	}
+}
+
+func TestEnsureQuestionsPreservesPublishedItemsOnMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		appendOnly bool
+		published  bool
+	}{
+		{name: "saved publication", appendOnly: true},
+		{name: "Google publication", published: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected Google write: %s %s", r.Method, r.URL)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				form := googleForm{Revision: "r1", Items: []formQuestionItem{{Title: "Existing question"}}}
+				form.PublishSettings.PublishState.Published = tc.published
+				_ = json.NewEncoder(w).Encode(form)
+			}))
+			defer srv.Close()
+			gw := &FormsGateway{formsURL: srv.URL, client: srv.Client()}
+			err := gw.EnsureQuestions(t.Context(), "tok", "form1", []integrations.IntakeQuestion{
+				{Title: "Different question", Type: "text"},
+			}, tc.appendOnly)
+			var appErr *core.AppError
+			if !errors.As(err, &appErr) || appErr.Code != core.CodeConflict {
+				t.Fatalf("EnsureQuestions error = %v, want conflict", err)
+			}
+		})
 	}
 }

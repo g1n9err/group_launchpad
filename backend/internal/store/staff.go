@@ -18,7 +18,7 @@ import (
 
 func (r *Repo) ListPredefinedStaff(ctx context.Context) ([]transport.PredefinedStaffRow, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, email, full_name, created_at FROM predefined_staff ORDER BY created_at, id`)
+		`SELECT id, email, full_name, created_at FROM predefined_staff WHERE ($1::uuid IS NULL OR workspace_owner_id=$1) ORDER BY created_at, id`, nullableOwnerFromContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("store: list predefined staff: %w", err)
 	}
@@ -37,9 +37,9 @@ func (r *Repo) ListPredefinedStaff(ctx context.Context) ([]transport.PredefinedS
 func (r *Repo) CreatePredefinedStaff(ctx context.Context, email, fullName string) (transport.PredefinedStaffRow, error) {
 	var s transport.PredefinedStaffRow
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO predefined_staff (email, full_name) VALUES ($1, $2)
+		`INSERT INTO predefined_staff (email, full_name, workspace_owner_id) VALUES ($1, $2, $3)
 		 RETURNING id, email, full_name, created_at`,
-		email, fullName).Scan(&s.ID, &s.Email, &s.FullName, &s.CreatedAt)
+		email, fullName, nullableOwnerFromContext(ctx)).Scan(&s.ID, &s.Email, &s.FullName, &s.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return transport.PredefinedStaffRow{}, &core.AppError{Code: core.CodeConflict, Message: "this staff member is already predefined"}
@@ -50,7 +50,7 @@ func (r *Repo) CreatePredefinedStaff(ctx context.Context, email, fullName string
 }
 
 func (r *Repo) DeletePredefinedStaff(ctx context.Context, id uuid.UUID) (bool, error) {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM predefined_staff WHERE id = $1`, id)
+	tag, err := r.pool.Exec(ctx, `DELETE FROM predefined_staff WHERE id = $1 AND ($2::uuid IS NULL OR workspace_owner_id=$2)`, id, nullableOwnerFromContext(ctx))
 	if err != nil {
 		return false, fmt.Errorf("store: delete predefined staff: %w", err)
 	}

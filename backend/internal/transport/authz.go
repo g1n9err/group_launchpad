@@ -53,6 +53,12 @@ func errForbidden() error {
 	return &core.AppError{Code: core.CodeForbidden, Message: "insufficient permissions for this operation"}
 }
 
+func setWorkspaceOwner(c echo.Context, id identity) {
+	if id.Role == auth.RoleCoordinator && id.UserID != uuid.Nil {
+		c.SetRequest(c.Request().WithContext(core.WithWorkspaceOwner(c.Request().Context(), id.UserID)))
+	}
+}
+
 // resolveIdentity maps the request's credentials to an identity, or anonymous.
 // A malformed/expired/revoked Bearer token is a hard 401 — it never degrades
 // to anonymous (fail closed).
@@ -71,6 +77,11 @@ func (h *Handlers) resolveIdentity(c echo.Context) (identity, error) {
 	}
 	username, _, ok := req.BasicAuth()
 	if ok {
+		// The legacy shared Basic account has no owner ID and therefore cannot
+		// be safely scoped once account-based workspaces are enabled.
+		if h.auth != nil {
+			return anonymous, errUnauthorized(c)
+		}
 		if username != coordinatorUsername {
 			return anonymous, errUnauthorized(c)
 		}
@@ -97,6 +108,7 @@ func (h *Handlers) requireStaff(c echo.Context) (identity, error) {
 	if id.Role != auth.RoleCoordinator && id.Role != auth.RoleAdmin {
 		return anonymous, errForbidden()
 	}
+	setWorkspaceOwner(c, id)
 	return id, nil
 }
 
@@ -125,6 +137,19 @@ func (h *Handlers) requireGroupRead(c echo.Context, groupID uuid.UUID) (identity
 	}
 	switch id.Role {
 	case auth.RoleCoordinator, auth.RoleAdmin:
+		if id.Role == auth.RoleCoordinator && id.UserID != uuid.Nil {
+			if h.groupOwner == nil {
+				return anonymous, errForbidden()
+			}
+			owned, err := h.groupOwner.GroupOwnedBy(c.Request().Context(), groupID, id.UserID)
+			if err != nil {
+				return anonymous, &core.AppError{Code: core.CodeInternal, Message: "group ownership could not be verified"}
+			}
+			if !owned {
+				return anonymous, errForbidden()
+			}
+		}
+		setWorkspaceOwner(c, id)
 		return id, nil
 	case auth.RoleLecturer, auth.RoleTA:
 		if h.membership == nil {
@@ -158,6 +183,19 @@ func (h *Handlers) requireGroupWrite(c echo.Context, groupID uuid.UUID) (identit
 	if id.Role != auth.RoleCoordinator && id.Role != auth.RoleAdmin {
 		return anonymous, errForbidden()
 	}
+	if id.Role == auth.RoleCoordinator && id.UserID != uuid.Nil {
+		if h.groupOwner == nil {
+			return anonymous, errForbidden()
+		}
+		owned, err := h.groupOwner.GroupOwnedBy(c.Request().Context(), groupID, id.UserID)
+		if err != nil {
+			return anonymous, &core.AppError{Code: core.CodeInternal, Message: "group ownership could not be verified"}
+		}
+		if !owned {
+			return anonymous, errForbidden()
+		}
+	}
+	setWorkspaceOwner(c, id)
 	return id, nil
 }
 

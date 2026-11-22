@@ -46,6 +46,7 @@ func (h *Handlers) ListGroups(c echo.Context, params gen.ListGroupsParams) error
 	}
 	switch id.Role {
 	case auth.RoleCoordinator, auth.RoleAdmin:
+		setWorkspaceOwner(c, id)
 		items, total, err := h.groups.List(c.Request().Context(), limitOf(params.Limit), offsetOf(params.Offset))
 		if err != nil {
 			return err
@@ -129,16 +130,27 @@ func (h *Handlers) GetGroup(c echo.Context, groupId gen.GroupId) error {
 	return c.JSON(http.StatusOK, toAPIGroup(g))
 }
 
+type GroupStaffReader interface {
+	GroupStaff(context.Context, uuid.UUID) ([]gen.GroupOnboardingStaff, error)
+}
+
 // GetGroupOnboarding GET /api/groups/{groupId}/onboarding — exposes student
 // names and emails (PRD 4.6): coordinator/admin only. Lecturers and TAs do
 // not receive roster access (PRD §9.2 restricted student data).
 func (h *Handlers) GetGroupOnboarding(c echo.Context, groupId gen.GroupId) error {
-	if _, err := h.requireStaff(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupId)); err != nil {
 		return err
 	}
 	report, err := h.groups.Onboarding(c.Request().Context(), groupId.String())
 	if err != nil {
 		return err
+	}
+	staff := []gen.GroupOnboardingStaff{}
+	if h.groupStaffReader != nil {
+		staff, err = h.groupStaffReader.GroupStaff(c.Request().Context(), groupId)
+		if err != nil {
+			return err
+		}
 	}
 	students := make([]gen.GroupOnboardingStudent, len(report.Students))
 	for i, s := range report.Students {
@@ -165,6 +177,7 @@ func (h *Handlers) GetGroupOnboarding(c echo.Context, groupId gen.GroupId) error
 		Group:    toAPIGroup(report.Group),
 		Summary:  summary,
 		Students: students,
+		Staff:    &staff,
 	})
 }
 

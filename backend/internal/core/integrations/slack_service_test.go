@@ -38,6 +38,7 @@ func (g fakeSlackGateway) LookupUserByEmail(context.Context, string) (string, er
 func (g fakeSlackGateway) InviteUserToChannel(context.Context, string, string) (InviteOutcome, error) {
 	return "", ErrSlackUnavailable
 }
+func (g fakeSlackGateway) RemoveUserFromChannel(context.Context, string, string) error { return nil }
 func (g fakeSlackGateway) PostMessage(context.Context, string, string) (string, error) {
 	return "", ErrSlackUnavailable
 }

@@ -14,11 +14,12 @@ import (
 )
 
 type fakeForms struct {
-	creates   atomic.Int32
-	updates   atomic.Int32
-	publishes atomic.Int32
-	responses []integrations.IntakeResponse
-	lastSet   []integrations.IntakeQuestion
+	creates      atomic.Int32
+	updates      atomic.Int32
+	publishes    atomic.Int32
+	rejectUpdate atomic.Bool
+	responses    []integrations.IntakeResponse
+	lastSet      []integrations.IntakeQuestion
 }
 
 func (*fakeForms) AccessToken(context.Context) (string, error) { return "test-token", nil }
@@ -45,11 +46,14 @@ func (f *fakeForms) FindDraft(context.Context, string, string) (string, error) {
 	return "recovered-form-id", nil
 }
 
-func (f *fakeForms) EnsureQuestions(_ context.Context, _, id string, questions []integrations.IntakeQuestion) error {
+func (f *fakeForms) EnsureQuestions(_ context.Context, _, id string, questions []integrations.IntakeQuestion, _ bool) error {
 	if id != "recovered-form-id" || len(questions) < 2 ||
 		questions[0].Title != "Full name" || !questions[0].Required ||
 		questions[1].Title != "Email address" || !questions[1].Required {
 		return errors.New("unexpected question payload")
+	}
+	if f.rejectUpdate.Swap(false) {
+		return errors.New("temporary Google Forms error")
 	}
 	f.lastSet = questions
 	f.updates.Add(1)
@@ -132,6 +136,26 @@ func TestFormsProvisionRecoversAndReusesDraft(t *testing.T) {
 	}
 	if rows := countRowsSimple(t, pool, "SELECT count(*) FROM intake_forms WHERE external_form_id='recovered-form-id' AND status='created' AND jsonb_array_length(questions)=3"); rows != 1 {
 		t.Fatalf("saved %d intake forms, want 1", rows)
+	}
+
+	const extended = `{"questions":[{"title":"Different","type":"paragraph"},{"title":"City","type":"text"}]}`
+	gateway.rejectUpdate.Store(true)
+	if code, _ := doJSON(t, srv, http.MethodPost, path, extended); code != http.StatusBadGateway {
+		t.Fatalf("interrupted append: %d, want 502", code)
+	}
+	if code, state := doJSON(t, srv, http.MethodGet, formsPath, ""); code != http.StatusOK || len(state["questions"].([]any)) != 3 {
+		t.Fatalf("questions after failed append: %d %v", code, state)
+	}
+	for _, payload := range []string{extended, ""} {
+		if code, _ := doJSON(t, srv, http.MethodPost, path, payload); code != http.StatusOK {
+			t.Fatalf("retry or launch without questions: %d, want 200", code)
+		}
+	}
+	if len(gateway.lastSet) != 4 || gateway.lastSet[3].Title != "City" {
+		t.Fatalf("Google questions after retry and launch: %+v", gateway.lastSet)
+	}
+	if code, state := doJSON(t, srv, http.MethodGet, formsPath, ""); code != http.StatusOK || len(state["questions"].([]any)) != 4 || state["responderUrl"] != testResponderURL {
+		t.Fatalf("published form after retry: %d %v", code, state)
 	}
 }
 

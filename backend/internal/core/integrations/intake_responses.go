@@ -33,7 +33,7 @@ func (s *FormsService) ImportResponses(ctx context.Context, groupID uuid.UUID) (
 	if form.ID == "" || form.ResponderURL == "" || form.VerifiedSince == nil {
 		return total, &core.AppError{Code: core.CodeConflict, Message: "publish the intake form with verified email collection before importing responses"}
 	}
-	token, err := s.Tokens.AccessToken(ctx)
+	token, err := s.accessToken(ctx, groupID)
 	if err != nil {
 		return total, err
 	}

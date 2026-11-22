@@ -61,7 +61,7 @@ func (g *appendFormsGW) CreateDraft(context.Context, string, string, string) (st
 func (g *appendFormsGW) FindDraft(context.Context, string, string) (string, error) {
 	return "form-1", nil
 }
-func (g *appendFormsGW) EnsureQuestions(_ context.Context, _ string, _ string, questions []IntakeQuestion) error {
+func (g *appendFormsGW) EnsureQuestions(_ context.Context, _ string, _ string, questions []IntakeQuestion, _ bool) error {
 	g.ensured = append(g.ensured, questions)
 	return nil
 }

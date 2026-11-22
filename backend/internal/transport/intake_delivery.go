@@ -3,6 +3,8 @@ package transport
 import (
 	"context"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -12,7 +14,7 @@ import (
 )
 
 type IntakeDeliveryService interface {
-	QueueDeliveries(context.Context, uuid.UUID) ([]integrations.IntakeDelivery, error)
+	QueueDeliveries(context.Context, uuid.UUID, *string) ([]integrations.IntakeDelivery, error)
 	Status(context.Context, uuid.UUID) ([]integrations.IntakeDelivery, error)
 }
 
@@ -24,7 +26,20 @@ func (h *Handlers) DistributeGroupForm(c echo.Context, groupID gen.GroupId) erro
 	if h.delivery == nil || !h.deliveryEnabled {
 		return errNotReady("intake email delivery is unavailable")
 	}
-	deliveries, err := h.delivery.QueueDeliveries(c.Request().Context(), groupID)
+	var body gen.IntakeDistributionRequest
+	if c.Request().ContentLength != 0 {
+		if err := c.Bind(&body); err != nil {
+			return errBadRequest("invalid intake email request")
+		}
+	}
+	if body.Message != nil {
+		message := strings.TrimSpace(*body.Message)
+		if utf8.RuneCountInString(message) > 4000 || strings.ContainsRune(message, 0) {
+			return errBadRequest("intake email message must contain at most 4000 characters and no null bytes")
+		}
+		body.Message = &message
+	}
+	deliveries, err := h.delivery.QueueDeliveries(c.Request().Context(), groupID, body.Message)
 	if err != nil {
 		return err
 	}
@@ -34,7 +49,7 @@ func (h *Handlers) DistributeGroupForm(c echo.Context, groupID gen.GroupId) erro
 // GetGroupFormDeliveries GET — recipient emails are student PII:
 // coordinator/admin only.
 func (h *Handlers) GetGroupFormDeliveries(c echo.Context, groupID gen.GroupId) error {
-	if _, err := h.requireStaff(c); err != nil {
+	if _, err := h.requireGroupWrite(c, uuid.UUID(groupID)); err != nil {
 		return err
 	}
 	if h.delivery == nil {

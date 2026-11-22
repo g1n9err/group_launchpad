@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -95,6 +96,40 @@ func (g *DriveGateway) GrantAccess(ctx context.Context, token, folderID, email, 
 	return nil
 }
 
+func (g *DriveGateway) RevokeAccess(ctx context.Context, token, folderID, email string) error {
+	endpoint := fmt.Sprintf("%s/%s/permissions?fields=permissions(id,emailAddress,permissionDetails(inherited))", g.filesURL, url.PathEscape(folderID))
+	var result struct {
+		Permissions []struct {
+			ID      string `json:"id"`
+			Email   string `json:"emailAddress"`
+			Details []struct {
+				Inherited bool `json:"inherited"`
+			} `json:"permissionDetails"`
+		} `json:"permissions"`
+	}
+	if _, err := g.request(ctx, token, http.MethodGet, endpoint, nil, &result); err != nil {
+		return err
+	}
+	var failures []error
+	for _, permission := range result.Permissions {
+		if !strings.EqualFold(permission.Email, email) || permission.ID == "" {
+			continue
+		}
+		inherited := false
+		for _, detail := range permission.Details {
+			inherited = inherited || detail.Inherited
+		}
+		if inherited {
+			continue
+		}
+		_, err := g.request(ctx, token, http.MethodDelete, fmt.Sprintf("%s/%s/permissions/%s", g.filesURL, url.PathEscape(folderID), url.PathEscape(permission.ID)), nil, nil)
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -119,8 +154,10 @@ func (g *DriveGateway) request(ctx context.Context, token, method, endpoint stri
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return resp.StatusCode, fmt.Errorf("Google Drive returned HTTP %d", resp.StatusCode)
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(result); err != nil {
-		return resp.StatusCode, errors.New("Google Drive returned invalid metadata")
+	if result != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(result); err != nil {
+			return resp.StatusCode, errors.New("Google Drive returned invalid metadata")
+		}
 	}
 	return resp.StatusCode, nil
 }

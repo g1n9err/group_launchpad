@@ -32,6 +32,8 @@ func (*fakeClassroom) EnrollStudent(context.Context, string, string, string) err
 func (*fakeClassroom) AssignTeacher(context.Context, string, string, string) error {
 	return nil // transport tests don't assert teacher assignment
 }
+func (*fakeClassroom) RemoveStudent(context.Context, string, string, string) error { return nil }
+func (*fakeClassroom) RemoveTeacher(context.Context, string, string, string) error { return nil }
 
 func TestClassroomProvisionReusesPersistedCourse(t *testing.T) {
 	pool := newTestPool(t)

@@ -25,6 +25,7 @@ import (
 	"launchpad/internal/integrations/google"
 	slackgw "launchpad/internal/integrations/slack"
 	"launchpad/internal/jobs"
+	"launchpad/internal/secrets"
 	"launchpad/internal/store"
 	"launchpad/internal/transport"
 )
@@ -64,15 +65,41 @@ func run() error {
 	groupsSvc := groups.New(repo)
 	googleSvc := google.NewAuthService(cfg, repo, logger)
 	slackSvc, slackChannelsSvc := newSlackServices(cfg, repo)
+	var slackCipher *secrets.Cipher
+	if cfg.TokenEncryptionKey != "" {
+		slackCipher, err = secrets.New(cfg.TokenEncryptionKey)
+		if err != nil {
+			return err
+		}
+	}
+	var fallbackSlack integrations.SlackGateway
+	if cfg.SlackConfigured() {
+		fallbackSlack = slackgw.NewGateway(cfg.SlackBotToken)
+	}
+	slackResolver := slackgw.NewWorkspaceResolver(repo, slackCipher, fallbackSlack)
+	var slackOAuthGateway integrations.SlackOAuthGateway
+	if cfg.SlackOAuthConfigured() {
+		slackOAuthGateway = slackgw.NewOAuthGateway(cfg.SlackOAuthClientID, cfg.SlackOAuthClientSecret, cfg.SlackOAuthRedirectURI)
+	}
+	if cfg.SlackConfigured() || cfg.SlackOAuthConfigured() {
+		slackChannelsSvc.SetGatewayResolver(slackResolver)
+	}
+	slackOAuthSvc := integrations.NewSlackOAuthService(repo, slackOAuthGateway, slackCipher, cfg.SlackOAuthConfigured())
 	slackEventsSvc := newSlackEventsService(cfg, repo, logger)
+	if cfg.SlackConfigured() || cfg.SlackOAuthConfigured() {
+		slackEventsSvc.SetTeamGatewayResolver(slackResolver, repo)
+	}
 	queue, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
 	if err != nil {
 		return fmt.Errorf("initialize River insert client: %w", err)
 	}
 	launch := &jobs.SlackLaunchService{Queue: repo, River: queue}
 	classroom := &integrations.ClassroomService{Tokens: googleSvc, Gateway: google.NewClassroomGateway(), Store: repo, Operations: repo}
+	if cfg.SMTPEnabled || cfg.GmailEnabled {
+		classroom.QueueJoinEmails = jobs.QueueClassroomJoinEmails(repo, queue)
+	}
 	drive := &integrations.DriveService{Tokens: googleSvc, Gateway: google.NewDriveGateway(), Store: repo, Operations: repo}
-	forms := &integrations.FormsService{Tokens: googleSvc, Gateway: google.NewFormsGateway(), Store: repo, Operations: repo}
+	forms := &integrations.FormsService{Tokens: googleSvc, GroupTokens: googleSvc, Gateway: google.NewFormsGateway(), Store: repo, Operations: repo}
 	announcements := &jobs.AnnouncementService{Store: repo, River: queue}
 	audit := &jobs.AuditService{Store: repo, River: queue}
 	delivery := &jobs.IntakeDeliveryService{Queue: repo, River: queue}
@@ -100,8 +127,11 @@ func run() error {
 			Classroom: classroom, Drive: drive, Forms: forms,
 			Delivery: delivery, Audit: audit, AuditNotifications: repo, Announcements: announcements,
 			DeliveryEnabled: cfg.SMTPEnabled || cfg.GmailEnabled,
-			Notifications:   repo, Templates: repo, StaffAssignments: repo,
+			Notifications:   repo, Templates: repo, StaffAssignments: repo, GroupStaff: repo, GroupRoster: repo, LaunchSteps: repo,
 			Membership: repo, AssignedGroups: repo, StaffAdmin: repo, GroupResources: repo,
+			SlackOAuth: slackOAuthSvc, SlackWorkspaces: repo,
+			GoogleWorkspaces: repo,
+			GroupWorkspaceOwner: repo,
 		})
 
 	// 5. Serve with graceful shutdown.

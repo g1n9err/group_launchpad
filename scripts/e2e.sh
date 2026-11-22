@@ -18,7 +18,7 @@ API_ADDR="127.0.0.1:18090"
 WEB_PORT="4199"
 API_URL="http://${API_ADDR}"
 BASE_URL="http://127.0.0.1:${WEB_PORT}"
-WORKDIR="$(mktemp -d /tmp/opencode/launchpad-e2e.XXXXXX)"
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/launchpad-e2e.XXXXXX")"
 
 cleanup() {
   local code=$?
@@ -39,8 +39,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Require the newgrp/docker group; the rest of the Makefile assumes it too.
-if ! docker info >/dev/null 2>&1; then
-  echo "ERROR: docker is required for the disposable E2E database" >&2
+if ! docker info >/dev/null; then
+  echo "ERROR: a reachable Docker daemon is required for the disposable E2E database" >&2
   exit 1
 fi
 

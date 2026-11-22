@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useSettings } from "../i18n";
+import { AppSelect } from "../components/AppSelect";
 import { AuditNotifications } from "../components/AuditNotifications";
 import { Card, Chip, PageTitle } from "../components/ui";
 import { api } from "../lib/api";
 import { useIntakeGroups } from "../lib/queries";
 import { intakeActionClass, intakeInputClass } from "../lib/intakeForm";
 import type { components } from "../lib/schema";
+import { useWorkspaceScope } from "../lib/workspaceScope";
 
 export function AutomationPage() {
   const { t } = useSettings();
@@ -24,21 +26,26 @@ export function AutomationPage() {
 function GroupAudits({ authorization, onUnauthorized }: { authorization: string; onUnauthorized: () => void }) {
   const { t } = useSettings();
   const groups = useIntakeGroups(true);
+  const workspaceScope = useWorkspaceScope();
+  const visibleGroups = workspaceScope.filterGroups(groups.data);
   const [groupId, setGroupId] = useState("");
+  useEffect(() => {
+    if (visibleGroups?.length && !visibleGroups.some((group) => group.id === groupId)) setGroupId(visibleGroups[0].id);
+    else if (visibleGroups?.length === 0 && groupId) setGroupId("");
+  }, [visibleGroups, groupId]);
 
   return (
     <Card className="space-y-4 p-5">
       <h2 className="text-base font-bold">{t("automation.groupAudit")}</h2>
       <label className="block max-w-sm text-sm font-medium">
         {t("intake.group")}
-        <select className={`mt-1 ${intakeInputClass}`} value={groupId} onChange={(event) => setGroupId(event.target.value)}>
-          <option value="">{t("intake.choose")}</option>
-          {groups.data?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-        </select>
+        <AppSelect className={`mt-1 ${intakeInputClass}`} ariaLabel={t("intake.group")} value={groupId}
+          placeholder={t("intake.choose")} options={(visibleGroups ?? []).map((group) => ({ value: group.id, label: group.name }))}
+          onChange={setGroupId} />
       </label>
       {groups.isPending && <p role="status" className="text-sm text-muted">{t("list.loading")}</p>}
       {groups.isError && <p role="alert" className="text-sm text-danger-text">{t("list.error")}</p>}
-      {groups.data?.length === 0 && <p className="text-sm text-muted">{t("list.empty")}</p>}
+      {visibleGroups?.length === 0 && <p className="text-sm text-muted">{t("list.empty")}</p>}
       {groupId && (
         <AuditHistory key={groupId} {...{ authorization, groupId, onUnauthorized }} />
       )}

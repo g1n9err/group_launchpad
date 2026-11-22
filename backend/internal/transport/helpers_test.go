@@ -82,6 +82,7 @@ func newAuthApp(t *testing.T) (*httptest.Server, *auth.Service, *pgxpool.Pool) {
 		slackServiceForTest(pool), slackChannelsServiceForTest(pool), slackEventsServiceForTest(pool), authSvc, pool.Ping,
 		transport.GroupProvisioning{
 			Membership: repo, AssignedGroups: repo, StaffAdmin: repo, GroupResources: repo, Notifications: repo,
+			GroupWorkspaceOwner: repo,
 		})
 	return httptestNew(app, t), authSvc, pool
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,7 +51,9 @@ func (f *fakeClassroomGW) EnrollStudent(_ context.Context, _, _, email string) e
 	return nil
 }
 
-func (f *fakeClassroomGW) AssignTeacher(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeClassroomGW) AssignTeacher(_ context.Context, _, _, _ string) error       { return nil }
+func (f *fakeClassroomGW) RemoveStudent(context.Context, string, string, string) error { return nil }
+func (f *fakeClassroomGW) RemoveTeacher(context.Context, string, string, string) error { return nil }
 
 type fakeDriveGW struct{}
 
@@ -64,6 +67,7 @@ func (f *fakeDriveGW) GrantAccess(_ context.Context, _, _, email, _ string) erro
 	}
 	return nil
 }
+func (f *fakeDriveGW) RevokeAccess(context.Context, string, string, string) error { return nil }
 
 type fakeFormsGW struct{}
 
@@ -73,7 +77,7 @@ func (f *fakeFormsGW) CreateDraft(_ context.Context, _, _, _ string) (string, bo
 func (f *fakeFormsGW) FindDraft(_ context.Context, _, _ string) (string, error) {
 	return "fake-form-id", nil
 }
-func (f *fakeFormsGW) EnsureQuestions(_ context.Context, _, _ string, _ []integrations.IntakeQuestion) error {
+func (f *fakeFormsGW) EnsureQuestions(_ context.Context, _, _ string, _ []integrations.IntakeQuestion, _ bool) error {
 	return nil
 }
 func (f *fakeFormsGW) EnableVerifiedEmail(_ context.Context, _, _ string) error   { return nil }
@@ -100,6 +104,15 @@ func (noopRecorder) RecordExternalOperation(context.Context, integrations.Extern
 
 // ── Test ───────────────────────────────────────────────────────────────────
 
+type classroomJoinMailer struct {
+	messages chan [3]string
+}
+
+func (m classroomJoinMailer) SendMessage(_ context.Context, recipient, subject, body string) (bool, error) {
+	m.messages <- [3]string{recipient, subject, body}
+	return false, nil
+}
+
 func TestGroupLaunchWorkOrchestration(t *testing.T) {
 	pool := testPool(t)
 
@@ -112,6 +125,7 @@ func TestGroupLaunchWorkOrchestration(t *testing.T) {
 		StudentEmails:  []string{"good@test.example", "bad@test.example"},
 		StaffEmails:    []string{"staff@test.example"},
 		LecturerEmails: []string{"lecturer@test.example"},
+		TAEmails:       []string{"ta@test.example"},
 	})
 	if err != nil {
 		t.Fatalf("create group: %v", err)
@@ -146,16 +160,30 @@ func TestGroupLaunchWorkOrchestration(t *testing.T) {
 	// Real River client.
 	workers := river.NewWorkers()
 	river.AddWorker(workers, worker)
+	mailer := classroomJoinMailer{messages: make(chan [3]string, 5)}
+	river.AddWorker(workers, &jobs.ClassroomJoinDeliveryWorker{
+		Store: repo, Mailer: mailer,
+		JoinCode: func(_ context.Context, courseID string) (string, error) {
+			if courseID != "fake-course-123" {
+				return "", errors.New("unexpected Classroom course")
+			}
+			return "testcode", nil
+		},
+	})
 	client, err := river.NewClient(
 		riverpgxv5.New(pool),
 		&river.Config{
-			Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 2}},
+			Queues: map[string]river.QueueConfig{
+				river.QueueDefault:    {MaxWorkers: 2},
+				jobs.IntakeEmailQueue: {MaxWorkers: 2},
+			},
 			Workers: workers,
 		},
 	)
 	if err != nil {
 		t.Fatalf("river client: %v", err)
 	}
+	classroomSvc.QueueJoinEmails = jobs.QueueClassroomJoinEmails(repo, client)
 
 	// Start River with a bounded context.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -191,6 +219,26 @@ func TestGroupLaunchWorkOrchestration(t *testing.T) {
 	}
 	if resultStatus == "" {
 		t.Fatal("launch did not reach a terminal state within 20s")
+	}
+	recipients := map[string]bool{"good@test.example": true, "bad@test.example": true, "ta@test.example": true, "staff@test.example": true, "lecturer@test.example": true}
+	for range 5 {
+		select {
+		case message := <-mailer.messages:
+			if !recipients[message[0]] || message[1] != "Google Classroom join code" ||
+				!strings.Contains(message[2], "Test Course / Orchestration Test") || !strings.Contains(message[2], "testcode") {
+				t.Fatalf("unexpected join-code email: %v", message)
+			}
+			delete(recipients, message[0])
+		case <-ctx.Done():
+			t.Fatal("Classroom join-code email was not sent")
+		}
+	}
+	if err := classroomSvc.QueueJoinEmails(ctx, group.ID, "fake-course-123"); err != nil {
+		t.Fatalf("retry Classroom join-code queue: %v", err)
+	}
+	var deliveryJobs int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE kind='classroom_join_delivery'").Scan(&deliveryJobs); err != nil || deliveryJobs != 5 {
+		t.Fatalf("Classroom delivery jobs after retry = %d, err=%v, want 5", deliveryJobs, err)
 	}
 
 	// ── Assertions on the PERSISTED result ────────────────────────────

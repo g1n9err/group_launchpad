@@ -1,12 +1,14 @@
 package transport
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"launchpad/internal/core"
+	"launchpad/internal/jobs"
 	gen "launchpad/internal/transport/gen"
 )
 
@@ -31,13 +33,20 @@ func (h *Handlers) ProvisionGroupClassroom(c echo.Context, groupID gen.GroupId) 
 	// the coordinator's staff list). Individual failures are reported but
 	// don't abort the provisioning response.
 	var studentResults []gen.ClassroomEnrollment
-	roster, _ := h.groups.Onboarding(ctx, group.ID.String())
+	var studentFailures, teacherFailures int
+	roster, err := h.groups.Onboarding(ctx, group.ID.String())
+	if err != nil {
+		return err
+	}
 	studentEmails := make([]string, 0, len(roster.Students))
 	for _, s := range roster.Students {
 		studentEmails = append(studentEmails, s.Email)
 	}
 	if len(studentEmails) > 0 {
 		for _, r := range h.classroom.EnrollAll(ctx, group.ID, id, studentEmails) {
+			if r.Err != nil {
+				studentFailures++
+			}
 			studentResults = append(studentResults, gen.ClassroomEnrollment{
 				Email: r.Email, Success: r.Err == nil,
 			})
@@ -60,10 +69,22 @@ func (h *Handlers) ProvisionGroupClassroom(c echo.Context, groupID gen.GroupId) 
 	var teacherResults []gen.ClassroomEnrollment
 	if len(staffEmails) > 0 {
 		for _, r := range h.classroom.AssignTeachers(ctx, group.ID, id, staffEmails) {
+			if r.Err != nil {
+				teacherFailures++
+			}
 			teacherResults = append(teacherResults, gen.ClassroomEnrollment{
 				Email: r.Email, Success: r.Err == nil,
 			})
 		}
+	}
+
+	step := jobs.LaunchStep{Platform: "classroom", Status: jobs.StepSucceeded}
+	if studentFailures+teacherFailures > 0 {
+		step.Status = jobs.StepPartiallyFailed
+		step.Detail = fmt.Sprintf("course exists, %d student and %d teacher access failures", studentFailures, teacherFailures)
+	}
+	if err := h.saveLaunchStep(ctx, group.ID, step); err != nil {
+		return err
 	}
 
 	return c.JSON(http.StatusOK, gen.ClassroomCourse{

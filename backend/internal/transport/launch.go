@@ -10,6 +10,7 @@ import (
 
 	"launchpad/internal/core/groups"
 	"launchpad/internal/core/integrations"
+	"launchpad/internal/jobs"
 	gen "launchpad/internal/transport/gen"
 )
 
@@ -22,6 +23,17 @@ type SlackLaunchService interface {
 // Classroom + Drive + Forms).
 type GroupLauncher interface {
 	QueueGroupLaunch(ctx context.Context, groupID uuid.UUID) error
+}
+
+type LaunchStepWriter interface {
+	SaveLaunchStep(context.Context, uuid.UUID, jobs.LaunchStep) error
+}
+
+func (h *Handlers) saveLaunchStep(ctx context.Context, groupID uuid.UUID, step jobs.LaunchStep) error {
+	if h.launchStepWriter == nil {
+		return nil
+	}
+	return h.launchStepWriter.SaveLaunchStep(ctx, groupID, step)
 }
 
 // LaunchGroup POST /api/groups/{groupId}/launch — queues the unified

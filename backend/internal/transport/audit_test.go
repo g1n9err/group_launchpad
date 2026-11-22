@@ -214,6 +214,19 @@ func TestGroupAuditQueuesManualAndScheduledReadOnlySnapshots(t *testing.T) {
 	if count := countRowsSimple(t, pool, "SELECT count(*) FROM audit_logs"); count != 2 {
 		t.Fatalf("checked %d snapshots; the unused draft should be skipped", count)
 	}
+	for _, search := range []struct {
+		query string
+		want  int
+	}{
+		{query: "%20DiT%20Te%20", want: 1},
+		{query: "missing", want: 0},
+		{query: "%25", want: 0},
+	} {
+		code, result := doJSON(t, srv, http.MethodGet, "/api/audit-notifications?groupName="+search.query, "")
+		if code != http.StatusOK || len(result["openIssues"].([]any)) != search.want || len(result["notifications"].([]any)) != search.want {
+			t.Errorf("audit notifications search %q: %d %v, want %d matches in each list", search.query, code, result, search.want)
+		}
+	}
 	if count := countRowsSimple(t, pool, "SELECT count(*) FROM group_resources"); count != 4 {
 		t.Fatalf("audit changed the resource registry: got %d records", count)
 	}
@@ -240,11 +253,11 @@ func TestAuditNotificationsTrackChangesAndResolutions(t *testing.T) {
 			}
 		}
 	}
-	open, err := repo.CurrentAuditIssues(t.Context())
+	open, err := repo.CurrentAuditIssues(t.Context(), "")
 	if err != nil || len(open) != 0 {
 		t.Fatalf("open issues=%v err=%v", open, err)
 	}
-	rows, err := repo.AuditNotifications(t.Context())
+	rows, err := repo.AuditNotifications(t.Context(), "")
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("notifications=%v err=%v; want new, changed, resolved", rows, err)
 	}

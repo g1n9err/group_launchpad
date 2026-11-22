@@ -50,7 +50,11 @@ type Config struct {
 
 	// SlackBotToken authenticates the installed workspace bot. Empty ⇒ Slack
 	// integration disabled. Env-only: never persisted, never logged.
-	SlackBotToken string
+	SlackBotToken          string
+	SlackOAuthClientID     string
+	SlackOAuthClientSecret string
+	SlackOAuthRedirectURI  string
+	PublicAPIBaseURL       string
 
 	// SlackSigningSecret verifies Events API request signatures. Empty ⇒
 	// the events webhook is disabled. Env-only: never persisted, never logged.
@@ -115,6 +119,24 @@ func (c Config) SlackConfigured() bool {
 	return c.SlackBotToken != ""
 }
 
+func (c Config) SlackOAuthConfigured() bool {
+	return c.SlackOAuthClientID != "" && c.SlackOAuthClientSecret != "" && c.SlackOAuthRedirectURI != "" && c.TokenEncryptionKey != ""
+}
+
+func slackOAuthRedirectURI(explicitURI, legacyURL, publicAPIBaseURL string) string {
+	if uri := strings.TrimSpace(explicitURI); uri != "" {
+		return uri
+	}
+	if uri := strings.TrimSpace(legacyURL); uri != "" {
+		return uri
+	}
+	base := strings.TrimRight(strings.TrimSpace(publicAPIBaseURL), "/")
+	if base == "" {
+		return ""
+	}
+	return base + "/api/integrations/slack/callback"
+}
+
 // SlackEventsConfigured reports whether the signing secret is present.
 func (c Config) SlackEventsConfigured() bool {
 	return c.SlackSigningSecret != ""
@@ -150,6 +172,10 @@ func Load() (Config, error) {
 		GoogleRedirectURL:      getenv("GOOGLE_REDIRECT_URL", ""),
 		TokenEncryptionKey:     getenv("TOKEN_ENCRYPTION_KEY", ""),
 		SlackBotToken:          getenv("SLACK_BOT_TOKEN", ""),
+		SlackOAuthClientID:     getenv("SLACK_OAUTH_CLIENT_ID", ""),
+		SlackOAuthClientSecret: getenv("SLACK_OAUTH_CLIENT_SECRET", ""),
+		SlackOAuthRedirectURI:  slackOAuthRedirectURI(getenv("SLACK_OAUTH_REDIRECT_URI", ""), getenv("SLACK_OAUTH_REDIRECT_URL", ""), getenv("PUBLIC_API_BASE_URL", "")),
+		PublicAPIBaseURL:       strings.TrimRight(strings.TrimSpace(getenv("PUBLIC_API_BASE_URL", "")), "/"),
 		SlackSigningSecret:     getenv("SLACK_SIGNING_SECRET", ""),
 		SlackEventsAddr:        getenv("SLACK_EVENTS_ADDR", "127.0.0.1:8081"),
 	}

@@ -32,6 +32,7 @@ func (f fakeIdentityGateway) LookupUserByEmail(context.Context, string) (string,
 func (f fakeIdentityGateway) InviteUserToChannel(context.Context, string, string) (InviteOutcome, error) {
 	return "", nil
 }
+func (f fakeIdentityGateway) RemoveUserFromChannel(context.Context, string, string) error { return nil }
 func (f fakeIdentityGateway) PostMessage(context.Context, string, string) (string, error) {
 	return "", nil
 }

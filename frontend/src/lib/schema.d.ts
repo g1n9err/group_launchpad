@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a private coordinator workspace */
+        post: operations["registerCoordinator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -476,6 +493,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups/{groupId}/announcements/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear finished entries from this group's announcement history */
+        delete: operations["clearGroupAnnouncementHistory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit-notifications": {
         parameters: {
             query?: never;
@@ -507,6 +541,23 @@ export interface paths {
         put?: never;
         /** Queue a read-only audit of a group's external resources */
         post: operations["queueGroupAudit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{groupId}/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add students or replace lecturers and update access to existing group resources */
+        post: operations["updateGroupRoster"];
         delete?: never;
         options?: never;
         head?: never;
@@ -761,6 +812,12 @@ export interface components {
             email: string;
             password: string;
         };
+        CoordinatorRegistrationInput: {
+            fullName: string;
+            /** Format: email */
+            email: string;
+            password: string;
+        };
         AuthUser: {
             /**
              * Format: uuid
@@ -852,6 +909,10 @@ export interface components {
         IntakeFormDraft: {
             formId: string;
             editUrl: string;
+        };
+        IntakeDistributionRequest: {
+            /** @description Optional plain-text email message. The form link is appended automatically. */
+            message?: string;
         };
         IntakeDeliveries: {
             deliveries: components["schemas"]["IntakeDelivery"][];
@@ -1173,6 +1234,26 @@ export interface components {
             /** @description echo of Slack's challenge (url_verification only) */
             challenge?: string;
         };
+        GroupRosterUpdate: {
+            /** @description Complete student list for this group; an empty list removes all students */
+            studentEmails?: string[];
+            /** @description Complete lecturer list for this group; an empty list removes all lecturers */
+            lecturerEmails?: string[];
+            /** @description Complete TA list for this group; an empty list removes all TAs */
+            taEmails?: string[];
+        };
+        GroupRosterUpdateResult: {
+            slack?: components["schemas"]["SlackProvisionResult"];
+            slackError?: string;
+            driveAccess?: components["schemas"]["RosterAccessStatus"];
+            classroomAccess?: components["schemas"]["RosterAccessStatus"];
+            classroomEmail?: components["schemas"]["RosterAccessStatus"];
+            driveRemoval?: components["schemas"]["RosterAccessStatus"];
+            classroomRemoval?: components["schemas"]["RosterAccessStatus"];
+            slackRemoval?: components["schemas"]["RosterAccessStatus"];
+        };
+        /** @enum {string} */
+        RosterAccessStatus: "ready" | "partial" | "unavailable" | "not_provisioned";
         GroupOnboarding: {
             group: components["schemas"]["Group"];
             summary: {
@@ -1183,6 +1264,13 @@ export interface components {
                 completionPercentage: number;
             };
             students: components["schemas"]["GroupOnboardingStudent"][];
+            staff?: components["schemas"]["GroupOnboardingStaff"][];
+        };
+        GroupOnboardingStaff: {
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            role: "teaching_staff" | "lecturer" | "ta";
         };
         GroupOnboardingStudent: {
             /** Format: uuid */
@@ -1223,6 +1311,48 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    registerCoordinator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoordinatorRegistrationInput"];
+            };
+        };
+        responses: {
+            /** @description account created and signed in */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            /** @description email already registered */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description invalid account details */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -2403,7 +2533,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["IntakeDistributionRequest"];
+            };
+        };
         responses: {
             /** @description Current delivery records */
             202: {
@@ -2413,6 +2547,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["IntakeDeliveries"];
                 };
+            };
+            /** @description Invalid message */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Coordinator credentials are missing or invalid */
             401: {
@@ -2669,9 +2810,60 @@ export interface operations {
             };
         };
     };
-    getAuditNotifications: {
+    clearGroupAnnouncementHistory: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Finished entries cleared from the Launchpad history */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Coordinator credentials required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Coordinator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Announcement access is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getAuditNotifications: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive substring of the group name */
+                groupName?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2793,6 +2985,76 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    updateGroupRoster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupRosterUpdate"];
+            };
+        };
+        responses: {
+            /** @description Roster saved, with the Slack outcome reported separately */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupRosterUpdateResult"];
+                };
+            };
+            /** @description Invalid request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Coordinator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Group is archived or a submitted address has another staff role */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid email list */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

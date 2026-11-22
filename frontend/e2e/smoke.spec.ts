@@ -152,6 +152,19 @@ test("invalid login shows an error and stores nothing", async ({ page }) => {
   expect(await storageSnapshot(page)).toBe("");
 });
 
+test("coordinator can register from the sign-in screen and starts a private session", async ({ page }) => {
+  await openApp(page, "#/login");
+  await page.getByRole("link", { name: "Create account" }).click();
+  await expect(page).toHaveURL(/#\/signup/);
+  await page.locator("#signup-name").fill("Workspace Coordinator");
+  await page.locator("#signup-email").fill(`workspace-${Date.now()}@launchpad.test`);
+  await page.locator("#signup-password").fill("private-workspace-password-123");
+  await page.locator("#signup-confirmation").fill("private-workspace-password-123");
+  await page.locator(".login-submit").click();
+  await expect(page).toHaveURL(/#\/overview/, { timeout: 10_000 });
+  expect(await storageSnapshot(page)).toBe("");
+});
+
 test("coordinator login: full navigation, Bearer header, token only in memory", async ({ page }) => {
   const authHeaders: string[] = [];
   page.on("request", (req) => {
@@ -173,6 +186,44 @@ test("coordinator login: full navigation, Bearer header, token only in memory", 
   expect(persisted).toBe("");
 });
 
+test("launch details follow the locale and the logo opens Home on desktop and mobile", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  const details = `${baseURL}/#/group-details/${alphaId}`;
+  await page.route(`${apiURL}/api/groups/${alphaId}/status`, (route) => route.fulfill({
+    json: {
+      groupId: alphaId,
+      status: "partially_failed",
+      steps: [
+        { platform: "slack", status: "partially_failed", detail: "0 channel, 4 invite, 0 welcome failures" },
+        { platform: "classroom", status: "partially_failed", detail: "course created, 3 enrollment and 2 teacher assignment failures" },
+        { platform: "drive", status: "partially_failed", detail: "folders created, permissions partial: 6 Drive permission grants failed (first error: drive: grant writer to yoh***: Google Drive returned HTTP 403)" },
+      ],
+    },
+  }));
+
+  await page.goto(`${baseURL}/#/settings`);
+  await page.getByRole("button", { name: "Հայերեն" }).click();
+  await page.goto(details);
+  await expect(page.getByText("Դասընթացը ստեղծված է։ Չհաջողված միացումներ՝ 3 ուսանող, 2 դասավանդող։")).toBeVisible();
+  await expect(page.getByText(/Չհաջողված թույլտվությունների քանակը՝ 6։.*HTTP 403/)).toBeVisible();
+  await expect(page.getByText(/Չհաջողված գործողություններ՝ 0 ալիք, 4 հրավեր/)).toBeVisible();
+  await page.getByRole("link", { name: "Group Launchpad — Գլխավոր էջ" }).click();
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.getByRole("heading", { name: "Խմբի գործարկման բոլոր քայլերը՝ մեկ տեղում։" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseURL}/#/settings`);
+  await page.getByRole("button", { name: "Русский" }).click();
+  await page.goto(details);
+  await expect(page.getByText("Курс создан. Не удалось добавить: студентов — 3, преподавателей — 2.")).toBeVisible();
+  await expect(page.getByText(/Не удалось выдать разрешения: 6\..*HTTP 403/)).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.getByRole("link", { name: "Group Launchpad — Главная" }).click();
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.getByRole("heading", { name: "Все этапы запуска группы в одном месте." })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test("coordinator creates a group through the form (regression: request headers)", async ({ page }) => {
   await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
   await page.goto(`${baseURL}/#/groups/new`);
@@ -191,6 +242,149 @@ test("coordinator creates a group through the form (regression: request headers)
 
   await page.waitForURL(/#\/group-details\//, { timeout: 10_000 });
   await expect(page.getByText("E2E Form Created Group").first()).toBeVisible({ timeout: 10_000 });
+});
+
+test("coordinator can switch between students and teaching staff in a group", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  await page.goto(`${baseURL}/#/group-details/${alphaId}`);
+  await page.getByRole("tab", { name: "Group members" }).click();
+
+  const students = page.getByRole("button", { name: "Students", exact: true });
+  const staff = page.getByRole("button", { name: "Teaching Staff", exact: true });
+  const studentRow = page.getByRole("row").filter({ hasText: rosterStudent });
+  await expect(students).toHaveAttribute("aria-pressed", "true");
+  await expect(studentRow).toBeVisible();
+
+  await staff.click();
+  await expect(staff).toHaveAttribute("aria-pressed", "true");
+  const ta = page.locator("section").filter({ has: page.getByRole("heading", { name: "TA", exact: true }) });
+  await expect(ta.getByText("e2e-staff@launchpad.test", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Teacher", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Lecturer", exact: true })).toBeVisible();
+  await expect(page.getByText(accounts.lecturer.email, { exact: true })).toBeVisible();
+  await expect(studentRow).toHaveCount(0);
+
+  await students.click();
+  await expect(studentRow).toBeVisible();
+  await expect(ta).toHaveCount(0);
+});
+
+test("coordinator can edit student and teaching staff rosters in an existing group", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  await page.goto(`${baseURL}/#/group-details/${betaId}`);
+  await page.getByRole("tab", { name: "Group members" }).click();
+
+  await page.getByRole("button", { name: "Edit students" }).click();
+  await page.getByLabel("Student emails").fill(`${rosterStudent}\ne2e-new-student@launchpad.test`);
+  await page.getByRole("button", { name: "Save and sync access" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "e2e-new-student@launchpad.test" })).toBeVisible();
+  await expect(page.getByText("Roster saved. Some access updates need attention.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Teaching Staff", exact: true }).click();
+  await page.getByRole("button", { name: "Edit teaching staff" }).click();
+  const lecturers = page.getByLabel("Lecturer emails");
+  await expect(lecturers).toHaveValue("other-lecturer@launchpad.test");
+  await lecturers.fill("other-lecturer@launchpad.test\nreplacement-lecturer@launchpad.test");
+  await page.getByRole("button", { name: "Save and sync access" }).click();
+  await expect(page.getByText("replacement-lecturer@launchpad.test", { exact: true })).toBeVisible();
+  await expect(page.getByText("other-lecturer@launchpad.test", { exact: true })).toBeVisible();
+});
+
+test("coordinator can add a custom message when sending an intake form", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  const formURL = `${apiURL}/api/groups/${alphaId}/forms`;
+  await page.route(formURL, (route) => route.fulfill({
+    json: {
+      status: "created",
+      questions: [],
+      responderUrl: "https://docs.google.com/forms/d/e/e2e/viewform",
+      verifiedEmail: true,
+    },
+  }));
+  await page.route(`${formURL}/deliveries`, (route) => route.fulfill({ json: { deliveries: [] } }));
+  await page.route(`${formURL}/distribute`, (route) => route.fulfill({
+    status: 202,
+    json: { deliveries: [] },
+  }));
+
+  await page.goto(`${baseURL}/#/intake-forms`);
+  await page.getByRole("combobox", { name: "Group" }).click();
+  await page.getByRole("option", { name: alphaGroup, exact: true }).click();
+  await page.getByRole("button", { name: "Send to students" }).click();
+  const message = "Բարև։\nԽնդրում եմ լրացնել ձևաթուղթը։";
+  await page.getByRole("textbox", { name: "Email message (optional)" }).fill(message);
+  const submitted = page.waitForRequest((request) => request.method() === "POST" && request.url() === `${formURL}/distribute`);
+  await page.getByRole("button", { name: "Confirm sending" }).click();
+
+  expect((await submitted).postDataJSON()).toEqual({ message });
+  await expect(page.getByText("Email delivery queued.")).toBeVisible();
+});
+
+test("coordinator can search for a group and clear finished announcement history", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  const announcementsURL = `${apiURL}/api/groups/${alphaId}/announcements`;
+  const schedule = { channelName: "e2e-general", type: "general", scheduledAt: "2026-12-01T12:00:00Z" };
+  const scheduled = { id: "scheduled", status: "scheduled", schedule: { ...schedule, message: "Keep scheduled" } };
+  const published = { id: "published", status: "published", schedule: { ...schedule, message: "Clear published" } };
+  let cleared = false;
+  await page.route(announcementsURL, (route) => route.fulfill({ json: cleared ? [scheduled] : [scheduled, published] }));
+  await page.route(`${announcementsURL}/history`, (route) => {
+    expect(route.request().method()).toBe("DELETE");
+    cleared = true;
+    return route.fulfill({ status: 204 });
+  });
+
+  await page.goto(`${baseURL}/#/announcements`);
+  await page.getByRole("button", { name: "Search groups" }).click();
+  await page.getByRole("searchbox", { name: "Search by group name" }).fill("aLpHa");
+  const group = page.getByRole("combobox", { name: "Group", exact: true });
+  await group.click();
+  await expect(page.getByRole("option", { name: betaGroup })).toHaveCount(0);
+  await page.getByRole("option", { name: alphaGroup, exact: true }).click();
+
+  await page.getByRole("tab", { name: "Sent", exact: true }).click();
+  await expect(page.getByText("Clear published")).toBeVisible();
+  await page.getByRole("button", { name: "Clear history", exact: true }).click();
+  await expect(page.getByText(`Clear finished entries for ${alphaGroup}?`, { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Confirm clear history" }).click();
+  await expect(page.getByText("Announcement history cleared.")).toBeVisible();
+  await expect(page.getByText("Clear published")).toHaveCount(0);
+  await page.getByRole("tab", { name: "Upcoming", exact: true }).click();
+  await expect(page.getByText("Keep scheduled")).toBeVisible();
+});
+
+test("general announcements target all channels in the selected group", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  const announcementsURL = `${apiURL}/api/groups/${alphaId}/announcements`;
+  await page.route(`${apiURL}/api/groups/${alphaId}/resources`, (route) => route.fulfill({ json: [] }));
+  await page.route(announcementsURL, async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: [] });
+    const body = route.request().postDataJSON();
+    expect(body).toMatchObject({ channelName: "all", type: "general", message: "Group wide update" });
+    return route.fulfill({ status: 202, json: { id: crypto.randomUUID(), groupId: alphaId, schedule: body, status: "scheduled" } });
+  });
+
+  await page.goto(`${baseURL}/#/announcements`);
+  await page.getByRole("combobox", { name: "Group", exact: true }).click();
+  await page.getByRole("option", { name: alphaGroup, exact: true }).click();
+  await page.getByRole("tab", { name: "Create announcement" }).click();
+  await expect(page.getByText("This general announcement will be sent to every available Slack channel in this group.")).toBeVisible();
+  await expect(page.getByLabel("Slack channel")).toHaveCount(0);
+  await page.getByLabel("Message").fill("Group wide update");
+  await page.getByRole("button", { name: "Schedule announcement" }).click();
+  await expect(page.getByText("Announcement scheduled.")).toBeVisible();
+});
+
+test("workspace selection on Overview filters the group list and persists across pages", async ({ page }) => {
+  await signIn(page, accounts.coordinator.email, accounts.coordinator.password);
+  await page.goto(`${baseURL}/#/overview`);
+  const workspace = page.getByRole("combobox", { name: "Active workspace" });
+  await workspace.selectOption("__default__");
+  await expect(workspace).toHaveValue("__default__");
+
+  await page.goto(`${baseURL}/#/groups`);
+  await expect(page.getByRole("link", { name: alphaGroup, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: betaGroup, exact: true })).toBeVisible();
 });
 
 test("page refresh keeps the session (HttpOnly cookie resume) until logout", async ({ page }) => {

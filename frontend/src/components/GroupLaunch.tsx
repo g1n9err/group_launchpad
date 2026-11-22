@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "../i18n";
 import { api } from "../lib/api";
+import { formatLaunchDetail } from "../lib/launchDetail";
 import { intakeActionClass, intakeButtonClass } from "../lib/intakeForm";
 import type { components } from "../lib/schema";
 import { Card, Chip } from "./ui";
@@ -43,7 +44,7 @@ export function GroupLaunch({ groupId }: { groupId: string }) {
 function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
   groupId: string; authorization: string; onUnauthorized: () => void;
 }) {
-  const { t } = useSettings();
+  const { t, lang } = useSettings();
   const queryClient = useQueryClient();
   const [result, setResult] = useState<LaunchResult | null>();
   const [classroom, setClassroom] = useState<Classroom>();
@@ -154,6 +155,8 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
       if (!response.ok) {
         const failure = response.status === 403 ? "originDenied" : response.status === 503 ? "unavailable" : "requestFailed";
         setFailures((previous) => ({ ...previous, [service]: failure }));
+      } else if (service === "classroom" || service === "drive") {
+        setReload((value) => value + 1);
       }
     } catch {
       if (!controller.signal.aborted) setFailures((previous) => ({ ...previous, [service]: "requestFailed" }));
@@ -207,7 +210,10 @@ function LaunchChecklist({ groupId, authorization, onUnauthorized }: {
               {step && (
                 <div role="status" className="space-y-1">
                   <Chip tone={stepTone}>{t(`launch.step.${step.status}`)}</Chip>
-                  {step.detail && <p className="break-words text-xs text-muted">{step.detail}</p>}
+                  {step.detail && <p className="break-words text-xs text-muted">{formatLaunchDetail(service, step.detail, lang, t)}</p>}
+                  {service === "slack" && step.status === "partially_failed" && /\b[1-9]\d* invite,/.test(step.detail ?? "") && (
+                    <p className="text-xs text-muted">{t("roster.slackCounts")}</p>
+                  )}
                 </div>
               )}
               {service === "classroom" && classroom && (

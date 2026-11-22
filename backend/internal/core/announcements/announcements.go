@@ -45,6 +45,7 @@ type Announcement struct {
 	ID                uuid.UUID
 	GroupID           uuid.UUID
 	ChannelID         string
+	ChannelIDs        []string
 	Status            string
 	PublishedAt       *time.Time
 	ExternalMessageID string

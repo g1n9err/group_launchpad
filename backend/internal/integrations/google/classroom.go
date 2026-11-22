@@ -27,6 +27,29 @@ func NewClassroomGateway() *ClassroomGateway {
 	}
 }
 
+func (g *ClassroomGateway) JoinCode(ctx context.Context, token, courseID string) (string, error) {
+	endpoint := fmt.Sprintf("%s/%s?fields=courseState,enrollmentCode", g.coursesURL, url.PathEscape(courseID))
+	resp, err := g.rawRequest(ctx, token, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("read Classroom join code: HTTP %d", resp.StatusCode)
+	}
+	var course struct {
+		State string `json:"courseState"`
+		Code  string `json:"enrollmentCode"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<10)).Decode(&course); err != nil {
+		return "", errors.New("invalid Classroom course response")
+	}
+	if course.State != "ACTIVE" || course.Code == "" {
+		return "", errors.New("Classroom course must be active and have a join code")
+	}
+	return course.Code, nil
+}
+
 // EnsureCourse assigns the alias atomically on creation. A concurrent or
 // previously interrupted request can then recover the same course by alias.
 func (g *ClassroomGateway) EnsureCourse(ctx context.Context, token string, in integrations.ClassroomCourseInput) (string, error) {
@@ -81,48 +104,142 @@ func (g *ClassroomGateway) ActivateCourse(ctx context.Context, token, courseID s
 	return nil
 }
 
-// EnrollStudent invites a student to a course by email via the Classroom
-// API. Already-enrolled (409) returns success — idempotent.
+// EnrollStudent adds a student directly when authorized, or creates an invitation.
 func (g *ClassroomGateway) EnrollStudent(ctx context.Context, token, courseID, email string) error {
-	body, err := json.Marshal(map[string]string{"userId": email})
-	if err != nil {
-		return errors.New("could not encode enrollment")
+	return g.addCourseMember(ctx, token, courseID, email, "students", "STUDENT")
+}
+
+// AssignTeacher adds a teacher directly when authorized, or creates an invitation.
+func (g *ClassroomGateway) AssignTeacher(ctx context.Context, token, courseID, email string) error {
+	return g.addCourseMember(ctx, token, courseID, email, "teachers", "TEACHER")
+}
+
+func (g *ClassroomGateway) RemoveStudent(ctx context.Context, token, courseID, email string) error {
+	return g.removeCourseMember(ctx, token, courseID, email, "students")
+}
+
+func (g *ClassroomGateway) RemoveTeacher(ctx context.Context, token, courseID, email string) error {
+	return g.removeCourseMember(ctx, token, courseID, email, "teachers")
+}
+
+func (g *ClassroomGateway) removeCourseMember(ctx context.Context, token, courseID, email, roster string) error {
+	role := "STUDENT"
+	if roster == "teachers" {
+		role = "TEACHER"
 	}
-	endpoint := fmt.Sprintf("%s/%s/students?enrollmentCode=", g.coursesURL, url.PathEscape(courseID))
-	resp, err := g.rawRequest(ctx, token, http.MethodPost, endpoint, bytes.NewReader(body))
+	invitesURL := strings.TrimSuffix(g.coursesURL, "/courses") + "/invitations?courseId=" + url.QueryEscape(courseID) + "&userId=" + url.QueryEscape(email)
+	inviteResp, err := g.rawRequest(ctx, token, http.MethodGet, invitesURL, nil)
+	if err != nil {
+		return err
+	}
+	if inviteResp.StatusCode >= 200 && inviteResp.StatusCode < 300 {
+		var payload struct {
+			Invitations []struct {
+				ID       string `json:"id"`
+				UserID   string `json:"userId"`
+				CourseID string `json:"courseId"`
+				Role     string `json:"role"`
+			} `json:"invitations"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(inviteResp.Body, 64<<10)).Decode(&payload)
+		_ = inviteResp.Body.Close()
+		if decodeErr != nil {
+			return errors.New("classroom: invalid invitations response")
+		}
+		for _, invitation := range payload.Invitations {
+			if invitation.Role != role || invitation.UserID != email || invitation.CourseID != courseID || invitation.ID == "" {
+				continue
+			}
+			deleteResp, e := g.rawRequest(ctx, token, http.MethodDelete, strings.TrimSuffix(g.coursesURL, "/courses")+"/invitations/"+url.PathEscape(invitation.ID), nil)
+			if e != nil {
+				return e
+			}
+			_, _ = io.Copy(io.Discard, io.LimitReader(deleteResp.Body, 4<<10))
+			code := deleteResp.StatusCode
+			_ = deleteResp.Body.Close()
+			if code != http.StatusNotFound && (code < 200 || code >= 300) {
+				return fmt.Errorf("classroom: revoke invitation: HTTP %d", code)
+			}
+		}
+	} else {
+		code := inviteResp.StatusCode
+		_, _ = io.Copy(io.Discard, io.LimitReader(inviteResp.Body, 4<<10))
+		_ = inviteResp.Body.Close()
+		if code != http.StatusNotFound {
+			return fmt.Errorf("classroom: list invitations: HTTP %d", code)
+		}
+	}
+	endpoint := fmt.Sprintf("%s/%s/%s/%s", g.coursesURL, url.PathEscape(courseID), roster, url.PathEscape(email))
+	resp, err := g.rawRequest(ctx, token, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusConflict {
-		return nil // already enrolled
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("classroom: enroll %s: HTTP %d", maskEmail(email), resp.StatusCode)
+		return fmt.Errorf("classroom: remove member: HTTP %d", resp.StatusCode)
 	}
 	return nil
 }
 
-// AssignTeacher adds a teacher to a course by email via the Classroom API.
-// Already-assigned (409) returns success — idempotent.
-func (g *ClassroomGateway) AssignTeacher(ctx context.Context, token, courseID, email string) error {
-	body, err := json.Marshal(map[string]string{"userId": email})
-	if err != nil {
-		return errors.New("could not encode teacher assignment")
-	}
-	endpoint := fmt.Sprintf("%s/%s/teachers", g.coursesURL, url.PathEscape(courseID))
-	resp, err := g.rawRequest(ctx, token, http.MethodPost, endpoint, bytes.NewReader(body))
+func (g *ClassroomGateway) addCourseMember(ctx context.Context, token, courseID, email, roster, role string) error {
+	endpoint := fmt.Sprintf("%s/%s/%s", g.coursesURL, url.PathEscape(courseID), roster)
+	status, err := g.postCourseMember(ctx, token, endpoint, map[string]string{"userId": email})
 	if err != nil {
 		return err
 	}
+	if status == http.StatusForbidden {
+		// Classroom allows domain admins to add members directly. Teachers
+		// with roster permissions use an invitation that the recipient accepts.
+		invitationsURL := strings.TrimSuffix(g.coursesURL, "/courses") + "/invitations"
+		status, err = g.postCourseMember(ctx, token, invitationsURL, map[string]string{
+			"courseId": courseID,
+			"userId":   email,
+			"role":     role,
+		})
+		if err != nil {
+			return err
+		}
+		if status == http.StatusConflict || (status >= 200 && status < 300) {
+			return nil // invitation already exists or was created
+		}
+		// An accepted invitation can produce FAILED_PRECONDITION on retry.
+		if status == http.StatusBadRequest && g.hasCourseMember(ctx, token, endpoint+"/"+url.PathEscape(email)) {
+			return nil
+		}
+		return fmt.Errorf("classroom: invite %s as %s: HTTP %d", maskEmail(email), strings.ToLower(role), status)
+	}
+	if status == http.StatusConflict || (status >= 200 && status < 300) {
+		return nil // already on the roster or added
+	}
+	return fmt.Errorf("classroom: add %s as %s: HTTP %d", maskEmail(email), strings.ToLower(role), status)
+}
+
+func (g *ClassroomGateway) hasCourseMember(ctx context.Context, token, endpoint string) bool {
+	resp, err := g.rawRequest(ctx, token, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false
+	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusConflict {
-		return nil // already a teacher
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	return resp.StatusCode == http.StatusOK
+}
+
+func (g *ClassroomGateway) postCourseMember(ctx context.Context, token, endpoint string, fields map[string]string) (int, error) {
+	body, err := json.Marshal(fields)
+	if err != nil {
+		return 0, fmt.Errorf("encode Classroom roster request: %w", err)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("classroom: assign teacher %s: HTTP %d", maskEmail(email), resp.StatusCode)
+	resp, err := g.rawRequest(ctx, token, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
 	}
-	return nil
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	return resp.StatusCode, nil
 }
 
 func maskEmail(email string) string {

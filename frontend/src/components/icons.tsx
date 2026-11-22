@@ -32,6 +32,12 @@ export const IconOverview = (p: IconProps) => (
   </Svg>
 );
 
+export const IconCheck = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m5 12 4 4L19 6" />
+  </Svg>
+);
+
 export const IconGroups = (p: IconProps) => (
   <Svg {...p}>
     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />

@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Chip, PageTitle } from "../components/ui";
+import { AppSelect } from "../components/AppSelect";
 import { IntakeQuestions } from "../components/IntakeQuestions";
 import { editableQuestion, intakeActionClass, intakeButtonClass, intakeInputClass, toIntakeQuestions, type EditableQuestion } from "../lib/intakeForm";
 import { useSettings } from "../i18n";
 import type { TranslationKey } from "../i18n/en";
-import { api } from "../lib/api";
+import { api, type Group } from "../lib/api";
 import { useIntakeGroups } from "../lib/queries";
 import type { components } from "../lib/schema";
 import { fireLock, getAuthHeader, useAuthUser } from "../lib/auth";
+import { useWorkspaceScope } from "../lib/workspaceScope";
 
 type FormState = components["schemas"]["IntakeFormState"];
-type Delivery = components["schemas"]["IntakeDelivery"];
 type Summary = components["schemas"]["IntakeResponseSummary"];
 type Action = "draft" | "publish" | "distribute" | "import" | "refresh";
 
@@ -19,8 +20,14 @@ export function IntakeFormsPage() {
   const user = useAuthUser();
   const authorization = user ? getAuthHeader().Authorization ?? "" : "";
   const [groupId, setGroupId] = useState("");
+  const [panel, setPanel] = useState<"create" | "history">("create");
   const groups = useIntakeGroups(Boolean(authorization));
+  const workspaceScope = useWorkspaceScope();
+  const visibleGroups = workspaceScope.filterGroups(groups.data);
   const onUnauthorized = useCallback(() => fireLock(), []);
+  useEffect(() => {
+    if (visibleGroups && groupId && !visibleGroups.some((group) => group.id === groupId)) setGroupId(visibleGroups[0]?.id ?? "");
+  }, [visibleGroups, groupId]);
 
   return (
     <div className="space-y-5">
@@ -30,18 +37,27 @@ export function IntakeFormsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <label className="w-72 max-w-full text-sm font-medium text-text">
               {t("intake.group")}
-              <select className={`mt-1 ${intakeInputClass}`} value={groupId} onChange={(event) => setGroupId(event.target.value)}>
-                <option value="">{t("intake.choose")}</option>
-                {groups.data?.map((group) => (
-                  <option key={group.id} value={group.id}>{group.name}</option>
-                ))}
-              </select>
+              <AppSelect className={`mt-1 ${intakeInputClass}`} ariaLabel={t("intake.group")} value={groupId}
+                placeholder={t("intake.choose")} options={(visibleGroups ?? []).map((group) => ({ value: group.id, label: group.name }))}
+                onChange={setGroupId} />
             </label>
             {groups.isError && <p role="alert" className="text-sm text-danger-text">{t("intake.loadFailed")}</p>}
           </div>
         ) : <a href="#/login" className="app-action">{t("auth.signIn")}</a>}
       </Card>
-      {authorization && groupId && <IntakeWorkflow key={groupId} groupId={groupId} authorization={authorization} onUnauthorized={onUnauthorized} />}
+      {authorization && <>
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("nav.intakeForms")}>
+          {(["create", "history"] as const).map((key) => (
+            <button key={key} type="button" role="tab" aria-selected={panel === key}
+              className={`min-h-10 rounded-lg border px-4 text-sm font-semibold transition ${panel === key ? "border-primary bg-primary text-on-primary" : "border-border bg-surface text-text hover:border-primary"}`}
+              onClick={() => setPanel(key)}>{t(key === "create" ? "intake.createSection" : "intake.history")}</button>
+          ))}
+        </div>
+        {panel === "create" && (groupId
+          ? <IntakeWorkflow key={groupId} groupId={groupId} authorization={authorization} onUnauthorized={onUnauthorized} />
+          : <Card className="p-5"><p className="text-sm text-muted">{t("intake.chooseGroupFirst")}</p></Card>)}
+        {panel === "history" && <IntakeHistory groups={visibleGroups} authorization={authorization} onUnauthorized={onUnauthorized} />}
+      </>}
     </div>
   );
 }
@@ -53,9 +69,9 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
   const [questions, setQuestions] = useState(() => [editableQuestion(t("intake.fullName"))]);
   const [extraQuestions, setExtraQuestions] = useState<EditableQuestion[]>([]);
   const [form, setForm] = useState<FormState | null>();
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [summary, setSummary] = useState<Summary>();
   const [busy, setBusy] = useState<Action>();
+  const [emailMessage, setEmailMessage] = useState("");
   const [confirm, setConfirm] = useState<"publish" | "distribute">();
   const [error, setError] = useState<TranslationKey>();
   const [notice, setNotice] = useState<TranslationKey>();
@@ -75,16 +91,8 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
         if (result.response.status === 401) { onUnauthorized(); return; }
         if (result.response.status === 404) {
           setForm(null);
-          setDeliveries([]);
         } else if (result.data) {
           setForm(result.data);
-          if (result.data.responderUrl) {
-            const status = await api.GET("/api/groups/{groupId}/forms/deliveries", request);
-            if (controller.signal.aborted) return;
-            if (status.response.status === 401) { onUnauthorized(); return; }
-            if (!status.data) { setError("intake.loadFailed"); return; }
-            setDeliveries(status.data.deliveries);
-          }
         } else {
           setError("intake.loadFailed");
         }
@@ -127,7 +135,7 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
         : action === "publish"
           ? await api.POST("/api/groups/{groupId}/forms/publish", options)
           : action === "distribute"
-            ? await api.POST("/api/groups/{groupId}/forms/distribute", options)
+            ? await api.POST("/api/groups/{groupId}/forms/distribute", { ...options, body: { message: emailMessage.trim() || undefined } })
             : await api.POST("/api/groups/{groupId}/forms/responses/import", options);
 
       if (result.response.status === 401) { onUnauthorized(); return; }
@@ -137,7 +145,6 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
         return;
       }
       if ("saved" in result.data) setSummary(result.data);
-      if ("deliveries" in result.data) setDeliveries(result.data.deliveries);
       setNotice(action === "draft" ? "intake.drafted" : action === "publish" ? "intake.published"
         : action === "distribute" ? "intake.queued" : "intake.imported");
       setReload((version) => version + 1);
@@ -253,6 +260,15 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
         {confirm && (
           <div className="space-y-3 rounded-lg border border-border bg-surface-muted p-4">
             <p className="text-sm text-text">{t(confirm === "publish" ? "intake.confirmPublish" : "intake.confirmSend")}</p>
+            {confirm === "distribute" && (
+              <label className="block text-sm text-text">
+                {t("intake.emailMessage")}
+                <textarea className={`mt-1 ${intakeInputClass}`} rows={5} maxLength={4000}
+                  value={emailMessage} onChange={(event) => setEmailMessage(event.target.value)}
+                  aria-describedby="intake-email-link" />
+                <span id="intake-email-link" className="mt-1 block text-muted">{t("intake.emailLink")}</span>
+              </label>
+            )}
             <div className="flex flex-wrap gap-2">
               <button type="button" className={intakeActionClass} onClick={() => void act(confirm)}>{t(confirm === "publish" ? "intake.confirmPublishAction" : "intake.confirmSendAction")}</button>
               <button type="button" className={intakeButtonClass} onClick={() => setConfirm(undefined)}>{t("intake.cancel")}</button>
@@ -264,27 +280,113 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
         {notice && <p role="status" className="text-sm text-success-text">{t(notice)}</p>}
         {summary && <p role="status" className="text-sm text-text">{t("intake.importSummary", summary)}</p>}
       </Card>
-
-      {!!deliveries.length && (
-        <Card className="space-y-3 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-text">{t("intake.deliveries")}</h2>
-            <button type="button" className={intakeButtonClass} onClick={() => void act("refresh")}>{t("audit.refresh")}</button>
-          </div>
-          <ul className="divide-y divide-border">
-            {deliveries.map((item) => (
-              <li className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm" key={item.id}>
-                <span className="break-all text-text">{item.recipient}</span>
-                <Chip tone={item.status === "sent" ? "success" : item.status === "failed" || item.status === "unknown" ? "warn" : "info"}>
-                  {t(emailStatusLabels[item.status])}
-                </Chip>
-                {item.error && <p className="w-full text-xs text-muted">{item.error}</p>}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
     </>
+  );
+}
+
+type GroupDeliverySummary = { group: Group; sent: number; failed: number; unavailable: boolean };
+
+function IntakeHistory({ groups, authorization, onUnauthorized }: {
+  groups?: Group[]; authorization: string; onUnauthorized: () => void;
+}) {
+  const { t } = useSettings();
+  const [filter, setFilter] = useState<"sent" | "failed">("sent");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [rows, setRows] = useState<GroupDeliverySummary[]>();
+  const [loading, setLoading] = useState(false);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    if (!groups) return;
+    const groupList = groups;
+    const controller = new AbortController();
+    async function load() {
+      setLoading(true);
+      const summaries: GroupDeliverySummary[] = [];
+      for (let offset = 0; offset < groupList.length; offset += 5) {
+        if (controller.signal.aborted) return;
+        const results = await Promise.allSettled(groupList.slice(offset, offset + 5).map(async (group): Promise<GroupDeliverySummary> => {
+          const request = { headers: { Authorization: authorization }, params: { path: { groupId: group.id } }, signal: controller.signal };
+          const formResult = await api.GET("/api/groups/{groupId}/forms", request);
+          if (formResult.response.status === 401) { onUnauthorized(); throw new Error("Unauthorized"); }
+          if (formResult.response.status === 404) return { group, sent: 0, failed: 0, unavailable: false };
+          if (!formResult.data) throw formResult.error ?? new Error("Could not load intake form");
+          if (!formResult.data.responderUrl) return { group, sent: 0, failed: 0, unavailable: false };
+          const deliveryResult = await api.GET("/api/groups/{groupId}/forms/deliveries", request);
+          if (deliveryResult.response.status === 401) { onUnauthorized(); throw new Error("Unauthorized"); }
+          if (!deliveryResult.data) throw deliveryResult.error ?? new Error("Could not load form deliveries");
+          return {
+            group,
+            sent: deliveryResult.data.deliveries.filter(({ status }) => status === "sent").length,
+            failed: deliveryResult.data.deliveries.filter(({ status }) => status === "failed" || status === "unknown").length,
+            unavailable: false,
+          };
+        }));
+        results.forEach((result, index) => summaries.push(result.status === "fulfilled"
+          ? result.value
+          : { group: groupList[offset + index], sent: 0, failed: 0, unavailable: true }));
+      }
+      if (!controller.signal.aborted) {
+        setRows(summaries);
+        setLoading(false);
+      }
+    }
+    setRows(undefined);
+    void load();
+    return () => controller.abort();
+  }, [groups, authorization, onUnauthorized, reload]);
+
+  const query = search.trim().toLocaleLowerCase();
+  const nameMatches = rows?.filter((row) => row.group.name.toLocaleLowerCase().includes(query)) ?? [];
+  const exactNameMatches = query ? nameMatches.filter((row) => row.group.name.trim().toLocaleLowerCase() === query) : [];
+  const filteredNames = exactNameMatches.length ? exactNameMatches : nameMatches;
+  const visible = filteredNames.filter((row) =>
+    (row.unavailable || (filter === "sent" ? row.sent > 0 : row.failed > 0)));
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold text-text">{t("intake.deliveries")}</h2>
+        <button type="button" className={intakeButtonClass} disabled={loading}
+          onClick={() => setReload((value) => value + 1)}>{t("audit.refresh")}</button>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2 border-b border-border" role="tablist" aria-label={t("intake.deliveries")}>
+          {(["sent", "failed"] as const).map((key) => (
+            <button key={key} type="button" role="tab" aria-selected={filter === key}
+              className={`min-h-10 border-b-2 px-3 text-sm font-semibold transition ${filter === key ? "border-primary text-primary" : "border-transparent text-muted hover:text-text"}`}
+              onClick={() => setFilter(key)}>{t(`intake.deliveryFilter.${key}`)}</button>
+          ))}
+        </div>
+        <button type="button" className={intakeButtonClass} aria-expanded={searchOpen}
+          onClick={() => setSearchOpen((open) => !open)}>{t("intake.searchGroups")}</button>
+      </div>
+      {searchOpen && <label className="block max-w-sm text-sm font-medium text-text">
+        {t("audit.groupSearch")}
+        <input type="search" className={`mt-1 ${intakeInputClass}`} value={search} onChange={(event) => setSearch(event.target.value)} />
+      </label>}
+      {(!groups || loading) && <p role="status" className="text-sm text-muted">{t("intake.loading")}</p>}
+      {groups && !loading && visible?.length === 0 && <p className="text-sm text-muted">
+        {query && nameMatches.length === 0
+          ? t("intake.noGroupsMatch") : t(`intake.deliveryFilter.empty.${filter}`)}
+      </p>}
+      {!!visible?.length && <ul className="divide-y divide-border">
+        {visible.map(({ group, sent, failed, unavailable }) => (
+          <li key={group.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+            <span className="font-medium text-text">{group.name}</span>
+            {unavailable ? <Chip tone="warn">{t("intake.deliveryUnavailable")}</Chip> : (
+              <Chip tone={filter === "sent" ? "success" : "warn"}>
+                {t(`intake.deliveryCount.${filter}`, { count: filter === "sent" ? sent : failed })}
+              </Chip>
+            )}
+            <span className="w-full text-xs text-muted">
+              {t("intake.deliveryCount.sent", { count: sent })} · {t("intake.deliveryCount.failed", { count: failed })}
+            </span>
+          </li>
+        ))}
+      </ul>}
+    </Card>
   );
 }
 
@@ -292,8 +394,3 @@ let extraQuestionId = 0;
 function nextEditableId(): number {
   return ++extraQuestionId;
 }
-
-const emailStatusLabels = {
-  pending: "audit.emailPending", sending: "audit.emailPending", sent: "audit.emailSent",
-  failed: "audit.emailFailed", unknown: "audit.emailUnknown",
-} as const;

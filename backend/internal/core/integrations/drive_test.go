@@ -2,6 +2,9 @@ package integrations
 
 import (
 	"context"
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -13,6 +16,7 @@ type fakeDriveGateway struct {
 	GeneratedIDs []string
 	Folders      map[string]string     // id → name (created folders)
 	Permissions  map[string][]fakePerm // folderID → [{email, role}]
+	Reject       map[fakePerm]bool
 }
 
 type fakePerm struct {
@@ -43,7 +47,22 @@ func (f *fakeDriveGateway) EnsureFolder(_ context.Context, _, id, name, parentID
 }
 
 func (f *fakeDriveGateway) GrantAccess(_ context.Context, _, folderID, email, role string) error {
+	if f.Reject[fakePerm{Email: email, Role: role}] {
+		return errors.New("permission rejected")
+	}
 	f.Permissions[folderID] = append(f.Permissions[folderID], fakePerm{Email: email, Role: role})
+	return nil
+}
+
+func (f *fakeDriveGateway) RevokeAccess(_ context.Context, _, folderID, email string) error {
+	permissions := f.Permissions[folderID]
+	kept := permissions[:0]
+	for _, permission := range permissions {
+		if permission.Email != email {
+			kept = append(kept, permission)
+		}
+	}
+	f.Permissions[folderID] = kept
 	return nil
 }
 
@@ -246,6 +265,41 @@ func TestDriveProvisionCreatesCorrectSubfolders(t *testing.T) {
 	for i, want := range wantSubs {
 		if folders.Subfolders[i].Name != want {
 			t.Errorf("subfolder[%d] = %q, want %q", i, folders.Subfolders[i].Name, want)
+		}
+	}
+}
+
+func TestDrivePermissionFailureDoesNotBlockOtherGroupMembers(t *testing.T) {
+	gw, store := newFakeDriveGateway(), newFakeDriveStore()
+	svc := newDriveService(gw, store)
+	groupID := uuid.New()
+	folders, err := svc.Provision(t.Context(), groupID, "Group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw.Reject = map[fakePerm]bool{
+		{Email: "bad-staff@example.test", Role: "writer"}:   true,
+		{Email: "bad-student@example.test", Role: "reader"}: true,
+	}
+	staff := fakePerm{Email: "staff@example.test", Role: "writer"}
+	student := fakePerm{Email: "student@example.test", Role: "reader"}
+	err = svc.ApplyAccessRules(t.Context(), groupID, folders, DriveAccessRules{
+		StaffEmails:   []string{"bad-staff@example.test", staff.Email},
+		StudentEmails: []string{"bad-student@example.test", student.Email, " Staff@EXAMPLE.test "},
+	})
+	if err == nil || !strings.Contains(err.Error(), "10 Drive permission grants failed") {
+		t.Fatalf("ApplyAccessRules = %v, want all ten failed grants reported", err)
+	}
+	if !slices.Equal(gw.Permissions[folders.Root.ID], []fakePerm{staff}) {
+		t.Fatalf("root permissions = %v, want staff only", gw.Permissions[folders.Root.ID])
+	}
+	for _, folder := range folders.Subfolders {
+		want := []fakePerm{staff}
+		if folder.Name != "Student Data" {
+			want = append(want, student)
+		}
+		if got := gw.Permissions[folder.ID]; !slices.Equal(got, want) {
+			t.Errorf("%s permissions = %v, want %v", folder.Name, got, want)
 		}
 	}
 }

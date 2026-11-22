@@ -15,7 +15,7 @@ import (
 )
 
 const announcementColumns = `
-	id, group_id, request_id, channel_id, channel_name, message_type, message_content, scheduled_at,
+	id, group_id, request_id, channel_id, channel_ids, channel_name, message_type, message_content, scheduled_at,
 	CASE WHEN status='publishing' AND updated_at < now() - interval '2 minutes' THEN 'unknown' ELSE status END,
 	published_at, COALESCE(external_message_id, ''),
 	CASE WHEN status='publishing' AND updated_at < now() - interval '2 minutes'
@@ -24,7 +24,7 @@ const announcementColumns = `
 
 func readAnnouncement(row interface{ Scan(...any) error }) (announcements.Announcement, error) {
 	var item announcements.Announcement
-	err := row.Scan(&item.ID, &item.GroupID, &item.RequestID, &item.ChannelID, &item.ChannelName,
+	err := row.Scan(&item.ID, &item.GroupID, &item.RequestID, &item.ChannelID, &item.ChannelIDs, &item.ChannelName,
 		&item.Type, &item.Message, &item.ScheduledAt, &item.Status, &item.PublishedAt, &item.ExternalMessageID, &item.Error)
 	return item, err
 }
@@ -37,13 +37,18 @@ func (r *Repo) ScheduleAnnouncement(ctx context.Context, groupID uuid.UUID, inpu
 	defer tx.Rollback(ctx)
 
 	item, err := readAnnouncement(tx.QueryRow(ctx, `
+		WITH target AS (
+			SELECT array_agg(resource.external_resource_id ORDER BY resource.resource_name) AS ids
+			FROM group_resources resource
+			WHERE resource.group_id=$1 AND resource.provider='slack' AND resource.resource_type='channel'
+			  AND resource.status='active' AND resource.external_resource_id<>''
+			  AND ($4='general' OR resource.resource_name=$3)
+		)
 		INSERT INTO scheduled_announcements
-		    (group_id, request_id, channel_id, channel_name, message_type, message_content, scheduled_at)
-		SELECT $1, $2, resource.external_resource_id, $3, $4, $5, $6
-		FROM group_resources resource JOIN groups g ON g.id=resource.group_id
-		WHERE resource.group_id=$1 AND resource.provider='slack' AND resource.resource_type='channel'
-		  AND resource.resource_name=$3 AND resource.status='active' AND resource.external_resource_id<>''
-		  AND g.status<>'archived' AND $6 > now()
+		    (group_id, request_id, channel_id, channel_ids, channel_name, message_type, message_content, scheduled_at)
+		SELECT $1, $2, target.ids[1], target.ids, CASE WHEN $4='general' THEN 'all' ELSE $3 END, $4, $5, $6
+		FROM target JOIN groups g ON g.id=$1
+		WHERE cardinality(target.ids)>0 AND g.status<>'archived' AND $6 > now()
 		ON CONFLICT (group_id, request_id) DO NOTHING
 		RETURNING `+announcementColumns, groupID, input.RequestID, input.ChannelName, input.Type, input.Message, input.ScheduledAt))
 	if err == nil {
@@ -72,7 +77,7 @@ func (r *Repo) ScheduleAnnouncement(ctx context.Context, groupID uuid.UUID, inpu
 
 func (r *Repo) Announcements(ctx context.Context, groupID uuid.UUID) ([]announcements.Announcement, error) {
 	rows, err := r.pool.Query(ctx, `SELECT `+announcementColumns+`
-		FROM scheduled_announcements WHERE group_id=$1 AND request_id IS NOT NULL
+		FROM scheduled_announcements WHERE group_id=$1 AND request_id IS NOT NULL AND history_cleared_at IS NULL
 		ORDER BY scheduled_at DESC,id DESC LIMIT 100`, groupID)
 	if err != nil {
 		return nil, err
@@ -82,14 +87,25 @@ func (r *Repo) Announcements(ctx context.Context, groupID uuid.UUID) ([]announce
 	})
 }
 
+func (r *Repo) ClearAnnouncementHistory(ctx context.Context, groupID uuid.UUID) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE scheduled_announcements SET history_cleared_at=now()
+		WHERE group_id=$1 AND request_id IS NOT NULL AND history_cleared_at IS NULL
+		  AND (status IN ('published','failed','cancelled','unknown')
+		       OR (status='publishing' AND updated_at < now() - interval '2 minutes'))
+	`, groupID)
+	return err
+}
+
 func (r *Repo) StartAnnouncement(ctx context.Context, id uuid.UUID) (announcements.Announcement, bool, error) {
 	item, err := readAnnouncement(r.pool.QueryRow(ctx, `
 		WITH eligible AS (
-		    SELECT a.id, EXISTS (
-		        SELECT 1 FROM group_resources r JOIN groups g ON g.id=r.group_id
-		        WHERE r.group_id=a.group_id AND r.provider='slack' AND r.resource_type='channel'
-		          AND r.resource_name=a.channel_name AND r.external_resource_id=a.channel_id
-		          AND r.status='active' AND g.status<>'archived'
+			SELECT a.id, EXISTS (
+			    SELECT 1 FROM groups g WHERE g.id=a.group_id AND g.status<>'archived'
+			      AND cardinality(a.channel_ids)>0
+			      AND cardinality(a.channel_ids)=(SELECT count(*) FROM group_resources r
+			        WHERE r.group_id=a.group_id AND r.provider='slack' AND r.resource_type='channel'
+			          AND r.status='active' AND r.external_resource_id=ANY(a.channel_ids))
 		    ) AS active
 		    FROM scheduled_announcements a WHERE a.id=$1
 		)

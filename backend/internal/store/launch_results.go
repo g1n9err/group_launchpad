@@ -50,7 +50,12 @@ func (r *Repo) SaveLaunchResult(ctx context.Context, groupID uuid.UUID, status s
 	if err != nil {
 		return fmt.Errorf("store: marshal launch steps: %w", err)
 	}
-	if err := r.q.UpsertLaunchResult(ctx, gen.UpsertLaunchResultParams{
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := r.q.WithTx(tx).UpsertLaunchResult(ctx, gen.UpsertLaunchResultParams{
 		GroupID: groupID,
 		Status:  status,
 		Column3: stepsJSON,
@@ -58,13 +63,13 @@ func (r *Repo) SaveLaunchResult(ctx context.Context, groupID uuid.UUID, status s
 		return fmt.Errorf("store: upsert launch result: %w", err)
 	}
 	if groupStatus := launchStatusToGroupStatus(status); groupStatus != "" {
-		if _, err := r.pool.Exec(ctx,
+		if _, err := tx.Exec(ctx,
 			`UPDATE groups SET status = $2 WHERE id = $1 AND status <> 'archived' AND status <> $2`,
 			groupID, groupStatus); err != nil {
 			return fmt.Errorf("store: sync group status: %w", err)
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 // GetLaunchResult implements transport.LaunchStatusReader.
@@ -77,4 +82,50 @@ func (r *Repo) GetLaunchResult(ctx context.Context, groupID uuid.UUID) (string, 
 		return "", nil, false, fmt.Errorf("store: get launch result: %w", err)
 	}
 	return row.Status, json.RawMessage(row.Steps), true, nil
+}
+
+// SaveLaunchStep updates the result of a standalone platform retry.
+func (r *Repo) SaveLaunchStep(ctx context.Context, groupID uuid.UUID, step jobs.LaunchStep) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var status string
+	var saved []byte
+	err = tx.QueryRow(ctx, `SELECT status, steps FROM launch_results WHERE group_id=$1 FOR UPDATE`, groupID).Scan(&status, &saved)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status == "running") {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var steps []jobs.LaunchStep
+	if err := json.Unmarshal(saved, &steps); err != nil {
+		return err
+	}
+	found := false
+	for i := range steps {
+		if steps[i].Platform == step.Platform {
+			steps[i] = step
+			found = true
+			break
+		}
+	}
+	if !found {
+		steps = append(steps, step)
+	}
+	status = jobs.LaunchStatusForSteps(steps)
+	encoded, err := json.Marshal(steps)
+	if err != nil {
+		return err
+	}
+	if err := r.q.WithTx(tx).UpsertLaunchResult(ctx, gen.UpsertLaunchResultParams{GroupID: groupID, Status: status, Column3: encoded}); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE groups SET status=$2 WHERE id=$1 AND status <> 'archived' AND status <> $2`, groupID, launchStatusToGroupStatus(status)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

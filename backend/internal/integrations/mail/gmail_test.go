@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"mime/quotedprintable"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,8 @@ func (testGmailCredentials) GmailCredentials(context.Context) (string, string, e
 }
 
 func TestGmailSendsFromConnectedAccount(t *testing.T) {
+	const message = "Բարև։\nԽնդրում եմ լրացնել ձևաթուղթը։"
+	const responderURL = "https://docs.google.com/forms/d/e/test/viewform"
 	for _, tc := range []struct {
 		name    string
 		code    int
@@ -40,8 +43,13 @@ func TestGmailSendsFromConnectedAccount(t *testing.T) {
 				}
 				raw, err := base64.RawURLEncoding.DecodeString(payload.Raw)
 				if err != nil || !strings.Contains(string(raw), "From: coordinator@example.test\r\nTo: student@example.test") ||
-					!strings.Contains(string(raw), "https://docs.google.com/forms/") {
+					!strings.Contains(string(raw), "Content-Type: text/plain; charset=UTF-8") {
 					t.Errorf("unexpected message %q (%v)", raw, err)
+				}
+				_, body, _ := strings.Cut(string(raw), "\r\n\r\n")
+				decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(body)))
+				if got := strings.ReplaceAll(string(decoded), "\r\n", "\n"); err != nil || got != message+"\n\n"+responderURL+"\n" {
+					t.Errorf("unexpected decoded body %q (%v)", got, err)
 				}
 				w.WriteHeader(tc.code)
 				_, _ = w.Write([]byte(`{"id":"gmail-test-id"}`))
@@ -50,7 +58,7 @@ func TestGmailSendsFromConnectedAccount(t *testing.T) {
 			gmail := NewGmail(testGmailCredentials{})
 			gmail.endpoint, gmail.client = srv.URL, srv.Client()
 			unknown, err := gmail.Send(t.Context(), integrations.IntakeEmail{
-				Recipient: "student@example.test", GroupName: "Test Group", ResponderURL: "https://docs.google.com/forms/d/e/test/viewform",
+				Recipient: "student@example.test", GroupName: "Test Group", ResponderURL: responderURL, Message: message,
 			})
 			if unknown != tc.unknown || (err == nil) != (tc.code == 200) {
 				t.Fatalf("unknown=%t err=%v", unknown, err)

@@ -6,6 +6,7 @@ package store_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -59,6 +60,27 @@ func TestSaveLaunchResultSyncsGroupStatus(t *testing.T) {
 		if got := readStatus(); got != tc.want {
 			t.Errorf("after %s: group status = %s, want %s", tc.launch, got, tc.want)
 		}
+	}
+	if err := repo.SaveLaunchResult(ctx, group.ID, "partially_failed", []jobs.LaunchStep{
+		{Platform: "slack", Status: jobs.StepSucceeded},
+		{Platform: "classroom", Status: jobs.StepPartiallyFailed, Detail: "old failure"},
+		{Platform: "drive", Status: jobs.StepPartiallyFailed, Detail: "permissions"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveLaunchStep(ctx, group.ID, jobs.LaunchStep{Platform: "classroom", Status: jobs.StepSucceeded}); err != nil {
+		t.Fatal(err)
+	}
+	status, raw, _, err := repo.GetLaunchResult(ctx, group.ID)
+	if err != nil || status != "partially_failed" || strings.Contains(string(raw), "old failure") ||
+		!strings.Contains(string(raw), "permissions") {
+		t.Fatalf("after Classroom retry: %s %s, err=%v", status, raw, err)
+	}
+	if err := repo.SaveLaunchStep(ctx, group.ID, jobs.LaunchStep{Platform: "drive", Status: jobs.StepSucceeded}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readStatus(); got != "launched" {
+		t.Errorf("after final successful retry: group status = %s, want launched", got)
 	}
 	// Archived groups are never resurrected by a late launch write.
 	if _, err := pool.Exec(ctx, `UPDATE groups SET status='archived' WHERE id=$1`, group.ID); err != nil {

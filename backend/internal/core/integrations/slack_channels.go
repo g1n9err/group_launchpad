@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -121,6 +122,12 @@ type SlackChannelsService struct {
 	// invitations (see SlackJoinRecorder). Optional: nil disables write-back.
 	Joins      SlackJoinRecorder
 	configured bool
+	resolver   SlackGroupGatewayResolver
+}
+
+// SlackGroupGatewayResolver selects the bot installation assigned to a group.
+type SlackGroupGatewayResolver interface {
+	ForGroup(context.Context, uuid.UUID) (SlackGateway, error)
 }
 
 // ExternalOperationRecorder persists external operation logs.
@@ -136,6 +143,23 @@ func NewSlackChannelsService(gateway SlackGateway, resources SlackResourceReposi
 // Configured reports whether Slack channel operations are possible.
 func (s *SlackChannelsService) Configured() bool { return s.configured }
 
+func (s *SlackChannelsService) SetGatewayResolver(resolver SlackGroupGatewayResolver) {
+	s.resolver = resolver
+	if resolver != nil {
+		s.configured = true
+	}
+}
+
+func (s *SlackChannelsService) gatewayFor(ctx context.Context, groupID uuid.UUID) (SlackGateway, error) {
+	if s.resolver != nil {
+		return s.resolver.ForGroup(ctx, groupID)
+	}
+	if s.gateway == nil {
+		return nil, &core.AppError{Code: core.CodeNotReady, Message: "Slack is not configured"}
+	}
+	return s.gateway, nil
+}
+
 func (s *SlackChannelsService) record(ctx context.Context, groupID uuid.UUID, operation, errCategory string, started time.Time) {
 	_ = s.operations.RecordExternalOperation(ctx, ExternalOperation{ //nolint:errcheck — op-log failures never mask results
 		GroupID: &groupID, Provider: ProviderSlack, Operation: operation, Error: errCategory, DurationMS: time.Since(started).Milliseconds(),
@@ -148,6 +172,10 @@ func (s *SlackChannelsService) record(ctx context.Context, groupID uuid.UUID, op
 func (s *SlackChannelsService) Provision(ctx context.Context, in ProvisionInput) (ProvisionResult, error) {
 	if !s.configured {
 		return ProvisionResult{}, &core.AppError{Code: core.CodeNotReady, Message: "slack is not configured on the server"}
+	}
+	gateway, err := s.gatewayFor(ctx, in.GroupID)
+	if err != nil {
+		return ProvisionResult{}, err
 	}
 
 	result := ProvisionResult{
@@ -187,7 +215,7 @@ func (s *SlackChannelsService) Provision(ctx context.Context, in ProvisionInput)
 	if len(missing) > 0 {
 		started := time.Now()
 		var err error
-		existing, err = s.gateway.LookupChannelIDs(ctx, missing)
+		existing, err = gateway.LookupChannelIDs(ctx, missing)
 		s.record(ctx, in.GroupID, OpSlackListChannels, errorCategory(err), started)
 		if err != nil {
 			for _, p := range pending {
@@ -211,7 +239,7 @@ func (s *SlackChannelsService) Provision(ctx context.Context, in ProvisionInput)
 			continue
 		}
 		started := time.Now()
-		id, err := s.gateway.CreateChannel(ctx, p.name)
+		id, err := gateway.CreateChannel(ctx, p.name)
 		s.record(ctx, in.GroupID, OpSlackCreateChan, errorCategory(err), started)
 		switch {
 		case err == nil:
@@ -220,7 +248,7 @@ func (s *SlackChannelsService) Provision(ctx context.Context, in ProvisionInput)
 			result.Channels = append(result.Channels, ChannelResult{Name: p.name, ChannelID: id, Status: ChannelCreated})
 		case err == ErrSlackChannelNameTaken: //nolint:errorlint — sentinel compared by identity
 			// A concurrent execution created it between lookup and create.
-			retry, lookupErr := s.gateway.LookupChannelIDs(ctx, []string{p.name})
+			retry, lookupErr := gateway.LookupChannelIDs(ctx, []string{p.name})
 			if lookupErr == nil && retry[p.name] != "" {
 				s.claimChannel(ctx, in.GroupID, p.name, retry[p.name])
 				pending[i].channelID = retry[p.name]
@@ -238,52 +266,124 @@ func (s *SlackChannelsService) Provision(ctx context.Context, in ProvisionInput)
 		if p.channelID == "" {
 			continue
 		}
-		result.Welcomes = append(result.Welcomes, s.ensureWelcome(ctx, in, p.name, p.channelID))
+		result.Welcomes = append(result.Welcomes, s.ensureWelcome(ctx, gateway, in, p.name, p.channelID))
 	}
 
-	// ── Phase 3: invitations (email × provisioned channel) ────────────
-	if len(in.InviteEmails) > 0 {
-		// Resolve each email once, then invite to every channel.
-		userIDs := make(map[string]string, len(in.InviteEmails))
-		for _, email := range in.InviteEmails {
-			started := time.Now()
-			userID, err := s.gateway.LookupUserByEmail(ctx, email)
-			s.record(ctx, in.GroupID, OpSlackLookupUser, errorCategory(err), started)
-			if err != nil {
-				userIDs[email] = "" // resolved-miss: recorded per invite below
-				continue
-			}
-			userIDs[email] = userID
+	result.Invites = s.inviteToChannels(ctx, gateway, in.GroupID, in.InviteEmails, result.Channels)
+	return result, nil
+}
+
+// InviteExisting invites members only to registered channels for this group.
+func (s *SlackChannelsService) InviteExisting(ctx context.Context, groupID uuid.UUID, groupName string, emails []string) (ProvisionResult, error) {
+	if !s.configured {
+		return ProvisionResult{}, &core.AppError{Code: core.CodeNotReady, Message: "Slack is not configured"}
+	}
+	gateway, err := s.gatewayFor(ctx, groupID)
+	if err != nil {
+		return ProvisionResult{}, err
+	}
+	result := ProvisionResult{Channels: []ChannelResult{}, Welcomes: []WelcomeResult{}}
+	for _, suffix := range DefaultChannelSuffixes {
+		name, err := ChannelName(groupName, suffix)
+		if err != nil {
+			return ProvisionResult{}, err
 		}
-		for _, p := range pending {
-			if p.channelID == "" {
-				continue
-			}
-			for _, email := range in.InviteEmails {
-				if userIDs[email] == "" {
-					result.Invites = append(result.Invites, InviteResult{
-						Email: email, ChannelName: p.name, Status: InviteFailed, Error: "user_not_found",
-					})
+		resource, found, err := s.resources.GetResource(ctx, groupID, ProviderSlack, ResourceTypeChannel, name)
+		if err != nil {
+			return ProvisionResult{}, err
+		}
+		channel := ChannelResult{Name: name, Status: ChannelFailed, Error: "channel_not_provisioned"}
+		if found && resource.Status == ResourceStatusActive && resource.ExternalID != "" {
+			channel = ChannelResult{Name: name, ChannelID: resource.ExternalID, Status: ChannelReused}
+		}
+		result.Channels = append(result.Channels, channel)
+	}
+	result.Invites = s.inviteToChannels(ctx, gateway, groupID, emails, result.Channels)
+	return result, nil
+}
+
+func (s *SlackChannelsService) RemoveExisting(ctx context.Context, groupID uuid.UUID, groupName string, emails []string) error {
+	if !s.configured {
+		return &core.AppError{Code: core.CodeNotReady, Message: "Slack is not configured"}
+	}
+	gateway, err := s.gatewayFor(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, suffix := range DefaultChannelSuffixes {
+		name, err := ChannelName(groupName, suffix)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		resource, found, err := s.resources.GetResource(ctx, groupID, ProviderSlack, ResourceTypeChannel, name)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		if !found || resource.Status != ResourceStatusActive || resource.ExternalID == "" {
+			continue
+		}
+		for _, email := range emails {
+			userID, err := gateway.LookupUserByEmail(ctx, NormalizeEmail(email))
+			if err != nil {
+				if errors.Is(err, ErrSlackUserNotFound) {
 					continue
 				}
-				started := time.Now()
-				outcome, err := s.gateway.InviteUserToChannel(ctx, p.channelID, userIDs[email])
-				s.record(ctx, in.GroupID, OpSlackInvite, errorCategory(err), started)
-				switch {
-				case err == nil && outcome == InviteOutcomeInvited:
-					result.Invites = append(result.Invites, InviteResult{Email: email, ChannelName: p.name, Status: string(InviteOutcomeInvited)})
-					s.markJoined(ctx, in.GroupID, email)
-				case err == nil:
-					result.Invites = append(result.Invites, InviteResult{Email: email, ChannelName: p.name, Status: string(InviteOutcomeAlreadyMember)})
-					s.markJoined(ctx, in.GroupID, email)
-				default:
-					result.Invites = append(result.Invites, InviteResult{Email: email, ChannelName: p.name, Status: InviteFailed, Error: errorCategory(err)})
-				}
+				failures = append(failures, err)
+				continue
+			}
+			if err := gateway.RemoveUserFromChannel(ctx, resource.ExternalID, userID); err != nil {
+				failures = append(failures, err)
 			}
 		}
 	}
+	return errors.Join(failures...)
+}
 
-	return result, nil
+func (s *SlackChannelsService) inviteToChannels(ctx context.Context, gateway SlackGateway, groupID uuid.UUID, emails []string, channels []ChannelResult) []InviteResult {
+	invites := []InviteResult{}
+	userIDs := make(map[string]string, len(emails))
+	lookupErrors := make(map[string]string, len(emails))
+	for _, channel := range channels {
+		if channel.ChannelID == "" {
+			continue
+		}
+		for _, email := range emails {
+			userID, lookedUp := userIDs[email]
+			if !lookedUp {
+				started := time.Now()
+				var err error
+				userID, err = gateway.LookupUserByEmail(ctx, email)
+				category := errorCategory(err)
+				s.record(ctx, groupID, OpSlackLookupUser, category, started)
+				userIDs[email] = userID
+				lookupErrors[email] = category
+			}
+			result := InviteResult{Email: email, ChannelName: channel.Name, Status: InviteFailed}
+			if userID == "" {
+				result.Error = lookupErrors[email]
+				if result.Error == "" {
+					result.Error = "user_not_found"
+				}
+			} else {
+				started := time.Now()
+				outcome, err := gateway.InviteUserToChannel(ctx, channel.ChannelID, userID)
+				result.Error = errorCategory(err)
+				s.record(ctx, groupID, OpSlackInvite, result.Error, started)
+				if err == nil {
+					result.Status = string(InviteOutcomeAlreadyMember)
+					if outcome == InviteOutcomeInvited {
+						result.Status = string(outcome)
+					}
+					s.markJoined(ctx, groupID, email)
+				}
+			}
+			invites = append(invites, result)
+		}
+	}
+	return invites
 }
 
 // markJoined reconciles onboarding for a successfully invited (or
@@ -319,7 +419,7 @@ func (s *SlackChannelsService) claimChannel(ctx context.Context, groupID uuid.UU
 // ensureWelcome posts the welcome message exactly once per (group, channel):
 // the registry claim (pending → active) is the dedup mutex; error rows are
 // retryable on the next run.
-func (s *SlackChannelsService) ensureWelcome(ctx context.Context, in ProvisionInput, channelName, channelID string) WelcomeResult {
+func (s *SlackChannelsService) ensureWelcome(ctx context.Context, gateway SlackGateway, in ProvisionInput, channelName, channelID string) WelcomeResult {
 	if res, ok, _ := s.resources.GetResource(ctx, in.GroupID, ProviderSlack, ResourceTypeWelcomeMessage, channelName); ok && res.Status == ResourceStatusActive {
 		return WelcomeResult{ChannelName: channelName, Status: WelcomeSkipped}
 	}
@@ -335,7 +435,7 @@ func (s *SlackChannelsService) ensureWelcome(ctx context.Context, in ProvisionIn
 	}
 
 	started := time.Now()
-	ts, err := s.gateway.PostMessage(ctx, channelID, s.welcomeText(in, channelName))
+	ts, err := gateway.PostMessage(ctx, channelID, s.welcomeText(in, channelName))
 	s.record(ctx, in.GroupID, OpSlackPostMessage, errorCategory(err), started)
 	if err != nil {
 		// Mark error so a later run retries (error rows are not skipped).

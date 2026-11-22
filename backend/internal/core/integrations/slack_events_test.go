@@ -413,6 +413,7 @@ func (identityGateway) LookupUserByEmail(context.Context, string) (string, error
 func (identityGateway) InviteUserToChannel(context.Context, string, string) (InviteOutcome, error) {
 	return "", nil
 }
+func (identityGateway) RemoveUserFromChannel(context.Context, string, string) error { return nil }
 func (identityGateway) PostMessage(context.Context, string, string) (string, error) { return "", nil }
 func (g identityGateway) UserEmail(_ context.Context, slackUserID string) (string, error) {
 	if email, ok := g.emails[slackUserID]; ok {

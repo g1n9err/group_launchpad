@@ -23,11 +23,13 @@ type Clock func() time.Time
 // verified event is acknowledged quickly and persisted durably — nothing is
 // lost after ack.
 type SlackEventsService struct {
-	verifier   SlackEventVerifier
-	repo       SlackEventRepository
-	linker     *SlackIdentityLinker // nil ⇒ linking disabled (legacy behavior)
-	now        Clock
-	configured bool
+	verifier     SlackEventVerifier
+	repo         SlackEventRepository
+	linker       *SlackIdentityLinker // nil ⇒ linking disabled (legacy behavior)
+	teamResolver SlackTeamGatewayResolver
+	identityRepo SlackIdentityRepository
+	now          Clock
+	configured   bool
 }
 
 // NewSlackEventsService builds the webhook service. configured requires the
@@ -38,6 +40,10 @@ func NewSlackEventsService(verifier SlackEventVerifier, repo SlackEventRepositor
 
 // Configured reports whether the webhook can operate.
 func (s *SlackEventsService) Configured() bool { return s.configured }
+
+func (s *SlackEventsService) SetTeamGatewayResolver(resolver SlackTeamGatewayResolver, identities SlackIdentityRepository) {
+	s.teamResolver, s.identityRepo = resolver, identities
+}
 
 // slackEnvelope is the Events API outer payload.
 type slackEnvelope struct {
@@ -122,7 +128,19 @@ func (s *SlackEventsService) Handle(ctx context.Context, req SlackEventRequest) 
 	}
 
 	// Bot's own join: record as bot, never a member transition.
-	botID, err := s.repo.SlackBotUserID(ctx)
+	var eventGateway SlackGateway
+	var botID string
+	if s.teamResolver != nil && ev.TeamID != "" {
+		if gateway, resolveErr := s.teamResolver.ForTeam(ctx, ev.TeamID); resolveErr == nil {
+			eventGateway = gateway
+			if workspace, authErr := gateway.AuthTest(ctx); authErr == nil {
+				botID = workspace.BotUserID
+			}
+		}
+	}
+	if botID == "" {
+		botID, err = s.repo.SlackBotUserID(ctx)
+	}
 	if err == nil && botID != "" && ev.UserID == botID {
 		_ = s.repo.CompleteSlackEvent(ctx, ev.EventID, EventStatusBot, "") //nolint:errcheck
 		return SlackEventAck{Kind: "bot"}, nil
@@ -146,11 +164,21 @@ func (s *SlackEventsService) Handle(ctx context.Context, req SlackEventRequest) 
 		// Identity linking (Stage 3A): resolve the Slack user by verified
 		// email and link — only on an unambiguous match. Reasons are durable
 		// codes; the email itself is never persisted in the ledger.
-		if s.linker == nil {
+		linker := s.linker
+		if eventGateway != nil {
+			identityRepo := s.identityRepo
+			if linker != nil {
+				identityRepo = linker.repo
+			}
+			if identityRepo != nil {
+				linker = NewSlackIdentityLinker(eventGateway, identityRepo)
+			}
+		}
+		if linker == nil {
 			_ = s.repo.CompleteSlackEvent(ctx, ev.EventID, EventStatusUnresolved, "user_not_linked") //nolint:errcheck
 			return SlackEventAck{Kind: "unresolved"}, nil
 		}
-		linkedID, reason, linkErr := s.linker.Link(ctx, ev.UserID)
+		linkedID, reason, linkErr := linker.Link(ctx, ev.UserID)
 		if linkErr != nil {
 			return SlackEventAck{}, fmt.Errorf("slack events: identity link: %w", linkErr)
 		}

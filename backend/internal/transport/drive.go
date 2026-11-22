@@ -8,6 +8,7 @@ import (
 
 	"launchpad/internal/core"
 	"launchpad/internal/core/integrations"
+	"launchpad/internal/jobs"
 	gen "launchpad/internal/transport/gen"
 )
 
@@ -33,7 +34,10 @@ func (h *Handlers) ProvisionGroupDrive(c echo.Context, groupID gen.GroupId) erro
 	// non-sensitive folders (never Student Data). Uses the group's roster
 	// to resolve student emails; staff emails come from the coordinator's
 	// configured list (Phase 2 feature — empty until staff management lands).
-	roster, _ := h.groups.Onboarding(ctx, group.ID.String())
+	roster, err := h.groups.Onboarding(ctx, group.ID.String())
+	if err != nil {
+		return err
+	}
 	studentEmails := make([]string, 0, len(roster.Students))
 	for _, s := range roster.Students {
 		studentEmails = append(studentEmails, s.Email)
@@ -49,13 +53,19 @@ func (h *Handlers) ProvisionGroupDrive(c echo.Context, groupID gen.GroupId) erro
 			staffEmails = perGroup
 		}
 	}
+	step := jobs.LaunchStep{Platform: "drive", Status: jobs.StepSucceeded}
 	if err := h.drive.ApplyAccessRules(ctx, group.ID, folders, integrations.DriveAccessRules{
 		StaffEmails:   staffEmails,
 		StudentEmails: studentEmails,
 	}); err != nil {
 		// Permissions failure doesn't fail provisioning — folders exist.
 		// The coordinator can retry permissions separately.
-		c.Logger().Warn("drive permissions partial", "error", err.Error())
+		step.Status = jobs.StepPartiallyFailed
+		step.Detail = "folders created, permissions partial: " + err.Error()
+	}
+
+	if err := h.saveLaunchStep(ctx, group.ID, step); err != nil {
+		return err
 	}
 
 	result := gen.DriveFolders{

@@ -3,6 +3,7 @@ package integrations
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -61,6 +62,15 @@ func (g *fakeClassroomGateway) AssignTeacher(_ context.Context, _, courseID, ema
 		}
 	}
 	g.Teachers[courseID] = append(g.Teachers[courseID], email)
+	return nil
+}
+
+func (g *fakeClassroomGateway) RemoveStudent(_ context.Context, _, courseID, email string) error {
+	g.Students[courseID] = slices.DeleteFunc(g.Students[courseID], func(v string) bool { return v == email })
+	return nil
+}
+func (g *fakeClassroomGateway) RemoveTeacher(_ context.Context, _, courseID, email string) error {
+	g.Teachers[courseID] = slices.DeleteFunc(g.Teachers[courseID], func(v string) bool { return v == email })
 	return nil
 }
 

@@ -44,6 +44,8 @@ func (f *fakeDrive) GrantAccess(context.Context, string, string, string, string)
 	return nil // transport tests don't assert permissions
 }
 
+func (f *fakeDrive) RevokeAccess(context.Context, string, string, string) error { return nil }
+
 func TestDriveProvisionResumesAfterInterruptedCreate(t *testing.T) {
 	pool := newTestPool(t)
 	truncate(t, pool, "groups")

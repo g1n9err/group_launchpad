@@ -124,6 +124,10 @@ func (f *fakeSlackGateway) InviteUserToChannel(_ context.Context, channelID, use
 	f.members[key] = true
 	return integrations.InviteOutcomeInvited, nil
 }
+func (f *fakeSlackGateway) RemoveUserFromChannel(_ context.Context, channelID, userID string) error {
+	delete(f.members, channelID+"|"+userID)
+	return nil
+}
 
 func (f *fakeSlackGateway) PostMessage(_ context.Context, channelID, text string) (string, error) {
 	f.posts[channelID]++

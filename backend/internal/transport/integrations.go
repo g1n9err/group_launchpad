@@ -5,6 +5,7 @@ package transport
 // endpoints never expose client secrets or tokens (PRD 7.4).
 
 import (
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -75,12 +76,13 @@ func (h *Handlers) GoogleStatus(c echo.Context) error {
 	if !h.google.Configured() {
 		return errNotConfigured("google oauth")
 	}
+	_, authErr := h.requireStaff(c)
 	status, err := h.google.Status(c.Request().Context())
 	if err != nil {
 		return err
 	}
 	// Try staff auth — on failure return the safe (public) projection.
-	if _, authErr := h.requireStaff(c); authErr != nil {
+	if authErr != nil {
 		return c.JSON(http.StatusOK, gen.GoogleStatus{
 			Status: gen.GoogleStatusStatus(status.Status),
 		})
@@ -95,10 +97,40 @@ func (h *Handlers) GoogleStatus(c echo.Context) error {
 // call, no writes); the live check and workspace metadata require
 // coordinator/admin credentials.
 func (h *Handlers) SlackStatus(c echo.Context) error {
+	id, staffErr := h.requireStaff(c)
+	if staffErr == nil && id.Role == "coordinator" && id.UserID != uuid.Nil {
+		if h.slackWorkspaces == nil {
+			return c.JSON(http.StatusOK, gen.SlackStatus{Status: gen.SlackStatusStatus(integrations.StatusDisconnected)})
+		}
+		workspaces, err := h.slackWorkspaces.ListSlackWorkspaces(c.Request().Context())
+		if err != nil {
+			return err
+		}
+		if len(workspaces) == 0 {
+			return c.JSON(http.StatusOK, gen.SlackStatus{Status: gen.SlackStatusStatus(integrations.StatusDisconnected)})
+		}
+		teamID, teamName := workspaces[0].TeamID, workspaces[0].TeamName
+		return c.JSON(http.StatusOK, gen.SlackStatus{Status: gen.SlackStatusStatus(workspaces[0].Status), TeamId: &teamID, TeamName: &teamName, ConnectedAt: &workspaces[0].ConnectedAt})
+	}
 	if !h.slack.Configured() {
+		if h.slackWorkspaces != nil {
+			if staffErr != nil {
+				return errUnauthorized(c)
+			}
+			workspaces, err := h.slackWorkspaces.ListSlackWorkspaces(c.Request().Context())
+			if err != nil {
+				return err
+			}
+			if len(workspaces) > 0 {
+				status := gen.SlackStatus{Status: gen.SlackStatusStatus(workspaces[0].Status)}
+				teamID, teamName := workspaces[0].TeamID, workspaces[0].TeamName
+				status.TeamId, status.TeamName, status.ConnectedAt = &teamID, &teamName, &workspaces[0].ConnectedAt
+				return c.JSON(http.StatusOK, status)
+			}
+		}
 		return errNotConfigured("slack")
 	}
-	if _, authErr := h.requireStaff(c); authErr != nil {
+	if staffErr != nil {
 		stored, err := h.slack.StoredStatus(c.Request().Context())
 		if err != nil {
 			return err
@@ -110,6 +142,163 @@ func (h *Handlers) SlackStatus(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, toSlackStatus(status))
+}
+
+func (h *Handlers) SlackOAuthConnect(c echo.Context) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.slackOAuth == nil || !h.slackOAuth.Configured() {
+		return errNotConfigured("Slack workspace OAuth")
+	}
+	url, err := h.slackOAuth.ConnectURL(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	if strings.Contains(c.Request().Header.Get(echo.HeaderAccept), "application/json") {
+		return c.JSON(http.StatusOK, map[string]string{"url": url})
+	}
+	return c.Redirect(http.StatusFound, url)
+}
+
+func (h *Handlers) SlackOAuthCallback(c echo.Context) error {
+	if h.slackOAuth == nil || !h.slackOAuth.Configured() {
+		return errNotConfigured("Slack workspace OAuth")
+	}
+	if providerErr := c.QueryParam("error"); providerErr != "" {
+		return errConsentDenied(providerErr)
+	}
+	workspace, err := h.slackOAuth.Callback(c.Request().Context(), c.QueryParam("code"), c.QueryParam("state"))
+	if err != nil {
+		return err
+	}
+	return c.HTML(http.StatusOK, "<!doctype html><html><meta charset=\"utf-8\"><title>Slack connected</title><body><p>Slack workspace <strong>"+html.EscapeString(workspace.TeamName)+"</strong> connected. You can close this tab and return to Group Launchpad.</p><script>if(window.opener){window.opener.postMessage({type:'slack-workspace-connected'},location.origin);window.close()}</script></body></html>")
+}
+
+func (h *Handlers) SlackWorkspaces(c echo.Context) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.slackWorkspaces == nil {
+		return errNotConfigured("Slack workspaces")
+	}
+	items, err := h.slackWorkspaces.ListSlackWorkspaces(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, map[string]any{"data": items})
+}
+
+func (h *Handlers) AssignSlackWorkspace(c echo.Context) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.slackWorkspaces == nil {
+		return errNotConfigured("Slack workspaces")
+	}
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		return errBadRequest("invalid group id")
+	}
+	if _, err := h.requireGroupWrite(c, groupID); err != nil {
+		return err
+	}
+	var body struct {
+		WorkspaceID string `json:"workspaceId"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return errBadRequest("invalid request body")
+	}
+	var id uuid.UUID
+	if body.WorkspaceID != "" {
+		id, err = uuid.Parse(body.WorkspaceID)
+		if err != nil {
+			return errBadRequest("invalid workspace id")
+		}
+	}
+	if err := h.slackWorkspaces.SetGroupSlackWorkspace(c.Request().Context(), groupID, id); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *Handlers) GetSlackWorkspaceAssignment(c echo.Context) error {
+	if h.slackWorkspaces == nil {
+		return errNotConfigured("Slack workspaces")
+	}
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		return errBadRequest("invalid group id")
+	}
+	if _, err := h.requireGroupRead(c, groupID); err != nil {
+		return err
+	}
+	id, assigned, err := h.slackWorkspaces.GroupSlackWorkspace(c.Request().Context(), groupID)
+	if err != nil {
+		return err
+	}
+	if assigned {
+		return c.JSON(http.StatusOK, map[string]string{"workspaceId": id.String()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"workspaceId": ""})
+}
+
+func (h *Handlers) GoogleWorkspaces(c echo.Context) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.googleWorkspaces == nil {
+		return errNotConfigured("Google accounts")
+	}
+	items, err := h.googleWorkspaces.ListGoogleWorkspaces(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, map[string]any{"data": items})
+}
+
+func (h *Handlers) GroupSlackWorkspaces(c echo.Context) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.slackWorkspaces == nil {
+		return errNotConfigured("Slack workspaces")
+	}
+	items, err := h.slackWorkspaces.ListGroupSlackWorkspaceAssignments(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, map[string]any{"data": items})
+}
+
+func (h *Handlers) AssignWorkspaceGoogleAccount(c echo.Context) error {
+	if _, err := h.requireStaff(c); err != nil {
+		return err
+	}
+	if h.slackWorkspaces == nil {
+		return errNotConfigured("Slack workspaces")
+	}
+	slackID, err := uuid.Parse(c.Param("workspaceId"))
+	if err != nil {
+		return errBadRequest("invalid Slack workspace id")
+	}
+	var body struct {
+		GoogleAccountID string `json:"googleAccountId"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return errBadRequest("invalid request body")
+	}
+	var googleID uuid.UUID
+	if body.GoogleAccountID != "" {
+		googleID, err = uuid.Parse(body.GoogleAccountID)
+		if err != nil {
+			return errBadRequest("invalid Google account id")
+		}
+	}
+	if err := h.slackWorkspaces.SetSlackWorkspaceGoogleAccount(c.Request().Context(), slackID, googleID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 // ProvisionGroupSlack POST /api/groups/{groupId}/slack/provision — idempotent

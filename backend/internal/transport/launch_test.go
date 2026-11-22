@@ -34,6 +34,12 @@ func (launchTestClassroomGateway) EnrollStudent(context.Context, string, string,
 func (launchTestClassroomGateway) AssignTeacher(context.Context, string, string, string) error {
 	return nil
 }
+func (launchTestClassroomGateway) RemoveStudent(context.Context, string, string, string) error {
+	return nil
+}
+func (launchTestClassroomGateway) RemoveTeacher(context.Context, string, string, string) error {
+	return nil
+}
 
 type launchTestDriveGateway struct{ next int }
 
@@ -45,6 +51,9 @@ func (*launchTestDriveGateway) EnsureFolder(context.Context, string, string, str
 	return nil
 }
 func (*launchTestDriveGateway) GrantAccess(context.Context, string, string, string, string) error {
+	return nil
+}
+func (*launchTestDriveGateway) RevokeAccess(context.Context, string, string, string) error {
 	return nil
 }
 
@@ -66,7 +75,7 @@ func (launchTestFormsGateway) CreateDraft(context.Context, string, string, strin
 func (launchTestFormsGateway) FindDraft(context.Context, string, string) (string, error) {
 	return "fixture-form", nil
 }
-func (launchTestFormsGateway) EnsureQuestions(context.Context, string, string, []integrations.IntakeQuestion) error {
+func (launchTestFormsGateway) EnsureQuestions(context.Context, string, string, []integrations.IntakeQuestion, bool) error {
 	return nil
 }
 

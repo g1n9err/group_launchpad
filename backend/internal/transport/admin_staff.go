@@ -1,8 +1,7 @@
 package transport
 
-// Predefined staff management (PRD §3.2 "manage predefined staff", §4.2 —
-// "a predefined list of eight staff members"). Admin-only CRUD; the list is
-// the global fallback for group launches without per-group assignments.
+// Predefined staff management. Each coordinator maintains a private fallback
+// list; platform admins can inspect/manage legacy unowned entries.
 
 import (
 	"net/http"
@@ -19,7 +18,7 @@ import (
 
 // ListPredefinedStaff GET /api/admin/staff
 func (h *Handlers) ListPredefinedStaff(c echo.Context) error {
-	if _, err := h.requireAdmin(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	if h.staffAdmin == nil {
@@ -38,7 +37,7 @@ func (h *Handlers) ListPredefinedStaff(c echo.Context) error {
 
 // CreatePredefinedStaff POST /api/admin/staff
 func (h *Handlers) CreatePredefinedStaff(c echo.Context) error {
-	if _, err := h.requireAdmin(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	if h.staffAdmin == nil {
@@ -65,7 +64,7 @@ func (h *Handlers) CreatePredefinedStaff(c echo.Context) error {
 
 // DeletePredefinedStaff DELETE /api/admin/staff/{staffId}
 func (h *Handlers) DeletePredefinedStaff(c echo.Context, staffId openapi_types.UUID) error {
-	if _, err := h.requireAdmin(c); err != nil {
+	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
 	if h.staffAdmin == nil {

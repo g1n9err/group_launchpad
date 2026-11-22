@@ -80,6 +80,36 @@ func (h *Handlers) Login(c echo.Context) error {
 	return c.JSON(http.StatusOK, toAuthSession(session))
 }
 
+// RegisterCoordinator creates an independent coordinator account. Its user ID
+// is also the owner ID for that account's private Launchpad workspace.
+func (h *Handlers) RegisterCoordinator(c echo.Context) error {
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+	if h.auth == nil {
+		return errAuthUnavailable()
+	}
+	var body struct {
+		FullName string `json:"fullName"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return errBadRequest("invalid request body: " + err.Error())
+	}
+	if strings.TrimSpace(body.FullName) == "" || len(strings.TrimSpace(body.FullName)) > 160 {
+		return core.Validation("invalid account data", map[string]string{"fullName": "required (up to 160 characters)"})
+	}
+	user, err := h.auth.CreateUserWithPassword(c.Request().Context(), body.Email, body.FullName, auth.RoleCoordinator, body.Password)
+	if err != nil {
+		return err
+	}
+	session, err := h.auth.Login(c.Request().Context(), user.Email, body.Password)
+	if err != nil {
+		return err
+	}
+	setSessionCookie(c, session.Token, time.Until(session.ExpiresAt))
+	return c.JSON(http.StatusCreated, toAuthSession(session))
+}
+
 // ResumeSession POST /api/auth/resume — restores a sign-in across page
 // refreshes: rotates the HttpOnly session cookie atomically and returns a
 // fresh bearer session. No Authorization header is involved; the one-time

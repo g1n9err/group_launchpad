@@ -239,8 +239,15 @@ func TestLecturerIDORSweepAcrossAllGroupRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	own := createGroupForRoles(t, srv, "Sweep Own Group", "sweeper@roles.test", "")
-	foreign := createGroupForRoles(t, srv, "Sweep Foreign Group", "someone-else@roles.test", "")
+	if _, err := authSvc.CreateUserWithPassword(ctx, "sweep-coordinator@roles.test", "Coordinator", auth.RoleCoordinator, password); err != nil {
+		t.Fatal(err)
+	}
+	coordinator, err := authSvc.Login(ctx, "sweep-coordinator@roles.test", password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := createGroupForRoles(t, srv, coordinator.Token, "Sweep Own Group", "sweeper@roles.test", "")
+	foreign := createGroupForRoles(t, srv, coordinator.Token, "Sweep Foreign Group", "someone-else@roles.test", "")
 	// Give the sweeper a STUDENT membership on the foreign group — access
 	// must STILL be denied (student membership grants nothing).
 	sweeperID := userIDByEmail(t, pool, "sweeper@roles.test")

@@ -34,6 +34,9 @@ type Handlers struct {
 	slack                 *integrations.SlackAuthService
 	slackChannels         *integrations.SlackChannelsService
 	slackEvents           *integrations.SlackEventsService
+	slackOAuth            *integrations.SlackOAuthService
+	slackWorkspaces       integrations.SlackWorkspaceRepository
+	googleWorkspaces      integrations.GoogleWorkspaceRepository
 	launch                SlackLaunchService
 	classroom             *integrations.ClassroomService
 	drive                 *integrations.DriveService
@@ -43,13 +46,17 @@ type Handlers struct {
 	coordinator           coordinatorAuth
 	auth                  *auth.Service          // multi-role token auth (nil ⇒ Bearer auth unavailable)
 	membership            GroupMembershipChecker // lecturer/TA group scoping
-	assignedGroups        AssignedGroupLister    // lecturer/TA group listing
-	staffAdmin            StaffAdminStore        // predefined staff CRUD (admin)
-	groupResources        GroupResourceReader    // per-group external resources (read)
+	groupOwner            GroupWorkspaceOwnerChecker
+	assignedGroups        AssignedGroupLister // lecturer/TA group listing
+	staffAdmin            StaffAdminStore     // predefined staff CRUD (admin)
+	groupResources        GroupResourceReader // per-group external resources (read)
 	audit                 GroupAuditService
 	auditNotifications    AuditNotificationReader
 	announcements         AnnouncementService
-	staffEmails           []string                   // global fallback
+	staffEmails           []string // global fallback
+	groupStaffReader      GroupStaffReader
+	groupRosterWriter     GroupRosterWriter
+	launchStepWriter      LaunchStepWriter
 	staffAssignmentReader jobs.StaffAssignmentReader // per-group staff (overrides global)
 	groupLauncher         GroupLauncher
 	launchStatus          LaunchStatusReader
@@ -86,6 +93,10 @@ type GroupResourceReader interface {
 	GroupResources(ctx context.Context, groupID uuid.UUID) ([]GroupResourceRow, error)
 }
 
+type GroupWorkspaceOwnerChecker interface {
+	GroupOwnedBy(ctx context.Context, groupID, ownerID uuid.UUID) (bool, error)
+}
+
 // GroupResourceRow is one external resource of a group.
 type GroupResourceRow struct {
 	Provider string // slack | google_classroom | google_drive | google_forms
@@ -97,24 +108,31 @@ type GroupResourceRow struct {
 
 // GroupProvisioning wires the group launch and Google provisioning use cases.
 type GroupProvisioning struct {
-	Launch             SlackLaunchService
-	GroupLauncher      GroupLauncher
-	LaunchStatus       LaunchStatusReader
-	Classroom          *integrations.ClassroomService
-	Drive              *integrations.DriveService
-	Forms              *integrations.FormsService
-	Notifications      NotificationStore
-	Templates          TemplateStore
-	StaffAssignments   jobs.StaffAssignmentReader
-	Delivery           IntakeDeliveryService
-	DeliveryEnabled    bool
-	Audit              GroupAuditService
-	AuditNotifications AuditNotificationReader
-	Announcements      AnnouncementService
-	Membership         GroupMembershipChecker
-	AssignedGroups     AssignedGroupLister
-	StaffAdmin         StaffAdminStore
-	GroupResources     GroupResourceReader
+	Launch              SlackLaunchService
+	GroupLauncher       GroupLauncher
+	LaunchStatus        LaunchStatusReader
+	Classroom           *integrations.ClassroomService
+	Drive               *integrations.DriveService
+	Forms               *integrations.FormsService
+	Notifications       NotificationStore
+	Templates           TemplateStore
+	StaffAssignments    jobs.StaffAssignmentReader
+	GroupStaff          GroupStaffReader
+	GroupRoster         GroupRosterWriter
+	LaunchSteps         LaunchStepWriter
+	Delivery            IntakeDeliveryService
+	DeliveryEnabled     bool
+	Audit               GroupAuditService
+	AuditNotifications  AuditNotificationReader
+	Announcements       AnnouncementService
+	Membership          GroupMembershipChecker
+	AssignedGroups      AssignedGroupLister
+	StaffAdmin          StaffAdminStore
+	GroupResources      GroupResourceReader
+	SlackOAuth          *integrations.SlackOAuthService
+	SlackWorkspaces     integrations.SlackWorkspaceRepository
+	GoogleWorkspaces    integrations.GoogleWorkspaceRepository
+	GroupWorkspaceOwner GroupWorkspaceOwnerChecker
 }
 
 // New builds the HTTP application and optionally enables group provisioning.
@@ -139,10 +157,17 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 		h.notifications = provisioning[0].Notifications
 		h.templates = provisioning[0].Templates
 		h.staffAssignmentReader = provisioning[0].StaffAssignments
+		h.groupStaffReader = provisioning[0].GroupStaff
+		h.groupRosterWriter = provisioning[0].GroupRoster
+		h.launchStepWriter = provisioning[0].LaunchSteps
 		h.membership = provisioning[0].Membership
 		h.assignedGroups = provisioning[0].AssignedGroups
 		h.staffAdmin = provisioning[0].StaffAdmin
 		h.groupResources = provisioning[0].GroupResources
+		h.groupOwner = provisioning[0].GroupWorkspaceOwner
+		h.slackOAuth = provisioning[0].SlackOAuth
+		h.slackWorkspaces = provisioning[0].SlackWorkspaces
+		h.googleWorkspaces = provisioning[0].GoogleWorkspaces
 	}
 
 	e := echo.New()
@@ -172,6 +197,16 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 
 	e.HTTPErrorHandler = errorHandler(logger)
 	gen.RegisterHandlers(e, h)
+	// These endpoints are intentionally registered alongside generated routes
+	// while their API shapes settle; all still use the same auth and error path.
+	e.GET("/api/integrations/slack/connect", h.SlackOAuthConnect)
+	e.GET("/api/integrations/slack/callback", h.SlackOAuthCallback)
+	e.GET("/api/integrations/slack/workspaces", h.SlackWorkspaces)
+	e.PUT("/api/groups/:groupId/slack/workspace", h.AssignSlackWorkspace)
+	e.GET("/api/groups/:groupId/slack/workspace", h.GetSlackWorkspaceAssignment)
+	e.GET("/api/integrations/google/workspaces", h.GoogleWorkspaces)
+	e.GET("/api/groups/slack-workspaces", h.GroupSlackWorkspaces)
+	e.PUT("/api/integrations/slack/workspaces/:workspaceId/google-account", h.AssignWorkspaceGoogleAccount)
 	return e
 }
 

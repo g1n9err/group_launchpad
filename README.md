@@ -35,11 +35,20 @@ Optional integrations (leave empty to disable — the API boots safely without t
 ```env
 SLACK_BOT_TOKEN=          # Bot token from your Slack App
 SLACK_SIGNING_SECRET=     # Signing secret for Events API verification
+SLACK_OAUTH_CLIENT_ID=    # Slack OAuth app, for connecting multiple workspaces
+SLACK_OAUTH_CLIENT_SECRET=
+SLACK_OAUTH_REDIRECT_URL= # https://<domain>/api/integrations/slack/callback
 GOOGLE_CLIENT_ID=         # OAuth 2.0 Client ID from Google Cloud Console
 GOOGLE_CLIENT_SECRET=     # OAuth 2.0 Client Secret
 GOOGLE_REDIRECT_URL=      # Must match the registered redirect URI exactly
 TOKEN_ENCRYPTION_KEY=     # openssl rand -base64 32
 ```
+
+To connect more than one Slack workspace, configure the Slack App OAuth v2
+redirect URL and the three `SLACK_OAUTH_*` values. Connect additional Slack
+workspaces from **Integrations**, connect Google accounts, and map a Google
+account to each Slack workspace there. Choose the Slack workspace on each group
+page; its Google account is then used for the group's intake Form.
 
 Coordinator operations use HTTP Basic authentication with username `coordinator`.
 Set `COORDINATOR_PASSWORD` to a random value (for example, generate it with
@@ -123,9 +132,17 @@ environment.
 
 The coordinator can queue a published form with
 `POST /api/groups/{groupId}/forms/distribute` and read recipient status with
-`GET /api/groups/{groupId}/forms/deliveries`. A `sent` result means the
+`GET /api/groups/{groupId}/forms/deliveries`. The send dialog accepts an
+optional message, which the API accepts as `{"message":"..."}`. The email
+includes the form link below the message. A `sent` result means the
 configured mail provider accepted the message. Repeating distribution retries confirmed
 failures. Check the relay's records before handling an `unknown` outcome.
+
+With Gmail or SMTP enabled, Classroom provisioning also queues a separate
+join-code email for each student, lecturer, TA, and Teaching Staff member assigned to the group. The worker reads the code
+from the active Google Classroom course before sending. Re-provisioning queues
+new recipients and confirmed failures. It does not resend accepted messages or
+messages with an unknown delivery outcome.
 
 ### Audit notifications
 

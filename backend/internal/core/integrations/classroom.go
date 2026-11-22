@@ -3,6 +3,7 @@ package integrations
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -32,10 +33,23 @@ type ClassroomGateway interface {
 	// AssignTeacher adds a teacher to a course by email; already-assigned
 	// returns success (idempotent).
 	AssignTeacher(ctx context.Context, token, courseID, email string) error
+	RemoveStudent(ctx context.Context, token, courseID, email string) error
+	RemoveTeacher(ctx context.Context, token, courseID, email string) error
 }
 
 type GoogleAccessTokenSource interface {
 	AccessToken(context.Context) (string, error)
+}
+
+type groupGoogleAccessTokenSource interface {
+	AccessTokenForGroup(context.Context, uuid.UUID) (string, error)
+}
+
+func googleTokenForGroup(ctx context.Context, source GoogleAccessTokenSource, groupID uuid.UUID) (string, error) {
+	if scoped, ok := source.(groupGoogleAccessTokenSource); ok {
+		return scoped.AccessTokenForGroup(ctx, groupID)
+	}
+	return source.AccessToken(ctx)
 }
 
 type ClassroomCourseStore interface {
@@ -44,10 +58,20 @@ type ClassroomCourseStore interface {
 }
 
 type ClassroomService struct {
-	Tokens     GoogleAccessTokenSource
-	Gateway    ClassroomGateway
-	Store      ClassroomCourseStore
-	Operations ExternalOperationRecorder
+	Tokens          GoogleAccessTokenSource
+	Gateway         ClassroomGateway
+	Store           ClassroomCourseStore
+	Operations      ExternalOperationRecorder
+	QueueJoinEmails func(context.Context, uuid.UUID, string, ...string) error
+}
+
+// ExistingCourseID reads the registered course without provisioning one.
+func (s *ClassroomService) ExistingCourseID(ctx context.Context, groupID uuid.UUID) (string, error) {
+	resource, found, err := s.Store.GetResource(ctx, groupID, classroomProvider, classroomCourseType, "p:launchpad-"+groupID.String())
+	if err != nil || !found || resource.Status != ResourceStatusActive {
+		return "", err
+	}
+	return resource.ExternalID, nil
 }
 
 func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, name, section string, startDate time.Time) (string, error) {
@@ -60,7 +84,7 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 	if found && resource.Status == ResourceStatusActive && resource.ExternalID != "" {
 		courseID = resource.ExternalID
 	} else {
-		token, err := s.Tokens.AccessToken(ctx)
+		token, err := googleTokenForGroup(ctx, s.Tokens, groupID)
 		if err != nil {
 			return "", err
 		}
@@ -91,7 +115,7 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 	// and must keep working with a PROVISIONED course (the audit treats it
 	// as an existing course per PRD §4.7). The outcome is recorded either
 	// way; only transient failures surface as errors.
-	token, err := s.Tokens.AccessToken(ctx)
+	token, err := googleTokenForGroup(ctx, s.Tokens, groupID)
 	if err != nil {
 		return "", err
 	}
@@ -109,6 +133,11 @@ func (s *ClassroomService) Provision(ctx context.Context, groupID uuid.UUID, nam
 			return "", err
 		}
 	}
+	if s.QueueJoinEmails != nil {
+		if err := s.QueueJoinEmails(ctx, groupID, courseID); err != nil {
+			return "", fmt.Errorf("queue Classroom join emails: %w", err)
+		}
+	}
 	return courseID, nil
 }
 
@@ -122,7 +151,7 @@ func isCourseStateDenied(err error) bool {
 // EnrollAll enrolls every student email into the course. Individual failures
 // are recorded but don't abort the batch — the caller receives a summary.
 func (s *ClassroomService) EnrollAll(ctx context.Context, groupID uuid.UUID, courseID string, emails []string) []EnrollmentResult {
-	token, err := s.Tokens.AccessToken(ctx)
+	token, err := googleTokenForGroup(ctx, s.Tokens, groupID)
 	if err != nil {
 		return errorResults(emails, "token_unavailable")
 	}
@@ -138,7 +167,7 @@ func (s *ClassroomService) EnrollAll(ctx context.Context, groupID uuid.UUID, cou
 
 // AssignTeachers adds teachers to the course. Idempotent per teacher.
 func (s *ClassroomService) AssignTeachers(ctx context.Context, groupID uuid.UUID, courseID string, emails []string) []EnrollmentResult {
-	token, err := s.Tokens.AccessToken(ctx)
+	token, err := googleTokenForGroup(ctx, s.Tokens, groupID)
 	if err != nil {
 		return errorResults(emails, "token_unavailable")
 	}
@@ -147,6 +176,29 @@ func (s *ClassroomService) AssignTeachers(ctx context.Context, groupID uuid.UUID
 		started := time.Now()
 		err := s.Gateway.AssignTeacher(ctx, token, courseID, email)
 		s.record(ctx, groupID, "classroom.assign_teacher", started, err)
+		results = append(results, EnrollmentResult{Email: email, Err: err})
+	}
+	return results
+}
+
+func (s *ClassroomService) RemoveMembers(ctx context.Context, groupID uuid.UUID, courseID string, emails []string, staff bool) []EnrollmentResult {
+	token, err := googleTokenForGroup(ctx, s.Tokens, groupID)
+	if err != nil {
+		return errorResults(emails, "token_unavailable")
+	}
+	results := make([]EnrollmentResult, 0, len(emails))
+	for _, email := range emails {
+		started := time.Now()
+		if staff {
+			err = s.Gateway.RemoveTeacher(ctx, token, courseID, email)
+		} else {
+			err = s.Gateway.RemoveStudent(ctx, token, courseID, email)
+		}
+		operation := "classroom.remove_student"
+		if staff {
+			operation = "classroom.remove_teacher"
+		}
+		s.record(ctx, groupID, operation, started, err)
 		results = append(results, EnrollmentResult{Email: email, Err: err})
 	}
 	return results

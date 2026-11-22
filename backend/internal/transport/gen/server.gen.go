@@ -226,6 +226,27 @@ func (e GroupLaunchResultStatus) Valid() bool {
 	}
 }
 
+// Defines values for GroupOnboardingStaffRole.
+const (
+	GroupOnboardingStaffRoleLecturer      GroupOnboardingStaffRole = "lecturer"
+	GroupOnboardingStaffRoleTa            GroupOnboardingStaffRole = "ta"
+	GroupOnboardingStaffRoleTeachingStaff GroupOnboardingStaffRole = "teaching_staff"
+)
+
+// Valid indicates whether the value is a known member of the GroupOnboardingStaffRole enum.
+func (e GroupOnboardingStaffRole) Valid() bool {
+	switch e {
+	case GroupOnboardingStaffRoleLecturer:
+		return true
+	case GroupOnboardingStaffRoleTa:
+		return true
+	case GroupOnboardingStaffRoleTeachingStaff:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupOnboardingStudentOnboardingStatus.
 const (
 	GroupOnboardingStudentOnboardingStatusComplete      GroupOnboardingStudentOnboardingStatus = "complete"
@@ -535,6 +556,30 @@ func (e NotificationSeverity) Valid() bool {
 	}
 }
 
+// Defines values for RosterAccessStatus.
+const (
+	RosterAccessStatusNotProvisioned RosterAccessStatus = "not_provisioned"
+	RosterAccessStatusPartial        RosterAccessStatus = "partial"
+	RosterAccessStatusReady          RosterAccessStatus = "ready"
+	RosterAccessStatusUnavailable    RosterAccessStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RosterAccessStatus enum.
+func (e RosterAccessStatus) Valid() bool {
+	switch e {
+	case RosterAccessStatusNotProvisioned:
+		return true
+	case RosterAccessStatusPartial:
+		return true
+	case RosterAccessStatusReady:
+		return true
+	case RosterAccessStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ScheduledAnnouncementStatus.
 const (
 	ScheduledAnnouncementStatusCancelled  ScheduledAnnouncementStatus = "cancelled"
@@ -681,25 +726,25 @@ func (e SlackWelcomeResultStatus) Valid() bool {
 
 // Defines values for UserRole.
 const (
-	Admin       UserRole = "admin"
-	Coordinator UserRole = "coordinator"
-	Lecturer    UserRole = "lecturer"
-	Student     UserRole = "student"
-	Ta          UserRole = "ta"
+	UserRoleAdmin       UserRole = "admin"
+	UserRoleCoordinator UserRole = "coordinator"
+	UserRoleLecturer    UserRole = "lecturer"
+	UserRoleStudent     UserRole = "student"
+	UserRoleTa          UserRole = "ta"
 )
 
 // Valid indicates whether the value is a known member of the UserRole enum.
 func (e UserRole) Valid() bool {
 	switch e {
-	case Admin:
+	case UserRoleAdmin:
 		return true
-	case Coordinator:
+	case UserRoleCoordinator:
 		return true
-	case Lecturer:
+	case UserRoleLecturer:
 		return true
-	case Student:
+	case UserRoleStudent:
 		return true
-	case Ta:
+	case UserRoleTa:
 		return true
 	default:
 		return false
@@ -841,6 +886,13 @@ type ClassroomEnrollment struct {
 	Success bool `json:"success"`
 }
 
+// CoordinatorRegistrationInput defines model for CoordinatorRegistrationInput.
+type CoordinatorRegistrationInput struct {
+	Email    openapi_types.Email `json:"email"`
+	FullName string              `json:"fullName"`
+	Password string              `json:"password"`
+}
+
 // Date ISO 8601 calendar date (YYYY-MM-DD)
 type Date = string
 
@@ -965,6 +1017,7 @@ type GroupLaunchResultStatus string
 // GroupOnboarding defines model for GroupOnboarding.
 type GroupOnboarding struct {
 	Group    Group                    `json:"group"`
+	Staff    *[]GroupOnboardingStaff  `json:"staff,omitempty"`
 	Students []GroupOnboardingStudent `json:"students"`
 	Summary  struct {
 		// CompletionPercentage rounded to one decimal (e.g. 87.5)
@@ -974,6 +1027,15 @@ type GroupOnboarding struct {
 		PendingCount         int     `json:"pendingCount"`
 	} `json:"summary"`
 }
+
+// GroupOnboardingStaff defines model for GroupOnboardingStaff.
+type GroupOnboardingStaff struct {
+	Email openapi_types.Email      `json:"email"`
+	Role  GroupOnboardingStaffRole `json:"role"`
+}
+
+// GroupOnboardingStaffRole defines model for GroupOnboardingStaff.Role.
+type GroupOnboardingStaffRole string
 
 // GroupOnboardingStudent defines model for GroupOnboardingStudent.
 type GroupOnboardingStudent struct {
@@ -1006,6 +1068,30 @@ type GroupResourceProvider string
 // GroupResourceStatus defines model for GroupResource.Status.
 type GroupResourceStatus string
 
+// GroupRosterUpdate defines model for GroupRosterUpdate.
+type GroupRosterUpdate struct {
+	// LecturerEmails Complete lecturer list for this group; an empty list removes all lecturers
+	LecturerEmails *[]string `json:"lecturerEmails,omitempty"`
+
+	// StudentEmails Complete student list for this group; an empty list removes all students
+	StudentEmails *[]string `json:"studentEmails,omitempty"`
+
+	// TaEmails Complete TA list for this group; an empty list removes all TAs
+	TaEmails *[]string `json:"taEmails,omitempty"`
+}
+
+// GroupRosterUpdateResult defines model for GroupRosterUpdateResult.
+type GroupRosterUpdateResult struct {
+	ClassroomAccess  *RosterAccessStatus   `json:"classroomAccess,omitempty"`
+	ClassroomEmail   *RosterAccessStatus   `json:"classroomEmail,omitempty"`
+	ClassroomRemoval *RosterAccessStatus   `json:"classroomRemoval,omitempty"`
+	DriveAccess      *RosterAccessStatus   `json:"driveAccess,omitempty"`
+	DriveRemoval     *RosterAccessStatus   `json:"driveRemoval,omitempty"`
+	Slack            *SlackProvisionResult `json:"slack,omitempty"`
+	SlackError       *string               `json:"slackError,omitempty"`
+	SlackRemoval     *RosterAccessStatus   `json:"slackRemoval,omitempty"`
+}
+
 // GroupStatus group lifecycle state
 type GroupStatus string
 
@@ -1037,6 +1123,12 @@ type IntakeDelivery struct {
 
 // IntakeDeliveryStatus defines model for IntakeDelivery.Status.
 type IntakeDeliveryStatus string
+
+// IntakeDistributionRequest defines model for IntakeDistributionRequest.
+type IntakeDistributionRequest struct {
+	// Message Optional plain-text email message. The form link is appended automatically.
+	Message *string `json:"message,omitempty"`
+}
 
 // IntakeFormDraft defines model for IntakeFormDraft.
 type IntakeFormDraft struct {
@@ -1177,6 +1269,9 @@ type PublishedIntakeForm struct {
 	ResponderUrl string `json:"responderUrl"`
 }
 
+// RosterAccessStatus defines model for RosterAccessStatus.
+type RosterAccessStatus string
+
 // ScheduledAnnouncement defines model for ScheduledAnnouncement.
 type ScheduledAnnouncement struct {
 	Error          *string                     `json:"error,omitempty"`
@@ -1283,6 +1378,12 @@ type Offset = int
 // UserId defines model for UserId.
 type UserId = openapi_types.UUID
 
+// GetAuditNotificationsParams defines parameters for GetAuditNotifications.
+type GetAuditNotificationsParams struct {
+	// GroupName Case-insensitive substring of the group name
+	GroupName *string `form:"groupName,omitempty" json:"groupName,omitempty"`
+}
+
 // ListGroupsParams defines parameters for ListGroups.
 type ListGroupsParams struct {
 	// Limit page size
@@ -1332,14 +1433,23 @@ type UpdateAnnouncementTemplateJSONRequestBody = AnnouncementTemplateInput
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginInput
 
+// RegisterCoordinatorJSONRequestBody defines body for RegisterCoordinator for application/json ContentType.
+type RegisterCoordinatorJSONRequestBody = CoordinatorRegistrationInput
+
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = GroupCreate
 
 // ScheduleGroupAnnouncementJSONRequestBody defines body for ScheduleGroupAnnouncement for application/json ContentType.
 type ScheduleGroupAnnouncementJSONRequestBody = AnnouncementSchedule
 
+// DistributeGroupFormJSONRequestBody defines body for DistributeGroupForm for application/json ContentType.
+type DistributeGroupFormJSONRequestBody = IntakeDistributionRequest
+
 // ProvisionGroupFormJSONRequestBody defines body for ProvisionGroupForm for application/json ContentType.
 type ProvisionGroupFormJSONRequestBody = IntakeFormRequest
+
+// UpdateGroupRosterJSONRequestBody defines body for UpdateGroupRoster for application/json ContentType.
+type UpdateGroupRosterJSONRequestBody = GroupRosterUpdate
 
 // ProvisionGroupSlackJSONRequestBody defines body for ProvisionGroupSlack for application/json ContentType.
 type ProvisionGroupSlackJSONRequestBody = SlackProvisionRequest
@@ -1387,7 +1497,7 @@ type ServerInterface interface {
 	UpdateAnnouncementTemplate(ctx echo.Context, templateId openapi_types.UUID) error
 	// GetAuditNotifications List current issues and recent audit changes for the coordinator
 	// (GET /api/audit-notifications)
-	GetAuditNotifications(ctx echo.Context) error
+	GetAuditNotifications(ctx echo.Context, params GetAuditNotificationsParams) error
 	// Login Exchange email and password for a bearer session token
 	// (POST /api/auth/login)
 	Login(ctx echo.Context) error
@@ -1400,6 +1510,9 @@ type ServerInterface interface {
 	// RefreshToken Rotate the bearer token (token refresh, PRD §7.4)
 	// (POST /api/auth/refresh)
 	RefreshToken(ctx echo.Context) error
+	// RegisterCoordinator Create a private coordinator workspace
+	// (POST /api/auth/register)
+	RegisterCoordinator(ctx echo.Context) error
 	// ResumeSession Restore a sign-in across page refreshes (HttpOnly session cookie)
 	// (POST /api/auth/resume)
 	ResumeSession(ctx echo.Context) error
@@ -1418,6 +1531,9 @@ type ServerInterface interface {
 	// ScheduleGroupAnnouncement Schedule a Slack announcement in a channel linked to the group
 	// (POST /api/groups/{groupId}/announcements)
 	ScheduleGroupAnnouncement(ctx echo.Context, groupId GroupId) error
+	// ClearGroupAnnouncementHistory Clear finished entries from this group's announcement history
+	// (DELETE /api/groups/{groupId}/announcements/history)
+	ClearGroupAnnouncementHistory(ctx echo.Context, groupId GroupId) error
 	// ListGroupAudits List the most recent group resource audits
 	// (GET /api/groups/{groupId}/audits)
 	ListGroupAudits(ctx echo.Context, groupId GroupId) error
@@ -1457,6 +1573,9 @@ type ServerInterface interface {
 	// GetGroupResources List the group's external resources (group-scoped)
 	// (GET /api/groups/{groupId}/resources)
 	GetGroupResources(ctx echo.Context, groupId GroupId) error
+	// UpdateGroupRoster Add students or replace lecturers and update access to existing group resources
+	// (POST /api/groups/{groupId}/roster)
+	UpdateGroupRoster(ctx echo.Context, groupId GroupId) error
 	// ProvisionGroupSlack Idempotently provision the group's Slack channels, invitations, and welcome messages
 	// (POST /api/groups/{groupId}/slack/provision)
 	ProvisionGroupSlack(ctx echo.Context, groupId GroupId) error
@@ -1660,8 +1779,17 @@ func (w *ServerInterfaceWrapper) UpdateAnnouncementTemplate(ctx echo.Context) er
 func (w *ServerInterfaceWrapper) GetAuditNotifications(ctx echo.Context) error {
 	var err error
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAuditNotificationsParams
+	// ------------- Optional query parameter "groupName" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "groupName", ctx.QueryParams(), &params.GroupName, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupName: %s", err))
+	}
+
 	// Invoke the callback with all the unmarshaled arguments
-	err = w.Handler.GetAuditNotifications(ctx)
+	err = w.Handler.GetAuditNotifications(ctx, params)
 	return err
 }
 
@@ -1698,6 +1826,15 @@ func (w *ServerInterfaceWrapper) RefreshToken(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.RefreshToken(ctx)
+	return err
+}
+
+// RegisterCoordinator converts echo context to params.
+func (w *ServerInterfaceWrapper) RegisterCoordinator(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.RegisterCoordinator(ctx)
 	return err
 }
 
@@ -1789,6 +1926,22 @@ func (w *ServerInterfaceWrapper) ScheduleGroupAnnouncement(ctx echo.Context) err
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ScheduleGroupAnnouncement(ctx, groupId)
+	return err
+}
+
+// ClearGroupAnnouncementHistory converts echo context to params.
+func (w *ServerInterfaceWrapper) ClearGroupAnnouncementHistory(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ClearGroupAnnouncementHistory(ctx, groupId)
 	return err
 }
 
@@ -1997,6 +2150,22 @@ func (w *ServerInterfaceWrapper) GetGroupResources(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GetGroupResources(ctx, groupId)
+	return err
+}
+
+// UpdateGroupRoster converts echo context to params.
+func (w *ServerInterfaceWrapper) UpdateGroupRoster(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", ctx.Param("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter groupId: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.UpdateGroupRoster(ctx, groupId)
 	return err
 }
 
@@ -2240,6 +2409,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 		Handler: si,
 	}
 
+	router.POST(options.BaseURL+"/api/auth/register", wrapper.RegisterCoordinator, options.OperationMiddlewares["registerCoordinator"]...)
 	router.POST(options.BaseURL+"/api/auth/login", wrapper.Login, options.OperationMiddlewares["login"]...)
 	router.POST(options.BaseURL+"/api/auth/resume", wrapper.ResumeSession, options.OperationMiddlewares["resumeSession"]...)
 	router.POST(options.BaseURL+"/api/auth/logout", wrapper.Logout, options.OperationMiddlewares["logout"]...)
@@ -2270,9 +2440,11 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/api/groups/:groupId/forms/responses/import", wrapper.ImportGroupFormResponses, options.OperationMiddlewares["importGroupFormResponses"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/announcements", wrapper.ListGroupAnnouncements, options.OperationMiddlewares["listGroupAnnouncements"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/announcements", wrapper.ScheduleGroupAnnouncement, options.OperationMiddlewares["scheduleGroupAnnouncement"]...)
+	router.DELETE(options.BaseURL+"/api/groups/:groupId/announcements/history", wrapper.ClearGroupAnnouncementHistory, options.OperationMiddlewares["clearGroupAnnouncementHistory"]...)
 	router.GET(options.BaseURL+"/api/audit-notifications", wrapper.GetAuditNotifications, options.OperationMiddlewares["getAuditNotifications"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/audits", wrapper.ListGroupAudits, options.OperationMiddlewares["listGroupAudits"]...)
 	router.POST(options.BaseURL+"/api/groups/:groupId/audits", wrapper.QueueGroupAudit, options.OperationMiddlewares["queueGroupAudit"]...)
+	router.POST(options.BaseURL+"/api/groups/:groupId/roster", wrapper.UpdateGroupRoster, options.OperationMiddlewares["updateGroupRoster"]...)
 	router.GET(options.BaseURL+"/api/groups/:groupId/onboarding", wrapper.GetGroupOnboarding, options.OperationMiddlewares["getGroupOnboarding"]...)
 	router.DELETE(options.BaseURL+"/api/notifications", wrapper.DeleteAllNotifications, options.OperationMiddlewares["deleteAllNotifications"]...)
 	router.GET(options.BaseURL+"/api/notifications", wrapper.ListNotifications, options.OperationMiddlewares["listNotifications"]...)

@@ -120,7 +120,7 @@ func TestLaunchSlackReportsChannelAndWelcomeFailures(t *testing.T) {
 	if step.Status != jobs.StepPartiallyFailed {
 		t.Fatalf("Slack step = %+v, want partially_failed", step)
 	}
-	if step.Detail != "1 channel, 0 invite, 1 welcome failures" {
+	if step.Detail != "1 channel and 1 welcome failures" {
 		t.Errorf("detail = %q", step.Detail)
 	}
 }
@@ -203,6 +203,8 @@ func (g *partialClassroomGW) AssignTeacher(_ context.Context, _, _, email string
 	g.assignedTeachers = append(g.assignedTeachers, email)
 	return nil
 }
+func (*partialClassroomGW) RemoveStudent(context.Context, string, string, string) error { return nil }
+func (*partialClassroomGW) RemoveTeacher(context.Context, string, string, string) error { return nil }
 
 type stubClassroomStore struct{}
 

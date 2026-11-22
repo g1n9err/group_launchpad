@@ -172,3 +172,71 @@ var _ = httptest.NewServer
 
 // silence unused fmt when assertions shrink.
 var _ = fmt.Sprintf
+
+func TestUpdateGroupRosterInvitesToExistingSlackChannels(t *testing.T) {
+	pool := newTestPool(t)
+	truncate(t, pool, "groups", "users")
+	repo := store.New(pool)
+	workspace := newFakeSlackState()
+	workspace.emails["new-student@example.test"] = "U-STUDENT"
+	workspace.emails["new-lecturer@example.test"] = "U-LECTURER"
+	workspace.emails["staff@example.test"] = "U-STAFF"
+	slack := integrations.NewSlackChannelsService(workspace, repo, repo, true)
+	slack.Joins = repo
+	app := transport.New(testConfig(), discardLogger(), newGroupsService(pool), googleServiceForTest(pool),
+		slackServiceForTest(pool), slack, slackEventsServiceForTest(pool), nil, pool.Ping,
+		transport.GroupProvisioning{GroupRoster: repo, GroupStaff: repo})
+	srv := httptestNew(app, t)
+
+	code, group := doJSON(t, srv, http.MethodPost, "/api/groups",
+		`{"name":"Existing Slack","courseName":"Go","startDate":"2026-12-01","staffEmails":["staff@example.test"],"lecturerEmails":["new-lecturer@example.test"],"studentEmails":[]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create group: %d %v", code, group)
+	}
+	path := "/api/groups/" + group["id"].(string)
+	code, response := doJSON(t, srv, http.MethodPost, path+"/roster", `{"studentEmails":["new-student@example.test"]}`)
+	if code != http.StatusOK || len(response["slack"].(map[string]any)["invites"].([]any)) != 0 || len(workspace.channels) != 0 {
+		t.Fatalf("save before Slack provisioning: %d %v", code, response)
+	}
+
+	if code, _ := doJSON(t, srv, http.MethodPost, path+"/slack/provision", ""); code != http.StatusOK {
+		t.Fatalf("create Slack channels: %d", code)
+	}
+	const payload = `{"studentEmails":["NEW-STUDENT@example.test"],"lecturerEmails":["new-lecturer@example.test"]}`
+	for _, wantStatus := range []string{"invited", "already_member"} {
+		code, response := doJSON(t, srv, http.MethodPost, path+"/roster", payload)
+		if code != http.StatusOK {
+			t.Fatalf("update roster: %d %v", code, response)
+		}
+		slack := response["slack"].(map[string]any)
+		invites := slack["invites"].([]any)
+		if len(invites) != 12 || len(slack["welcomeMessages"].([]any)) != 0 || len(workspace.channels) != 4 {
+			t.Fatalf("unexpected Slack changes: %v", slack)
+		}
+		for _, raw := range invites {
+			if raw.(map[string]any)["status"] != wantStatus {
+				t.Fatalf("invitation = %v, want %s", raw, wantStatus)
+			}
+		}
+	}
+	code, response = doJSON(t, srv, http.MethodGet, path+"/onboarding", "")
+	if code != http.StatusOK || len(response["students"].([]any)) != 1 || len(response["staff"].([]any)) != 2 {
+		t.Fatalf("saved roster: %d %v", code, response)
+	}
+	foundLecturer := false
+	for _, raw := range response["staff"].([]any) {
+		row := raw.(map[string]any)
+		if row["role"] == "lecturer" && row["email"] == "new-lecturer@example.test" {
+			foundLecturer = true
+		}
+	}
+	if !foundLecturer {
+		t.Fatalf("new lecturer missing from roster: %v", response["staff"])
+	}
+	if code, _ := doJSON(t, srv, http.MethodPost, path+"/roster", `{"lecturerEmails":["staff@example.test"]}`); code != http.StatusConflict {
+		t.Fatalf("changed a different staff role: %d, want 409", code)
+	}
+	if code, _ := doJSON(t, srv, http.MethodPost, path+"/roster", `{"studentEmails":["invalid"]}`); code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid student address: %d, want 422", code)
+	}
+}

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"launchpad/internal/core"
 )
 
@@ -28,6 +30,13 @@ type GoogleAuthService struct {
 	access           string
 	accessExp        time.Time
 	cachedCredential string
+	workspaceTokens  map[uuid.UUID]googleAccessToken
+}
+
+type googleAccessToken struct {
+	value      string
+	expiry     time.Time
+	credential string
 }
 
 // NewGoogleAuthService builds the service. configured requires client
@@ -82,7 +91,15 @@ func (s *GoogleAuthService) Callback(ctx context.Context, code, state string) (G
 		})
 	}
 
-	verifierEnc, err := s.repo.ConsumeState(ctx, hashHex(state))
+	var verifierEnc string
+	var err error
+	if scopedRepo, ok := s.repo.(GoogleWorkspaceStateOwnerRepository); ok {
+		var owner uuid.UUID
+		verifierEnc, owner, err = scopedRepo.ConsumeWorkspaceState(ctx, hashHex(state))
+		if owner != uuid.Nil { ctx = core.WithWorkspaceOwner(ctx, owner) }
+	} else {
+		verifierEnc, err = s.repo.ConsumeState(ctx, hashHex(state))
+	}
 	if err != nil {
 		return GoogleStatus{}, core.Validation("oauth state is invalid, expired, or already used", nil)
 	}
@@ -143,6 +160,47 @@ func (s *GoogleAuthService) Status(ctx context.Context) (GoogleStatus, error) {
 func (s *GoogleAuthService) AccessToken(ctx context.Context) (string, error) {
 	token, _, err := s.accessToken(ctx, "")
 	return token, err
+}
+
+// AccessTokenForGroup uses the Google account selected for the group. Groups
+// without an explicit selection keep using the legacy default account.
+func (s *GoogleAuthService) AccessTokenForGroup(ctx context.Context, groupID uuid.UUID) (string, error) {
+	repo, ok := s.repo.(GoogleWorkspaceRepository)
+	if !ok {
+		return s.AccessToken(ctx)
+	}
+	id, assigned, err := repo.GroupGoogleWorkspace(ctx, groupID)
+	if err != nil {
+		return "", err
+	}
+	if !assigned {
+		return s.AccessToken(ctx)
+	}
+	if !s.configured {
+		return "", errNotConfigured()
+	}
+	credential, err := repo.GoogleWorkspaceCredential(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.workspaceTokens == nil {
+		s.workspaceTokens = make(map[uuid.UUID]googleAccessToken)
+	}
+	if cached, found := s.workspaceTokens[id]; found && cached.credential == credential.RefreshTokenEncrypted && cached.value != "" && time.Now().Add(30*time.Second).Before(cached.expiry) {
+		return cached.value, nil
+	}
+	refresh, err := s.cipher.Decrypt(credential.RefreshTokenEncrypted)
+	if err != nil {
+		return "", &core.AppError{Code: core.CodeNotReady, Message: "stored Google account credential cannot be decrypted — reconnect required"}
+	}
+	token, expiry, err := s.gateway.Refresh(ctx, refresh)
+	if err != nil {
+		return "", &core.AppError{Code: core.CodeNotReady, Message: "Google account token refresh failed — reconnect required"}
+	}
+	s.workspaceTokens[id] = googleAccessToken{value: token, expiry: expiry, credential: credential.RefreshTokenEncrypted}
+	return token, nil
 }
 
 func (s *GoogleAuthService) CheckGmailPermission(ctx context.Context) error {

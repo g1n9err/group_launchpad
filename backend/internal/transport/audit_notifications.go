@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -11,11 +12,11 @@ import (
 )
 
 type AuditNotificationReader interface {
-	AuditNotifications(context.Context) ([]audit.Notification, error)
-	CurrentAuditIssues(context.Context) ([]audit.OpenIssues, error)
+	AuditNotifications(context.Context, string) ([]audit.Notification, error)
+	CurrentAuditIssues(context.Context, string) ([]audit.OpenIssues, error)
 }
 
-func (h *Handlers) GetAuditNotifications(c echo.Context) error {
+func (h *Handlers) GetAuditNotifications(c echo.Context, params gen.GetAuditNotificationsParams) error {
 	if _, err := h.requireStaff(c); err != nil {
 		return err
 	}
@@ -23,11 +24,15 @@ func (h *Handlers) GetAuditNotifications(c echo.Context) error {
 		return errNotReady("audit notifications are unavailable")
 	}
 	ctx := c.Request().Context()
-	openIssues, err := h.auditNotifications.CurrentAuditIssues(ctx)
+	var groupName string
+	if params.GroupName != nil {
+		groupName = strings.TrimSpace(*params.GroupName)
+	}
+	openIssues, err := h.auditNotifications.CurrentAuditIssues(ctx, groupName)
 	if err != nil {
 		return err
 	}
-	notifications, err := h.auditNotifications.AuditNotifications(ctx)
+	notifications, err := h.auditNotifications.AuditNotifications(ctx, groupName)
 	if err != nil {
 		return err
 	}

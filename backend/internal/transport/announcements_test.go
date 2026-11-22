@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -76,17 +77,19 @@ func TestScheduleAnnouncementDistinguishesMissingTemplateFromStoreFailure(t *tes
 }
 
 type fixtureAnnouncementPublisher struct {
-	mu    sync.Mutex
-	times map[string][]time.Time
+	mu       sync.Mutex
+	times    map[string][]time.Time
+	channels map[string]int
 }
 
 func (f *fixtureAnnouncementPublisher) PostAnnouncement(_ context.Context, channel, message string) (string, bool, error) {
-	if channel != "C-scheduled-test" {
+	if !slices.Contains([]string{"C-scheduled-test", "C-general", "C-questions", "C-resources"}, channel) {
 		return "", false, fmt.Errorf("unexpected test channel")
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.times[message] = append(f.times[message], time.Now())
+	f.channels[message+"|"+channel]++
 	if message == "Ambiguous post" {
 		return "", true, errors.New("Slack did not confirm publication")
 	}
@@ -118,12 +121,16 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 		return fmt.Sprintf(`{"requestId":%q,"channelName":"announcements-group-announcements","type":"reminder","message":%q,"scheduledAt":%q}`,
 			key, message, when.Format(time.RFC3339Nano))
 	}
+	generalBody := fmt.Sprintf(`{"requestId":%q,"channelName":"ignored-selection","type":"general","message":"All group channels","scheduledAt":%q}`, uuid.New(), when.Format(time.RFC3339Nano))
 
 	if code, _ := doJSON(t, srv, http.MethodPost, route, body(requestID, "Test scheduled announcement")); code != http.StatusConflict {
 		t.Fatalf("unlinked channel got %d, want 409", code)
 	}
 	if _, err := pool.Exec(t.Context(), `INSERT INTO group_resources (group_id,provider,resource_type,resource_name,external_resource_id)
-		VALUES ($1,'slack','channel','announcements-group-announcements','C-scheduled-test')`, id); err != nil {
+		VALUES ($1,'slack','channel','announcements-group-announcements','C-scheduled-test'),
+		($1,'slack','channel','announcements-group-general','C-general'),
+		($1,'slack','channel','announcements-group-questions','C-questions'),
+		($1,'slack','channel','announcements-group-resources','C-resources')`, id); err != nil {
 		t.Fatal(err)
 	}
 	code, first := doJSON(t, srv, http.MethodPost, route, body(requestID, "Test scheduled announcement"))
@@ -141,11 +148,15 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 	if code != http.StatusAccepted {
 		t.Fatalf("schedule ambiguous test: %d %v", code, ambiguous)
 	}
-	if jobs := countRowsSimple(t, pool, "SELECT count(*) FROM river_job WHERE queue='slack_announcements'"); jobs != 2 {
-		t.Fatalf("queued %d announcements, want 2", jobs)
+	code, allChannels := doJSON(t, srv, http.MethodPost, route, generalBody)
+	if code != http.StatusAccepted || allChannels["schedule"].(map[string]any)["channelName"] != "all" {
+		t.Fatalf("schedule general announcement: %d %v", code, allChannels)
+	}
+	if jobs := countRowsSimple(t, pool, "SELECT count(*) FROM river_job WHERE queue='slack_announcements'"); jobs != 3 {
+		t.Fatalf("queued %d announcements, want 3", jobs)
 	}
 
-	publisher := &fixtureAnnouncementPublisher{times: make(map[string][]time.Time)}
+	publisher := &fixtureAnnouncementPublisher{times: make(map[string][]time.Time), channels: make(map[string]int)}
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &jobs.AnnouncementWorker{Store: repo, Slack: publisher})
 	worker, err := jobs.NewClient(pool, workers, jobs.Config{SlackAnnouncementsEnabled: true})
@@ -163,7 +174,7 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 		}
 	})
 
-	for _, row := range []map[string]any{first, ambiguous} {
+	for _, row := range []map[string]any{first, ambiguous, allChannels} {
 		announcementID, err := uuid.Parse(row["id"].(string))
 		if err != nil {
 			t.Fatal(err)
@@ -180,7 +191,7 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if completed == 4 {
+		if completed == 6 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -189,7 +200,7 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	items, err := repo.Announcements(t.Context(), mustUUID(t, id))
-	if err != nil || len(items) != 2 {
+	if err != nil || len(items) != 3 {
 		t.Fatalf("list announcements: %v %v", items, err)
 	}
 	for _, item := range items {
@@ -203,6 +214,10 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 			if item.Status != "unknown" || item.Error == "" {
 				t.Fatalf("ambiguous announcement: %+v", item)
 			}
+		case "All group channels":
+			if item.Status != "published" || len(item.ChannelIDs) != 4 {
+				t.Fatalf("general fanout: %+v", item)
+			}
 		}
 	}
 	publisher.mu.Lock()
@@ -213,12 +228,45 @@ func TestScheduledAnnouncementsDelayAndDeduplicateSlackPosts(t *testing.T) {
 			t.Fatalf("message %q posted at %v, want one post at or after %v", message, calls, when)
 		}
 	}
+	if len(publisher.times["All group channels"]) != 4 {
+		t.Fatalf("general announcement posts = %d, want 4", len(publisher.times["All group channels"]))
+	}
 	var delivered, failed int
 	if err := pool.QueryRow(t.Context(), `SELECT count(*) FILTER (WHERE kind='announcement_delivered'),
 		count(*) FILTER (WHERE kind='announcement_failed') FROM notifications`).Scan(&delivered, &failed); err != nil {
 		t.Fatal("read announcement notifications:", err)
 	}
-	if delivered != 1 || failed != 1 {
-		t.Fatalf("announcement notifications: delivered=%d failed=%d; want one each", delivered, failed)
+	if delivered != 2 || failed != 1 {
+		t.Fatalf("announcement notifications: delivered=%d failed=%d; want two delivered and one failed", delivered, failed)
+	}
+
+	code, other := doJSON(t, srv, http.MethodPost, "/api/groups",
+		`{"name":"Other Announcements","courseName":"Go","startDate":"2026-12-01","staffEmails":["staff@test.example"],"lecturerEmails":["lecturer@test.example"]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create other group: %d %v", code, other)
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO scheduled_announcements
+		(group_id,request_id,channel_id,channel_name,message_type,message_content,scheduled_at,status)
+		VALUES ($1,gen_random_uuid(),'C-first','scheduled-channel','reminder','Keep scheduled',now()+interval '1 hour','scheduled'),
+		       ($1,gen_random_uuid(),'C-first','scheduled-channel','general','Keep publishing',now(),'publishing'),
+		       ($2,gen_random_uuid(),'C-other','other-channel','general','Keep other group',now(),'published')`, id, other["id"]); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if code, _ := doJSON(t, srv, http.MethodDelete, route+"/history", ""); code != http.StatusNoContent {
+			t.Fatalf("clear history: %d, want 204", code)
+		}
+	}
+	items, err = repo.Announcements(t.Context(), mustUUID(t, id))
+	if err != nil || len(items) != 2 || items[0].Status != "scheduled" || items[1].Status != "publishing" {
+		t.Fatalf("history after clear: %v, err=%v", items, err)
+	}
+	otherItems, err := repo.Announcements(t.Context(), mustUUID(t, other["id"].(string)))
+	if err != nil || len(otherItems) != 1 || otherItems[0].Message != "Keep other group" {
+		t.Fatalf("other group's history after clear: %v, err=%v", otherItems, err)
+	}
+	code, repeated = doJSON(t, srv, http.MethodPost, route, body(requestID, "Test scheduled announcement"))
+	if code != http.StatusAccepted || repeated["id"] != first["id"] {
+		t.Fatalf("old schedule idempotency after clear: %d %v", code, repeated)
 	}
 }

@@ -22,24 +22,35 @@ import (
 var _ coreintegrations.GoogleAuthRepository = (*Repo)(nil)
 
 func (r *Repo) CreateState(ctx context.Context, stateHash, verifierEnc string, expiresAt time.Time) error {
-	return r.q.CreateOAuthState(ctx, gen.CreateOAuthStateParams{
-		StateHash:       stateHash,
-		CodeVerifierEnc: verifierEnc,
-		Provider:        coreintegrations.ProviderGoogle,
-		ExpiresAt:       expiresAt,
-	})
+	owner, scoped := core.WorkspaceOwner(ctx)
+	var ownerValue any
+	if scoped {
+		ownerValue = owner
+	}
+	_, err := r.pool.Exec(ctx, `INSERT INTO oauth_states(state_hash,code_verifier_enc,provider,expires_at,workspace_owner_id) VALUES($1,$2,$3,$4,$5)`, stateHash, verifierEnc, coreintegrations.ProviderGoogle, expiresAt, ownerValue)
+	return err
 }
 
 func (r *Repo) ConsumeState(ctx context.Context, stateHash string) (string, error) {
-	verifierEnc, err := r.q.ConsumeOAuthState(ctx, stateHash)
+	verifierEnc, _, err := r.ConsumeWorkspaceState(ctx, stateHash)
+	return verifierEnc, err
+}
+
+func (r *Repo) ConsumeWorkspaceState(ctx context.Context, stateHash string) (string, uuid.UUID, error) {
+	var verifierEnc string
+	var owner pgtype.UUID
+	err := r.pool.QueryRow(ctx, `UPDATE oauth_states SET consumed_at=now() WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at>now() AND provider='google' RETURNING code_verifier_enc,workspace_owner_id`, stateHash).Scan(&verifierEnc, &owner)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Unknown, expired, or already consumed — indistinguishable on purpose.
-			return "", core.Validation("oauth state is invalid, expired, or already used", nil)
+			return "", uuid.Nil, core.Validation("oauth state is invalid, expired, or already used", nil)
 		}
-		return "", fmt.Errorf("store: consume oauth state: %w", err)
+		return "", uuid.Nil, fmt.Errorf("store: consume oauth state: %w", err)
 	}
-	return verifierEnc, nil
+	if owner.Valid {
+		return verifierEnc, uuid.UUID(owner.Bytes), nil
+	}
+	return verifierEnc, uuid.Nil, nil
 }
 
 // SaveConnection upserts the integration row and replaces the active
@@ -51,20 +62,18 @@ func (r *Repo) SaveConnection(ctx context.Context, accountEmail string, scopes [
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck — no-op on commit
 
-	qtx := r.q.WithTx(tx)
-	row, err := qtx.UpsertGoogleIntegration(ctx, accountEmail)
+	owner := nullableOwnerFromContext(ctx)
+	var integrationID uuid.UUID
+	err = tx.QueryRow(ctx, `INSERT INTO integrations(provider,account_identifier,connection_status,workspace_owner_id)
+		VALUES('google',$1,'connected',$2) ON CONFLICT(provider,workspace_owner_id,account_identifier) DO UPDATE
+		SET connection_status='connected' RETURNING id`, accountEmail, owner).Scan(&integrationID)
 	if err != nil {
 		return fmt.Errorf("store: upsert integration: %w", err)
 	}
-	if _, err := qtx.RevokeActiveIntegrationCredentials(ctx, row.ID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE integration_credentials SET revoked_at=now() WHERE integration_id=$1 AND revoked_at IS NULL`, integrationID); err != nil {
 		return fmt.Errorf("store: revoke old credentials: %w", err)
 	}
-	if err := qtx.InsertIntegrationCredential(ctx, gen.InsertIntegrationCredentialParams{
-		IntegrationID:   row.ID,
-		RefreshTokenEnc: refreshTokenEnc,
-		KeyID:           keyID,
-		Scopes:          scopes,
-	}); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO integration_credentials(integration_id,refresh_token_enc,key_id,scopes) VALUES($1,$2,$3,$4)`, integrationID, refreshTokenEnc, keyID, scopes); err != nil {
 		return fmt.Errorf("store: insert credential: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -74,7 +83,14 @@ func (r *Repo) SaveConnection(ctx context.Context, accountEmail string, scopes [
 }
 
 func (r *Repo) GoogleConnection(ctx context.Context) (coreintegrations.StoredGoogleConnection, error) {
-	row, err := r.q.GetGoogleConnection(ctx)
+	var status, account, encrypted, keyID string
+	var createdAt time.Time
+	var scopes []string
+	err := r.pool.QueryRow(ctx, `SELECT i.connection_status,i.account_identifier,i.created_at,
+		COALESCE(c.refresh_token_enc,''),COALESCE(c.key_id,''),COALESCE(c.scopes,ARRAY[]::text[])
+		FROM integrations i LEFT JOIN integration_credentials c ON c.integration_id=i.id AND c.revoked_at IS NULL
+		WHERE i.provider='google' AND ($1::uuid IS NULL OR i.workspace_owner_id=$1)
+		ORDER BY i.created_at DESC,c.obtained_at DESC NULLS LAST LIMIT 1`, nullableOwnerFromContext(ctx)).Scan(&status, &account, &createdAt, &encrypted, &keyID, &scopes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return coreintegrations.StoredGoogleConnection{
@@ -84,34 +100,27 @@ func (r *Repo) GoogleConnection(ctx context.Context) (coreintegrations.StoredGoo
 		return coreintegrations.StoredGoogleConnection{}, fmt.Errorf("store: get google connection: %w", err)
 	}
 
-	status := coreintegrations.GoogleStatus{
-		AccountEmail: row.AccountIdentifier,
-		ConnectedAt:  row.CreatedAt,
+	googleStatus := coreintegrations.GoogleStatus{
+		AccountEmail: account,
+		ConnectedAt:  createdAt,
 	}
-	switch {
-	case !row.CredentialID.Valid:
-		status.Status = coreintegrations.StatusDisconnected
-	case row.ConnectionStatus == coreintegrations.StatusError:
-		status.Status = coreintegrations.StatusError
-		status.Scopes = derefScopes(row.CredentialScopes)
+	switch status {
+	case coreintegrations.StatusError:
+		googleStatus.Status = coreintegrations.StatusError
+		googleStatus.Scopes = scopes
 	default:
-		status.Status = coreintegrations.StatusConnected
-		status.Scopes = derefScopes(row.CredentialScopes)
-	}
-
-	var rtEnc, keyID string
-	if row.CredentialID.Valid {
-		rtEnc, keyID = derefString(row.RefreshTokenEnc), derefString(row.KeyID)
+		googleStatus.Status = coreintegrations.StatusConnected
+		googleStatus.Scopes = scopes
 	}
 	return coreintegrations.StoredGoogleConnection{
-		Status:          status,
-		RefreshTokenEnc: rtEnc,
+		Status:          googleStatus,
+		RefreshTokenEnc: encrypted,
 		KeyID:           keyID,
 	}, nil
 }
 
 func (r *Repo) MarkGoogleError(ctx context.Context) error {
-	if err := r.q.MarkGoogleIntegrationError(ctx); err != nil {
+	if _, err := r.pool.Exec(ctx, `UPDATE integrations SET connection_status='error' WHERE provider='google' AND ($1::uuid IS NULL OR workspace_owner_id=$1)`, nullableOwnerFromContext(ctx)); err != nil {
 		return fmt.Errorf("store: mark google error: %w", err)
 	}
 	return nil
@@ -123,22 +132,19 @@ func (r *Repo) MarkGoogleError(ctx context.Context) error {
 var _ coreintegrations.SlackRepository = (*Repo)(nil)
 
 func (r *Repo) UpsertSlackConnection(ctx context.Context, teamID, botUserID string) (coreintegrations.SlackStatus, error) {
-	row, err := r.q.UpsertSlackIntegration(ctx, gen.UpsertSlackIntegrationParams{
-		AccountIdentifier: teamID,
-		BotUserID:         &botUserID,
-	})
+	var status coreintegrations.SlackStatus
+	err := r.pool.QueryRow(ctx, `INSERT INTO integrations(provider,account_identifier,connection_status,bot_user_id,workspace_owner_id)
+		VALUES('slack',$1,'connected',$2,$3) ON CONFLICT(provider,workspace_owner_id,account_identifier) DO UPDATE
+		SET connection_status='connected',bot_user_id=EXCLUDED.bot_user_id RETURNING account_identifier,created_at`, teamID, botUserID, nullableOwnerFromContext(ctx)).Scan(&status.TeamID, &status.ConnectedAt)
 	if err != nil {
 		return coreintegrations.SlackStatus{}, fmt.Errorf("store: upsert slack integration: %w", err)
 	}
-	return coreintegrations.SlackStatus{
-		Status:      coreintegrations.StatusConnected,
-		TeamID:      row.AccountIdentifier,
-		ConnectedAt: row.CreatedAt,
-	}, nil
+	status.Status = coreintegrations.StatusConnected
+	return status, nil
 }
 
 func (r *Repo) MarkSlackError(ctx context.Context) error {
-	if err := r.q.MarkSlackIntegrationError(ctx); err != nil {
+	if _, err := r.pool.Exec(ctx, `UPDATE integrations SET connection_status='error' WHERE provider='slack' AND ($1::uuid IS NULL OR workspace_owner_id=$1)`, nullableOwnerFromContext(ctx)); err != nil {
 		return fmt.Errorf("store: mark slack error: %w", err)
 	}
 	return nil
@@ -150,7 +156,7 @@ func (r *Repo) StoredSlackStatus(ctx context.Context) (coreintegrations.SlackSta
 	var status coreintegrations.SlackStatus
 	err := r.pool.QueryRow(ctx,
 		`SELECT connection_status, account_identifier, created_at FROM integrations
-		 WHERE provider='slack' ORDER BY created_at DESC LIMIT 1`).
+		 WHERE provider='slack' AND ($1::uuid IS NULL OR workspace_owner_id=$1) ORDER BY created_at DESC LIMIT 1`, nullableOwnerFromContext(ctx)).
 		Scan(&status.Status, &status.TeamID, &status.ConnectedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return coreintegrations.SlackStatus{Status: coreintegrations.StatusDisconnected}, nil

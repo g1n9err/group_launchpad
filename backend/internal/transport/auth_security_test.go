@@ -142,7 +142,6 @@ func TestAnonymousGoogleStatusStripsEmail(t *testing.T) {
 	if _, err := pool.Exec(ctxbg(), `
 		INSERT INTO integrations (provider, account_identifier, connection_status)
 		VALUES ('google', 'coordinator@test.example', 'connected')
-		ON CONFLICT (provider, account_identifier) DO UPDATE SET connection_status = 'connected'
 	`); err != nil {
 		t.Fatalf("seed google connection: %v", err)
 	}
