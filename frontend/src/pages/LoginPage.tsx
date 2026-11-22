@@ -1,3 +1,4 @@
+import { PasswordHelp } from "../components/PasswordHelp";
 import { HomeLogo } from "../components/HomeLogo";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -7,7 +8,7 @@ import { api } from "../lib/api";
 import { storeSession } from "../lib/auth";
 import { navigate } from "../lib/router";
 
-export function LoginPage() {
+export function LoginPage({ passwordReset = false }: { passwordReset?: boolean }) {
   const { t } = useSettings();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
@@ -50,6 +51,7 @@ export function LoginPage() {
             <h1>{t("login.title")}</h1>
             <p>{t("login.description")}</p>
           </div>
+          {passwordReset && <p role="status" className="mt-3 text-sm text-text">{t("recovery.saved")}</p>}
           <form onSubmit={onSubmit} className="login-form">
             <label htmlFor="login-email">{t("login.email")}</label>
             <input
@@ -78,6 +80,7 @@ export function LoginPage() {
               {t(submitting ? "login.working" : "login.submit")}
             </button>
           </form>
+          <PasswordHelp />
           <p className="mt-5 text-center text-sm text-muted">{t("signup.needAccount")} <a href="#/signup" className="font-semibold text-primary hover:underline">{t("signup.submit")}</a></p>
           <a href="#/" className="login-back">{t("login.back")}</a>
         </Card>

@@ -18,6 +18,12 @@ type GmailCredentials interface {
 	GmailCredentials(context.Context) (token, from string, err error)
 }
 
+type GmailCredentialsFunc func(context.Context) (string, string, error)
+
+func (f GmailCredentialsFunc) GmailCredentials(ctx context.Context) (string, string, error) {
+	return f(ctx)
+}
+
 type Gmail struct {
 	credentials GmailCredentials
 	endpoint    string

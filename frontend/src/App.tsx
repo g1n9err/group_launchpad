@@ -8,6 +8,7 @@ import { AutomationPage } from "./pages/AutomationPage";
 import { AnnouncementsPage } from "./pages/AnnouncementsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
+import { PasswordRecoveryPage } from "./pages/PasswordRecoveryPage";
 import { SignupPage } from "./pages/SignupPage";
 import { AccountPage } from "./pages/AccountPage";
 import { HomePage } from "./pages/HomePage";
@@ -23,7 +24,10 @@ export default function App() {
   const resuming = useIsResuming();
   const { t } = useSettings();
 
-  if (route.page === "login") return <LoginPage />;
+  if (route.page === "login") return <LoginPage passwordReset={route.id === "reset-complete"} />;
+  if (route.page === "forgot-password" || route.page === "reset-password") {
+    return <PasswordRecoveryPage key={route.id ?? route.page} reset={route.page === "reset-password"} token={route.id} />;
+  }
   if (route.page === "signup") return <SignupPage />;
   if (route.page === "home") return <AppShell><HomePage /></AppShell>;
   if (route.page === "account") return <AppShell><AccountPage /></AppShell>;

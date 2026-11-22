@@ -1,3 +1,4 @@
+import { TranslateDraft } from "../components/TranslateDraft";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Card, Chip, PageTitle } from "../components/ui";
 import { AppSelect } from "../components/AppSelect";
@@ -285,6 +286,7 @@ function GroupAnnouncements({ groupId, groupName, authorization, onUnauthorized,
               <textarea className={`mt-1 ${intakeInputClass}`} rows={5} required maxLength={4000} value={message}
                 onChange={(event) => setMessage(event.target.value)} />
             </label>
+            <TranslateDraft value={message} onApply={setMessage} />
             <label className="block">{t("announcements.localTime")}
               <DateTimePicker value={localTime} onChange={setLocalTime} required />
             </label>

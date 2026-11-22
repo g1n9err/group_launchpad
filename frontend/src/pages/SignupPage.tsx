@@ -1,3 +1,4 @@
+import { PasswordHelp } from "../components/PasswordHelp";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "../components/ui";
@@ -77,6 +78,7 @@ export function SignupPage() {
             {t(submitting ? "signup.working" : "signup.submit")}
           </button>
         </form>
+        <PasswordHelp />
         <p className="mt-5 text-center text-sm text-muted">{t("signup.haveAccount")} <a href="#/login" className="font-semibold text-primary hover:underline">{t("login.submit")}</a></p>
       </Card>
     </div>

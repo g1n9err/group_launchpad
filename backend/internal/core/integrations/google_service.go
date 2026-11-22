@@ -96,7 +96,9 @@ func (s *GoogleAuthService) Callback(ctx context.Context, code, state string) (G
 	if scopedRepo, ok := s.repo.(GoogleWorkspaceStateOwnerRepository); ok {
 		var owner uuid.UUID
 		verifierEnc, owner, err = scopedRepo.ConsumeWorkspaceState(ctx, hashHex(state))
-		if owner != uuid.Nil { ctx = core.WithWorkspaceOwner(ctx, owner) }
+		if owner != uuid.Nil {
+			ctx = core.WithWorkspaceOwner(ctx, owner)
+		}
 	} else {
 		verifierEnc, err = s.repo.ConsumeState(ctx, hashHex(state))
 	}
@@ -183,6 +185,27 @@ func (s *GoogleAuthService) AccessTokenForGroup(ctx context.Context, groupID uui
 	if err != nil {
 		return "", err
 	}
+	return s.workspaceAccessToken(ctx, id, credential)
+}
+
+// GmailCredentialsForWorkspace pins system email to an operator-selected account.
+func (s *GoogleAuthService) GmailCredentialsForWorkspace(ctx context.Context, id uuid.UUID) (string, string, error) {
+	repo, ok := s.repo.(GoogleWorkspaceRepository)
+	if !s.configured || !ok {
+		return "", "", errNotConfigured()
+	}
+	credential, err := repo.GoogleWorkspaceCredential(ctx, id)
+	if err != nil {
+		return "", "", err
+	}
+	if credential.Status != StatusConnected || !slices.Contains(credential.Scopes, GmailSendScope) {
+		return "", "", &core.AppError{Code: core.CodeNotReady, Message: "reconnect the selected Google account and allow Gmail sending"}
+	}
+	token, err := s.workspaceAccessToken(ctx, id, credential)
+	return token, credential.AccountEmail, err
+}
+
+func (s *GoogleAuthService) workspaceAccessToken(ctx context.Context, id uuid.UUID, credential GoogleWorkspaceCredential) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.workspaceTokens == nil {

@@ -19,7 +19,7 @@ import { currentSession, getAuthHeader, refreshSession, rejectSession } from "./
 // start from the incoming Request's headers: passing fresh (empty) headers
 // to fetch(request, { headers }) REPLACES them per the fetch spec and would
 // strip Content-Type, breaking every form submission with 415.
-async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const rawURL = input instanceof Request ? input.url : input.toString();
   if (new URL(rawURL, window.location.href).pathname === "/api/auth/login") {
     // credentials:"include" is required for the login response's HttpOnly

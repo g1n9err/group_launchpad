@@ -1,3 +1,4 @@
+import { TranslateDraft } from "./TranslateDraft";
 import { useSettings } from "../i18n";
 import { AppSelect } from "./AppSelect";
 import { editableQuestion, intakeButtonClass, intakeInputClass, type EditableQuestion, type IntakeQuestion } from "../lib/intakeForm";
@@ -39,12 +40,18 @@ export function IntakeQuestions({ questions, setQuestions, disabled }: {
                 onChange={(value) => update(question.id, { type: value as IntakeQuestion["type"] })} />
             </label>
           </div>
+          <TranslateDraft value={question.title} maxLength={300}
+            onApply={(title) => update(question.id, { title })} />
           {question.type === "single_choice" && (
-            <label className="block text-sm font-medium text-text">
-              {t("intake.options")}
-              <textarea className={`mt-1 ${intakeInputClass}`} rows={3} required value={question.optionsText}
-                onChange={(event) => update(question.id, { optionsText: event.target.value })} />
-            </label>
+            <div>
+              <label className="block text-sm font-medium text-text">
+                {t("intake.options")}
+                <textarea className={`mt-1 ${intakeInputClass}`} rows={3} required value={question.optionsText}
+                  onChange={(event) => update(question.id, { optionsText: event.target.value })} />
+              </label>
+              <TranslateDraft value={question.optionsText}
+                onApply={(optionsText) => update(question.id, { optionsText })} />
+            </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="flex items-center gap-2 text-sm text-text">

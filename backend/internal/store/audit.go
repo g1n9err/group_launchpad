@@ -82,6 +82,18 @@ func (r *Repo) AuditInventory(ctx context.Context, groupID uuid.UUID) (audit.Inv
 	return inventory, nil
 }
 
+func (r *Repo) ReplaceStaleSlackChannel(ctx context.Context, groupID uuid.UUID, name, oldID, newID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE group_resources SET external_resource_id=$4, updated_at=now()
+		WHERE group_id=$1 AND provider='slack' AND resource_type='channel'
+		  AND status='active' AND resource_name=$2 AND external_resource_id=$3
+	`, groupID, name, oldID, newID)
+	if err != nil {
+		return false, fmt.Errorf("store: replace stale Slack channel link: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func (r *Repo) AuditableGroupIDs(ctx context.Context) ([]uuid.UUID, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT g.id FROM groups g WHERE g.status <> 'archived'

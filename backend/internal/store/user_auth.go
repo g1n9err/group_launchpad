@@ -166,12 +166,19 @@ func (r *Repo) CountRole(ctx context.Context, role string) (int, error) {
 	return count, nil
 }
 
-func (r *Repo) InsertSession(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time) error {
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
-		userID, tokenHash, expiresAt)
+func (r *Repo) InsertSession(ctx context.Context, userID uuid.UUID, credentialHash, tokenHash string, expiresAt time.Time) error {
+	// Lock the credential before minting a session so an overlapping reset
+	// either revokes this session or prevents the old credential from issuing it.
+	tag, err := r.pool.Exec(ctx, `
+		INSERT INTO user_sessions (user_id, token_hash, expires_at)
+		SELECT user_id, $3, $4 FROM user_credentials
+		WHERE user_id = $1 AND password_hash = $2
+		FOR UPDATE`, userID, credentialHash, tokenHash, expiresAt)
 	if err != nil {
 		return fmt.Errorf("store: insert session: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return auth.ErrInvalidCredentials
 	}
 	return nil
 }
@@ -201,16 +208,34 @@ func (r *Repo) SessionByToken(ctx context.Context, tokenHash string) (auth.User,
 // session of the user in ONE transaction: a token issued before a password
 // reset can never authenticate afterwards, whatever the interleaving.
 func (r *Repo) ReplaceCredential(ctx context.Context, userID uuid.UUID, hash string) error {
+	return r.replaceCredential(ctx, userID, hash, "")
+}
+
+func (r *Repo) ReplaceMatchingCredential(ctx context.Context, userID uuid.UUID, oldHash, hash string) error {
+	return r.replaceCredential(ctx, userID, hash, oldHash)
+}
+
+func (r *Repo) replaceCredential(ctx context.Context, userID uuid.UUID, hash, oldHash string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: replace credential tx: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck — no-op after commit
 
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO user_credentials (user_id, password_hash) VALUES ($1, $2)
-		 ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = now()`,
-		userID, hash); err != nil {
+	if oldHash == "" {
+		_, err = tx.Exec(ctx,
+			`INSERT INTO user_credentials (user_id, password_hash) VALUES ($1, $2)
+			 ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = now()`,
+			userID, hash)
+	} else {
+		tag, updateErr := tx.Exec(ctx, `UPDATE user_credentials SET password_hash = $2, updated_at = now()
+			WHERE user_id = $1 AND password_hash = $3`, userID, hash, oldHash)
+		err = updateErr
+		if err == nil && tag.RowsAffected() == 0 {
+			return auth.ErrInvalidResetLink
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("store: replace credential: %w", err)
 	}
 	if _, err := tx.Exec(ctx,
@@ -235,6 +260,19 @@ func (r *Repo) RotateSession(ctx context.Context, oldTokenHash, newTokenHash str
 		return auth.User{}, fmt.Errorf("store: rotate session tx: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck — no-op after commit
+
+	// Use the same lock order as password replacement: credential, then sessions.
+	var credentialUser uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT c.user_id FROM user_credentials c
+		JOIN user_sessions s ON s.user_id = c.user_id
+		WHERE s.token_hash = $1 FOR UPDATE OF c`, oldTokenHash).Scan(&credentialUser)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return auth.User{}, auth.ErrInvalidCredentials
+	}
+	if err != nil {
+		return auth.User{}, fmt.Errorf("store: rotate session credential lock: %w", err)
+	}
 
 	var (
 		u              auth.User

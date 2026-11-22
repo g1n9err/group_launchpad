@@ -1,3 +1,4 @@
+import { TranslateDraft } from "../components/TranslateDraft";
 import { useCallback, useEffect, useState } from "react";
 import { Card, Chip, PageTitle } from "../components/ui";
 import { AppSelect } from "../components/AppSelect";
@@ -261,13 +262,16 @@ function IntakeWorkflow({ groupId, authorization, onUnauthorized }: {
           <div className="space-y-3 rounded-lg border border-border bg-surface-muted p-4">
             <p className="text-sm text-text">{t(confirm === "publish" ? "intake.confirmPublish" : "intake.confirmSend")}</p>
             {confirm === "distribute" && (
-              <label className="block text-sm text-text">
-                {t("intake.emailMessage")}
-                <textarea className={`mt-1 ${intakeInputClass}`} rows={5} maxLength={4000}
-                  value={emailMessage} onChange={(event) => setEmailMessage(event.target.value)}
-                  aria-describedby="intake-email-link" />
-                <span id="intake-email-link" className="mt-1 block text-muted">{t("intake.emailLink")}</span>
-              </label>
+              <div>
+                <label className="block text-sm text-text">
+                  {t("intake.emailMessage")}
+                  <textarea className={`mt-1 ${intakeInputClass}`} rows={5} maxLength={4000}
+                    value={emailMessage} onChange={(event) => setEmailMessage(event.target.value)}
+                    aria-describedby="intake-email-link" />
+                  <span id="intake-email-link" className="mt-1 block text-muted">{t("intake.emailLink")}</span>
+                </label>
+                <TranslateDraft value={emailMessage} onApply={setEmailMessage} />
+              </div>
             )}
             <div className="flex flex-wrap gap-2">
               <button type="button" className={intakeActionClass} onClick={() => void act(confirm)}>{t(confirm === "publish" ? "intake.confirmPublishAction" : "intake.confirmSendAction")}</button>

@@ -107,11 +107,14 @@ func (r AnnouncementResolver) ForGroup(ctx context.Context, groupID uuid.UUID) (
 	return publisher, nil
 }
 
-func (r *WorkspaceResolver) AuditChecker(ctx context.Context, groupID uuid.UUID) audit.SlackChecker {
+func (r *WorkspaceResolver) AuditChecker(ctx context.Context, groupID uuid.UUID) (audit.SlackChecker, error) {
 	gateway, err := r.ForGroup(ctx, groupID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	checker, _ := gateway.(audit.SlackChecker)
-	return checker
+	checker, ok := gateway.(audit.SlackChecker)
+	if !ok {
+		return nil, fmt.Errorf("Slack workspace does not support auditing")
+	}
+	return checker, nil
 }

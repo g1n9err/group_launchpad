@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
@@ -23,6 +25,7 @@ import (
 	"launchpad/internal/core/integrations"
 	"launchpad/internal/dbmigrate"
 	"launchpad/internal/integrations/google"
+	mailgw "launchpad/internal/integrations/mail"
 	slackgw "launchpad/internal/integrations/slack"
 	"launchpad/internal/jobs"
 	"launchpad/internal/secrets"
@@ -121,8 +124,30 @@ func run() error {
 		logger.Info("bootstrap admin account created", "email", bootstrapEmail)
 	}
 
+	var passwordRecovery *transport.PasswordRecovery
+	if siteURL := os.Getenv("PASSWORD_RESET_SITE_URL"); siteURL != "" {
+		site, parseErr := url.Parse(siteURL)
+		if parseErr != nil || site.Scheme != "https" || site.Hostname() == "" || site.User != nil || site.Fragment != "" || site.RawQuery != "" {
+			return errors.New("PASSWORD_RESET_SITE_URL must be the public HTTPS frontend URL")
+		}
+		if !cfg.GmailEnabled || !googleSvc.Configured() || cfg.TokenEncryptionKey == "" {
+			return errors.New("password recovery requires Gmail and Google OAuth configuration")
+		}
+		accountID, parseErr := uuid.Parse(os.Getenv("PASSWORD_RESET_GMAIL_ACCOUNT_ID"))
+		if parseErr != nil || accountID == uuid.Nil {
+			return errors.New("PASSWORD_RESET_GMAIL_ACCOUNT_ID must identify the Google integration used for password recovery")
+		}
+		gmail := mailgw.NewGmail(mailgw.GmailCredentialsFunc(func(ctx context.Context) (string, string, error) {
+			return googleSvc.GmailCredentialsForWorkspace(ctx, accountID)
+		}))
+		passwordRecovery = &transport.PasswordRecovery{
+			Auth: auth.Recovery{Repo: repo, Key: cfg.TokenEncryptionKey}, SiteURL: site.String(), Send: gmail.SendMessage,
+		}
+	}
+
 	app := transport.New(cfg, logger, groupsSvc, googleSvc, slackSvc, slackChannelsSvc, slackEventsSvc, authSvc, pool.Ping,
 		transport.GroupProvisioning{
+			PasswordRecovery: passwordRecovery, TranslateText: google.TextTranslator(os.Getenv("GOOGLE_TRANSLATION_API_KEY")),
 			Launch: launch, GroupLauncher: launcher, LaunchStatus: repo,
 			Classroom: classroom, Drive: drive, Forms: forms,
 			Delivery: delivery, Audit: audit, AuditNotifications: repo, Announcements: announcements,
@@ -130,7 +155,7 @@ func run() error {
 			Notifications:   repo, Templates: repo, StaffAssignments: repo, GroupStaff: repo, GroupRoster: repo, LaunchSteps: repo,
 			Membership: repo, AssignedGroups: repo, StaffAdmin: repo, GroupResources: repo,
 			SlackOAuth: slackOAuthSvc, SlackWorkspaces: repo,
-			GoogleWorkspaces: repo,
+			GoogleWorkspaces:    repo,
 			GroupWorkspaceOwner: repo,
 		})
 

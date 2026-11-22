@@ -62,6 +62,11 @@ type Handlers struct {
 	launchStatus          LaunchStatusReader
 	notifications         NotificationStore
 	templates             TemplateStore
+	passwordRecovery      *PasswordRecovery
+	recoverySlots         chan struct{}
+	recoveryThrottle      *loginThrottle
+	translateText         func(context.Context, string, string) (string, error)
+	translationThrottle   *loginThrottle
 	loginThrottle         *loginThrottle
 	ping                  PingFunc
 	logger                *slog.Logger
@@ -108,6 +113,8 @@ type GroupResourceRow struct {
 
 // GroupProvisioning wires the group launch and Google provisioning use cases.
 type GroupProvisioning struct {
+	PasswordRecovery    *PasswordRecovery
+	TranslateText       func(context.Context, string, string) (string, error)
 	Launch              SlackLaunchService
 	GroupLauncher       GroupLauncher
 	LaunchStatus        LaunchStatusReader
@@ -142,7 +149,12 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 	h := &Handlers{groups: groupsSvc, google: googleSvc, slack: slackSvc, slackChannels: slackChannelsSvc, slackEvents: slackEventsSvc, auth: authSvc, ping: ping, logger: logger}
 	h.coordinator = newCoordinatorAuth(cfg.CoordinatorPassword, cfg.CORSAllowedOrigins)
 	h.loginThrottle = newLoginThrottle(cfg.LoginRateMaxOrDefault(), cfg.LoginRateWindowOrDefault())
+	h.recoverySlots = make(chan struct{}, 8)
+	h.recoveryThrottle = newLoginThrottle(3, 15*time.Minute)
+	h.translationThrottle = newLoginThrottle(30, time.Minute)
 	if len(provisioning) > 0 {
+		h.passwordRecovery = provisioning[0].PasswordRecovery
+		h.translateText = provisioning[0].TranslateText
 		h.launch = provisioning[0].Launch
 		h.groupLauncher = provisioning[0].GroupLauncher
 		h.launchStatus = provisioning[0].LaunchStatus
@@ -197,6 +209,9 @@ func New(cfg config.Config, logger *slog.Logger, groupsSvc *groups.Service, goog
 
 	e.HTTPErrorHandler = errorHandler(logger)
 	gen.RegisterHandlers(e, h)
+	e.POST("/api/auth/password-reset/request", h.requestPasswordReset)
+	e.POST("/api/auth/password-reset", h.resetPassword)
+	e.POST("/api/translation", h.translateDraft)
 	// These endpoints are intentionally registered alongside generated routes
 	// while their API shapes settle; all still use the same auth and error path.
 	e.GET("/api/integrations/slack/connect", h.SlackOAuthConnect)

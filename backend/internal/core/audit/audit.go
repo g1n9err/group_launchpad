@@ -59,6 +59,14 @@ type Store interface {
 	SaveAudit(context.Context, int64, Snapshot, []Resource, bool) (uuid.UUID, error)
 }
 
+type slackLinkStore interface {
+	ReplaceStaleSlackChannel(context.Context, uuid.UUID, string, string, string) (bool, error)
+}
+
+type slackChannelLookup interface {
+	LookupChannelIDs(context.Context, []string) (map[string]string, error)
+}
+
 type Checker interface {
 	CheckResource(context.Context, Resource) string
 }
@@ -85,17 +93,22 @@ type SlackChecker interface {
 }
 
 type Service struct {
-	ResolveSlack func(context.Context, uuid.UUID) SlackChecker
-	Store        Store
-	Slack        Checker
-	Google       Checker
-	Members      MemberChecker // optional — nil reports "unavailable"
+	ResolveSlack  func(context.Context, uuid.UUID) SlackChecker
+	ResolveGoogle func(uuid.UUID) Checker
+	Store         Store
+	Slack         Checker
+	Google        Checker
+	Members       MemberChecker // optional — nil reports "unavailable"
 }
 
 func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigger string, emailEnabled bool) (uuid.UUID, error) {
 	inventory, err := s.Store.AuditInventory(ctx, groupID)
 	if err != nil {
 		return uuid.Nil, err
+	}
+	googleChecker := s.Google
+	if s.ResolveGoogle != nil {
+		googleChecker = s.ResolveGoogle(groupID)
 	}
 	slackChecker, memberChecker := s.Slack, s.Members
 	if s.ResolveSlack != nil {
@@ -134,7 +147,7 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 		expected[i] = resource
 		result := Result{Resource: resource, Status: "unlinked"}
 		if resource.ID != "" {
-			checker := s.Google
+			checker := googleChecker
 			if resource.Provider == "slack" {
 				checker = slackChecker
 			}
@@ -146,9 +159,9 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 			}
 		}
 		snapshot.Results = append(snapshot.Results, result)
-		if !resourceAcceptable(result) {
-			snapshot.Issues = append(snapshot.Issues, result)
-		}
+	}
+	if err := s.repairSlackLinks(ctx, groupID, slackChecker, expected, snapshot.Results, inventory.Resources); err != nil {
+		return uuid.Nil, err
 	}
 
 	// ── Membership audit (PRD §4.7) ─────────────────────────────────────
@@ -157,13 +170,70 @@ func (s *Service) Run(ctx context.Context, groupID uuid.UUID, jobID int64, trigg
 	// enter audit rows or notifications (PII-safe by construction).
 	memberResults := auditMembership(ctx, inventory, memberChecker)
 	snapshot.Results = append(snapshot.Results, memberResults...)
-	for _, result := range memberResults {
+	for _, result := range snapshot.Results {
 		if !resourceAcceptable(result) {
 			snapshot.Issues = append(snapshot.Issues, result)
 		}
 	}
 
 	return s.Store.SaveAudit(ctx, jobID, snapshot, expected, emailEnabled)
+}
+
+// A channel ID can go stale after a channel is recreated. Check the exact
+// name in the group's own workspace before replacing an inaccessible link.
+func (s *Service) repairSlackLinks(ctx context.Context, groupID uuid.UUID, checker Checker, expected []Resource, results []Result, linked []Resource) error {
+	lookup, canLookup := checker.(slackChannelLookup)
+	store, canReplace := s.Store.(slackLinkStore)
+	if !canLookup || !canReplace {
+		return nil
+	}
+	var names []string
+	for _, result := range results {
+		if result.Provider == "slack" && result.Status == StatusMissingOrInaccessible {
+			names = append(names, result.Key)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	found, err := lookup.LookupChannelIDs(lookupCtx, names)
+	cancel()
+	if err != nil {
+		return nil
+	}
+	for i, result := range results {
+		if result.Provider != "slack" || result.Status != StatusMissingOrInaccessible {
+			continue
+		}
+		replacement := found[result.Key]
+		if replacement == "" || replacement == result.ID {
+			continue
+		}
+		resource := result.Resource
+		resource.ID = replacement
+		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		status := checker.CheckResource(checkCtx, resource)
+		cancel()
+		if status != StatusOK {
+			continue
+		}
+		replaced, err := store.ReplaceStaleSlackChannel(ctx, groupID, result.Key, result.ID, replacement)
+		if err != nil {
+			return err
+		}
+		if !replaced {
+			continue
+		}
+		expected[i] = resource
+		results[i] = Result{Resource: resource, Status: StatusOK}
+		for j := range linked {
+			if linked[j] == result.Resource {
+				linked[j] = resource
+			}
+		}
+	}
+	return nil
 }
 
 // StatusProvisioned marks a Classroom course that exists in the PROVISIONED

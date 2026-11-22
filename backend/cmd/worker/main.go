@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 
@@ -161,7 +162,20 @@ func run() error {
 		jobConfig.AuditEmailEnabled = true
 		river.AddWorker(workers, &jobs.AuditEmailWorker{Store: repo, Mailer: mailer, Recipient: cfg.AuditNotificationEmail})
 	}
-	river.AddWorker(workers, &jobs.GroupAuditWorker{Audit: &audit.Service{Store: repo, ResolveSlack: slackResolver.AuditChecker, Google: google.NewAuditChecker(auth)}, EmailEnabled: auditEmailEnabled})
+	resolveAuditSlack := func(ctx context.Context, groupID uuid.UUID) audit.SlackChecker {
+		checker, err := slackResolver.AuditChecker(ctx, groupID)
+		if err != nil {
+			logger.Warn("could not resolve Slack workspace for group audit", "group_id", groupID, "error", err)
+		}
+		return checker
+	}
+	river.AddWorker(workers, &jobs.GroupAuditWorker{
+		Audit: &audit.Service{
+			Store: repo, ResolveSlack: resolveAuditSlack,
+			ResolveGoogle: func(groupID uuid.UUID) audit.Checker { return google.NewGroupAuditChecker(auth, groupID) },
+		},
+		EmailEnabled: auditEmailEnabled,
+	})
 
 	client, err := jobs.NewClient(pool, workers, jobConfig)
 	if err != nil {

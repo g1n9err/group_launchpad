@@ -17,7 +17,7 @@ const emailLabels: Record<components["schemas"]["AuditNotification"]["emailStatu
 };
 
 export function AuditNotifications({ children, loadNotifications = true, showFeed = true }: {
-  children?: (authorization: string, onUnauthorized: () => void, reload: number) => ReactNode;
+  children?: (authorization: string, onUnauthorized: () => void, reload: number, refreshFeed: () => void) => ReactNode;
   loadNotifications?: boolean;
   showFeed?: boolean;
 } = {}) {
@@ -27,6 +27,7 @@ export function AuditNotifications({ children, loadNotifications = true, showFee
   const [error, setError] = useState<TranslationKey>();
   const [loading, setLoading] = useState(false);
   const [reload, setReload] = useState(0);
+  const refreshFeed = useCallback(() => setReload((value) => value + 1), []);
   const [groupSearch, setGroupSearch] = useState("");
   const [groupName, setGroupName] = useState("");
   const workspaceScope = useWorkspaceScope();
@@ -189,7 +190,7 @@ export function AuditNotifications({ children, loadNotifications = true, showFee
     <>
       {!showFeed && !authorization && <a href="#/login" className="app-action">{t("auth.signIn")}</a>}
       {showFeed && notifications}
-      {authorization && feed && children?.(authorization, rejectAuthorization, reload)}
+      {authorization && feed && children?.(authorization, rejectAuthorization, reload, refreshFeed)}
     </>
   );
 }

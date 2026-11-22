@@ -28,7 +28,7 @@ type GroupAuditWorker struct {
 }
 
 func (w *GroupAuditWorker) Timeout(*river.Job[GroupAuditArgs]) time.Duration {
-	return 2 * time.Minute
+	return 3 * time.Minute
 }
 
 func (w *GroupAuditWorker) Work(ctx context.Context, job *river.Job[GroupAuditArgs]) error {

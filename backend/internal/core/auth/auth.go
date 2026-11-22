@@ -87,7 +87,7 @@ type Repository interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) (bool, error)
 	CountRole(ctx context.Context, role string) (int, error)
 
-	InsertSession(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time) error
+	InsertSession(ctx context.Context, userID uuid.UUID, credentialHash, tokenHash string, expiresAt time.Time) error
 	// SessionByToken returns the session's user when the token hash exists,
 	// is unrevoked, and unexpired; otherwise ErrInvalidCredentials. Touches
 	// last_used_at on success.
@@ -200,11 +200,11 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, e
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		return Session{}, ErrInvalidCredentials
 	}
-	return s.issue(ctx, user)
+	return s.issue(ctx, user, hash)
 }
 
 // issue creates a session row and returns the one-time token.
-func (s *Service) issue(ctx context.Context, user User) (Session, error) {
+func (s *Service) issue(ctx context.Context, user User, credentialHash string) (Session, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return Session{}, fmt.Errorf("auth: generate token: %w", err)
@@ -213,7 +213,7 @@ func (s *Service) issue(ctx context.Context, user User) (Session, error) {
 	sum := sha256.Sum256([]byte(token))
 	hash := hex.EncodeToString(sum[:])
 	expires := time.Now().Add(s.SessionTTL)
-	if err := s.Repo.InsertSession(ctx, user.ID, hash, expires); err != nil {
+	if err := s.Repo.InsertSession(ctx, user.ID, credentialHash, hash, expires); err != nil {
 		return Session{}, fmt.Errorf("auth: insert session: %w", err)
 	}
 	return Session{Token: token, Hash: hash, User: user, ExpiresAt: expires}, nil

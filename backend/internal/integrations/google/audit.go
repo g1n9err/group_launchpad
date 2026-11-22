@@ -9,9 +9,28 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
+
 	"launchpad/internal/core/audit"
 	"launchpad/internal/core/integrations"
 )
+
+type groupAuditTokenSource interface {
+	AccessTokenForGroup(context.Context, uuid.UUID) (string, error)
+}
+
+type groupAuditTokens struct {
+	source  groupAuditTokenSource
+	groupID uuid.UUID
+}
+
+func (t groupAuditTokens) AccessToken(ctx context.Context) (string, error) {
+	return t.source.AccessTokenForGroup(ctx, t.groupID)
+}
+
+func NewGroupAuditChecker(tokens groupAuditTokenSource, groupID uuid.UUID) *AuditChecker {
+	return NewAuditChecker(groupAuditTokens{source: tokens, groupID: groupID})
+}
 
 type AuditChecker struct {
 	tokens  integrations.GoogleAccessTokenSource

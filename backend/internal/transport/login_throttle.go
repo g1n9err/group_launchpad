@@ -88,6 +88,10 @@ func newLoginThrottle(pairMax int, window time.Duration) *loginThrottle {
 func (t *loginThrottle) blocked(ip, email string) (bool, time.Duration) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.blockedLocked(ip, email)
+}
+
+func (t *loginThrottle) blockedLocked(ip, email string) (bool, time.Duration) {
 	now := t.now()
 	spaces := []struct {
 		key   string
@@ -120,10 +124,24 @@ func (t *loginThrottle) blocked(ip, email string) (bool, time.Duration) {
 	return blocked, longest
 }
 
+func (t *loginThrottle) take(ip, email string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if blocked, _ := t.blockedLocked(ip, email); blocked {
+		return false
+	}
+	t.failLocked(ip, email)
+	return true
+}
+
 // fail records one failed attempt in all three key spaces.
 func (t *loginThrottle) fail(ip, email string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.failLocked(ip, email)
+}
+
+func (t *loginThrottle) failLocked(ip, email string) {
 	now := t.now()
 	t.windowFor(t.pairs, "p|"+ip+"|"+email, now).fails++
 	t.windowFor(t.accounts, "a|"+email, now).fails++

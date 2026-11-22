@@ -34,10 +34,19 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      PASSWORD_RESET_SITE_URL: ${PASSWORD_RESET_SITE_URL:-}
+      PASSWORD_RESET_GMAIL_ACCOUNT_ID: ${PASSWORD_RESET_GMAIL_ACCOUNT_ID:-}
+      GOOGLE_TRANSLATION_API_KEY: ${GOOGLE_TRANSLATION_API_KEY:-}
       GMAIL_ENABLED: ${GMAIL_ENABLED:-false}
       # Slack — bot token interpolated from the project-root .env. Empty
       # default keeps the API booting with Slack safely disabled (503).
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      # Slack OAuth v2 — needed to install this app in additional workspaces.
+      SLACK_OAUTH_CLIENT_ID: ${SLACK_OAUTH_CLIENT_ID:-}
+      SLACK_OAUTH_CLIENT_SECRET: ${SLACK_OAUTH_CLIENT_SECRET:-}
+      SLACK_OAUTH_REDIRECT_URI: ${SLACK_OAUTH_REDIRECT_URI:-}
+      SLACK_OAUTH_REDIRECT_URL: ${SLACK_OAUTH_REDIRECT_URL:-}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
       # Slack Events signing secret — required for the events webhook AND
       # the dedicated events-only listener on 8081.
       SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
@@ -70,6 +79,11 @@ services:
       DATABASE_URL: postgres://launchpad:launchpad@postgres:5432/launchpad?sslmode=disable
       LOG_LEVEL: info
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_OAUTH_CLIENT_ID: ${SLACK_OAUTH_CLIENT_ID:-}
+      SLACK_OAUTH_CLIENT_SECRET: ${SLACK_OAUTH_CLIENT_SECRET:-}
+      SLACK_OAUTH_REDIRECT_URI: ${SLACK_OAUTH_REDIRECT_URI:-}
+      SLACK_OAUTH_REDIRECT_URL: ${SLACK_OAUTH_REDIRECT_URL:-}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
       STAFF_EMAILS: ${STAFF_EMAILS:-}
       SMTP_ENABLED: ${SMTP_ENABLED:-false}
       GMAIL_ENABLED: ${GMAIL_ENABLED:-false}

@@ -95,3 +95,61 @@ func (f fakeMembers) CheckMembers(context.Context, []audit.Resource, []audit.Exp
 	}
 	return []audit.Result{{Resource: audit.Resource{Provider: "slack", Kind: "membership", Key: "lecturer"}, Status: status}}
 }
+
+type relinkStore struct {
+	fakeInvStore
+	applied bool
+}
+
+func (s *relinkStore) ReplaceStaleSlackChannel(_ context.Context, _ uuid.UUID, name, oldID, newID string) (bool, error) {
+	s.applied = name == "zzva-general" && oldID == "COLD" && newID == "CNEW"
+	return s.applied, nil
+}
+
+type relinkSlack struct {
+	memberChannel string
+}
+
+func (s *relinkSlack) LookupChannelIDs(_ context.Context, names []string) (map[string]string, error) {
+	return map[string]string{names[0]: "CNEW"}, nil
+}
+
+func (s *relinkSlack) CheckResource(_ context.Context, resource audit.Resource) string {
+	if resource.ID == "CNEW" {
+		return audit.StatusOK
+	}
+	return audit.StatusMissingOrInaccessible
+}
+
+func (s *relinkSlack) CheckMembers(ctx context.Context, channels []audit.Resource, expected []audit.ExpectedMember) []audit.Result {
+	s.memberChannel = channels[0].ID
+	return fakeMembers{ok: true}.CheckMembers(ctx, channels, expected)
+}
+
+func TestAuditRepairsStaleSlackChannelBeforeCheckingMembership(t *testing.T) {
+	store := &relinkStore{fakeInvStore: fakeInvStore{inventory: audit.Inventory{
+		GroupName: "ZZVA",
+		Resources: []audit.Resource{{Provider: "slack", Kind: "channel", Key: "zzva-general", ID: "COLD"}},
+		Members:   []audit.ExpectedMember{{Role: "lecturer", Email: "lecturer@example.test"}},
+	}}}
+	checker := &relinkSlack{}
+	groupID := uuid.New()
+	svc := &audit.Service{
+		Store: store,
+		ResolveSlack: func(_ context.Context, id uuid.UUID) audit.SlackChecker {
+			if id != groupID {
+				t.Fatalf("wrong group: %s", id)
+			}
+			return checker
+		},
+	}
+	if _, err := svc.Run(t.Context(), groupID, 1, "manual", false); err != nil {
+		t.Fatal(err)
+	}
+	if !store.applied || checker.memberChannel != "CNEW" {
+		t.Fatalf("relink applied = %t, membership channel = %q", store.applied, checker.memberChannel)
+	}
+	if got := resultStatus(store.saved[0], "channel", "zzva-general"); got != audit.StatusOK {
+		t.Fatalf("channel status = %q", got)
+	}
+}
