@@ -1,272 +1,302 @@
-# Group Launchpad
+<p align="center">
+  <img src="frontend/public/favicon.png" alt="" width="64" height="64">
+</p>
 
-A multi-platform automation system that launches student groups across Slack, Google Classroom, Google Drive, and Google Forms — one form, one launch action, every platform synchronized. Built with Go (API + background worker), React (dashboard), and PostgreSQL.
+<h1 align="center">Group Launchpad</h1>
 
-## Requirements
+<p align="center">
+  Create student cohorts, provision their Slack and Google resources, and track onboarding from one dashboard.
+</p>
 
-| Tool | Version | Notes |
-|---|---|---|
-| **Go** | 1.27+ | Pinned in `backend/go.mod` (`go 1.27.4`) |
-| **Node.js** | 20+ | Tested with v26.13.1; any modern LTS works |
-| **npm** | 10+ | Ships with Node |
-| **Docker** | recent | For PostgreSQL and prod-parity containers |
-| **Docker Compose** | v2+ | Plugin form (`docker compose`, not `docker-compose`) |
+<p align="center">
+  <a href="https://g-launchpad.duckdns.org/">Open Launchpad</a> ·
+  <a href="#quickstart">Run locally</a> ·
+  <a href="#using-launchpad">Usage</a> ·
+  <a href="openapi.yaml">API reference</a>
+</p>
 
-PostgreSQL runs in Docker (`postgres:17-alpine`) — no separate install needed.
+<p align="center">
+  <a href="https://github.com/g1n9err/group_launchpad/actions/workflows/ci.yml">
+    <img src="https://github.com/g1n9err/group_launchpad/actions/workflows/ci.yml/badge.svg" alt="Backend tests and frontend build">
+  </a>
+</p>
 
-## Setup
+![Launchpad overview showing cohort status, connected services, and student onboarding](docs/images/overview.png)
 
-### 1. Clone and configure
+*Screenshots show the application with demonstration data.*
+
+## What you can do
+
+| Workflow | Capabilities |
+| --- | --- |
+| Cohort setup | Create groups, assign lecturers and teaching assistants, and maintain student rosters. |
+| Slack | Connect multiple workspaces, create group channels, invite participants, and publish scheduled announcements. |
+| Google Classroom | Provision courses and manage student and teaching staff access. |
+| Google Drive | Create a shared folder structure and apply group permissions. |
+| Intake forms | Create Google Forms, publish and distribute them, and import student responses. |
+| Operations | Review launch outcomes, track Slack onboarding, run resource audits, and inspect notifications. |
+
+Each coordinator has a private workspace. Groups use their assigned Slack installation and the Google account associated with it. The interface supports Armenian, English, and Russian, light and dark themes, and mobile navigation.
+
+<details>
+<summary>Explore the group workflow and mobile interface</summary>
+
+**Group launch**
+
+The launch view reports the outcome for each connected service and provides controls for provisioning and retries.
+
+![Group launch showing Slack, Classroom, Drive, and Forms outcomes](docs/images/group-launch.png)
+
+**Mobile navigation**
+
+The menu opens as a side drawer with grouped destinations, account access, and language and theme controls.
+
+<p align="center">
+  <img src="docs/images/mobile-navigation.png" alt="Mobile side drawer with grouped navigation and account controls" width="300">
+</p>
+
+</details>
+
+## Quickstart
+
+### Requirements
+
+| Tool | Version | Used for |
+| --- | --- | --- |
+| Docker with Docker Compose | Compose v2 or later | PostgreSQL, API, and background worker |
+| Node.js and npm | Node.js 22.12 or later | Frontend dependencies and development server |
+| Go | 1.27.4 | Running the backend directly on the host |
+
+The Docker workflow below builds the Go services inside containers.
+
+### Start the application
 
 ```bash
-git clone <repository-url>
-cd launchpad
+git clone https://github.com/g1n9err/group_launchpad.git
+cd group_launchpad
 cp .env.example .env
+
+docker compose --profile full up --build -d
+npm --prefix frontend ci
+npm --prefix frontend run dev
 ```
 
-Edit `.env` — the minimum for the dashboard to boot:
+Open **http://localhost:5173** and choose **Create account**. Registration creates a coordinator account with its own workspace.
 
-```env
-DATABASE_URL=postgres://launchpad:launchpad@localhost:5432/launchpad?sslmode=disable
-```
+The default configuration supports account registration, group creation, and roster management. Configure the integrations below to create resources in Slack and Google.
 
-Optional integrations (leave empty to disable — the API boots safely without them):
+| Endpoint | Purpose |
+| --- | --- |
+| `http://localhost:5173` | Web application |
+| `http://localhost:8080/api` | HTTP API |
+| `http://localhost:8080/readyz` | API readiness and database connectivity |
 
-```env
-SLACK_BOT_TOKEN=          # Bot token from your Slack App
-SLACK_SIGNING_SECRET=     # Signing secret for Events API verification
-SLACK_OAUTH_CLIENT_ID=    # Slack OAuth app, for connecting multiple workspaces
-SLACK_OAUTH_CLIENT_SECRET=
-SLACK_OAUTH_REDIRECT_URL= # https://<domain>/api/integrations/slack/callback
-GOOGLE_CLIENT_ID=         # OAuth 2.0 Client ID from Google Cloud Console
-GOOGLE_CLIENT_SECRET=     # OAuth 2.0 Client Secret
-GOOGLE_REDIRECT_URL=      # Must match the registered redirect URI exactly
-TOKEN_ENCRYPTION_KEY=     # openssl rand -base64 32
-```
+Migrations run automatically when the backend starts. The background worker executes queued launches, audits, announcements, and email delivery.
 
-To connect more than one Slack workspace, configure the Slack App OAuth v2
-redirect URL and the three `SLACK_OAUTH_*` values. Connect additional Slack
-workspaces from **Integrations**, connect Google accounts, and map a Google
-account to each Slack workspace there. Choose the Slack workspace on each group
-page; its Google account is then used for the group's intake Form.
+### Run the backend on your host
 
-Coordinator operations use HTTP Basic authentication with username `coordinator`.
-Set `COORDINATOR_PASSWORD` to a random value (for example, generate it with
-`openssl rand -hex 32`). This protects Slack launch, launch status, direct
-Slack provisioning, Classroom provisioning, and the start of Google OAuth.
-Without a password these routes return HTTP 503. For a browser-based OAuth
-connection, open the Google Connect URL and enter the coordinator credentials
-when prompted. Use HTTPS for coordinator traffic outside local development.
-
-Multi-role authentication (PRD §3, §7.4) adds per-user accounts — admin,
-coordinator, lecturer, TA, student — via `POST /api/auth/login` (bcrypt
-credentials, expiring hashed bearer sessions, refresh and logout). Lecturers
-and TAs get read-only, group-scoped access to their assigned groups; students
-have no API surface (they use Google Forms and Slack directly). Set
-`ADMIN_EMAIL` + `ADMIN_INITIAL_PASSWORD` once to bootstrap the first admin,
-then manage accounts through the admin API. The full route-by-role
-authorization matrix is documented in [`backend/AUTH.md`](backend/AUTH.md).
-
-**Never commit `.env`** — it is git-ignored.
-
-### 2. Start PostgreSQL
+Start PostgreSQL, then run each service in its own terminal from the repository root.
 
 ```bash
 make dev-up
 ```
 
-### 3. Run database migrations
-
-Migrations apply automatically when the API or worker boots (`MIGRATE_ON_BOOT=true`, the default). Migration `0006` owns the River queue schema. Rolling it back removes queued jobs and job history. To apply or inspect migrations manually:
-
-```bash
-make migrate-up       # apply pending migrations
-make migrate-version  # show current schema version
-```
-
-### 4. Start the backend
-
 ```bash
 make api
 ```
 
-The API listens on `http://localhost:8080`. Migrations run on boot. The dedicated Slack Events listener starts on `http://127.0.0.1:8081` (loopback only) when `SLACK_SIGNING_SECRET` is configured.
-
-### 5. Start the frontend
+```bash
+make worker
+```
 
 ```bash
+npm --prefix frontend ci
 make fe
 ```
 
-Open `http://localhost:5173` — the Vite dev server proxies `/api` to `:8080`.
+The Makefile loads the repository's `.env` file for these commands. Vite forwards `/api` requests to the local API.
 
-### Full stack in Docker (prod-parity)
+## Using Launchpad
 
-```bash
-make full-up    # PostgreSQL + API container + worker container
-```
+1. **Create your account.** Sign up on the local application or the hosted app. An email already present in a student roster can register a site account while retaining its roster memberships.
+2. **Connect your services.** Open **Integrations**, connect a Slack workspace, and connect a Google account through the authorization popup. Associate the Google account with the Slack workspace.
+3. **Create a group.** Open **Groups → New group**. Enter the group name, course, start date, teaching staff, and lecturers. Add the student roster and teaching assistants as needed.
+4. **Choose the workspace.** On the group page, select its Slack workspace before provisioning channels. An existing channel assignment keeps the group tied to that workspace.
+5. **Provision the resources.** Use the group's **Group launch** view to start the launch and inspect the Slack, Classroom, Drive, and Forms results. Individual service controls support follow-up provisioning.
+6. **Collect intake responses.** Open **Intake forms**, select the group, review the questions, publish the form, and distribute it. Email delivery uses the configured Gmail or SMTP sender.
+7. **Manage communication and onboarding.** Schedule a message in **Announcements** and review delivery history. A general announcement targets the selected group's available Slack channels. Use **Students** or the group's member view to track onboarding.
+8. **Check resource health.** Open **Automation**, select a group, and run an audit. Review the findings and notifications as the result refreshes.
 
-## Tests
+The workspace selector on **Overview** filters group-related views. On phones, the menu button opens navigation and account controls in a side drawer.
 
-### Backend (Go)
+| Account role | Access |
+| --- | --- |
+| Administrator | Platform-wide operations and administrator account-management APIs |
+| Coordinator | Groups and integrations in the coordinator's private workspace |
+| Lecturer or teaching assistant | Read access to assigned groups and their resources |
+| Student | Participation through Slack, Classroom, and intake forms |
 
-```bash
-export TEST_DATABASE_URL='postgres://launchpad:launchpad@localhost:5432/postgres?sslmode=disable'
-make test-backend           # all packages, -race enabled
-cd backend && go test ./... # without race detector
-```
+## Integration prerequisites
 
-Use a development PostgreSQL instance and a role with permission to create databases. The HTTP suite uses a dedicated `launchpad_test` database and truncates its test tables. Migration and River integration tests require `TEST_DATABASE_URL` and create and remove their own temporary databases. `make dev-up` starts PostgreSQL for local testing.
+Keep your credentials in `.env`. The complete configuration template is available in [.env.example](.env.example).
 
-### Intake email delivery
-
-To send from the connected Google account, enable the Gmail API and set
-`GMAIL_ENABLED=true` for both processes. Reconnect Google to grant
-`https://www.googleapis.com/auth/gmail.send`.
-
-For SMTP instead, set `SMTP_ENABLED=true` for both processes.
-The worker connects to a STARTTLS relay via `SMTP_HOST` and `SMTP_PORT`,
-using `SMTP_FROM` as the sender. Set `SMTP_USERNAME` and `SMTP_PASSWORD`
-when the relay requires authentication. Keep relay credentials in the worker
-environment.
-
-The coordinator can queue a published form with
-`POST /api/groups/{groupId}/forms/distribute` and read recipient status with
-`GET /api/groups/{groupId}/forms/deliveries`. The send dialog accepts an
-optional message, which the API accepts as `{"message":"..."}`. The email
-includes the form link below the message. A `sent` result means the
-configured mail provider accepted the message. Repeating distribution retries confirmed
-failures. Check the relay's records before handling an `unknown` outcome.
-
-With Gmail or SMTP enabled, Classroom provisioning also queues a separate
-join-code email for each student, lecturer, TA, and Teaching Staff member assigned to the group. The worker reads the code
-from the active Google Classroom course before sending. Re-provisioning queues
-new recipients and confirmed failures. It does not resend accepted messages or
-messages with an unknown delivery outcome.
-
-### Audit notifications
-
-Open **Automation** and enter the coordinator password to view recent audit
-changes and current issues. To enable email summaries, configure Gmail or SMTP
-delivery and set `AUDIT_NOTIFICATION_EMAIL` in the worker environment.
-Unchanged audits don't create new messages. An email status of `sent` means the
-provider accepted it.
-
-### Frontend
+Generate the credential-encryption key once.
 
 ```bash
-cd frontend && npm run build   # TypeScript type-check + Vite production build
+openssl rand -base64 32
 ```
 
-### Browser E2E (login, logout, role-based navigation, scoped groups)
+Set the result as `TOKEN_ENCRYPTION_KEY`.
 
-A Playwright suite drives real Chromium against a disposable stack — a
-throwaway PostgreSQL container, the API with fake throwaway credentials
-(Slack/Google disabled, no external service is contacted), and the production
-SPA build served by `vite preview`:
+> [!IMPORTANT]
+> The API and worker must use the same encryption key and integration configuration. Keep the encryption key stable across redeployments so saved credentials remain decryptable.
+
+### Slack
+
+Create a Slack app with OAuth v2 and configure its bot permissions using the project's [requested scopes](backend/internal/core/integrations/slack_oauth.go). Add the exact callback URL to the app's OAuth redirect URLs.
+
+```env
+SLACK_OAUTH_CLIENT_ID=your-client-id
+SLACK_OAUTH_CLIENT_SECRET=your-client-secret
+PUBLIC_API_BASE_URL=https://your-launchpad-domain.example
+SLACK_OAUTH_REDIRECT_URI=https://your-launchpad-domain.example/api/integrations/slack/callback
+TOKEN_ENCRYPTION_KEY=your-generated-key
+```
+
+Use **Integrations → Connect a Slack workspace** to authorize each installation. For onboarding events, configure `SLACK_SIGNING_SECRET` and point the Slack Events API at `/api/integrations/slack/events`, with the `member_joined_channel` bot event enabled.
+
+`SLACK_BOT_TOKEN` supports an existing server-token installation. Coordinator-owned groups use explicit workspace assignments for connected OAuth installations.
+
+Local OAuth and event testing can use a public HTTPS tunnel to the API. Register that tunnel's callback URL in the Slack app. Slack's setup instructions cover the authorization flow. [Slack OAuth documentation](https://docs.slack.dev/authentication/installing-with-oauth/)
+
+### Google
+
+Enable the Google Classroom, Drive, and Forms APIs in your Google Cloud project. Configure an OAuth consent screen and a **Web application** OAuth client, then set its authorized redirect URI to the callback used by this deployment.
+
+```env
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URL=http://localhost:8080/api/integrations/google/callback
+TOKEN_ENCRYPTION_KEY=your-generated-key
+```
+
+The redirect URI must match the Google Cloud setting exactly. Add the accounts you intend to use as test users while the OAuth consent screen is in testing mode. Review the [requested Google scopes](backend/internal/core/integrations/ports.go), then connect the account from **Integrations**. [Google credential setup](https://developers.google.com/workspace/guides/create-credentials)
+
+### Email delivery
+
+| Provider | Configuration |
+| --- | --- |
+| Gmail | Enable the Gmail API, set `GMAIL_ENABLED=true`, and reconnect Google to grant the Gmail sending permission. |
+| SMTP | Set `SMTP_ENABLED=true`, `SMTP_HOST`, `SMTP_PORT`, and `SMTP_FROM`. Set `SMTP_USERNAME` and `SMTP_PASSWORD` when required by the relay. |
+
+Apply the email configuration to both the API and worker. Classroom join messages and intake-form delivery are processed by the worker. Set `AUDIT_NOTIFICATION_EMAIL` to receive summaries of changed audit findings.
+
+A delivery marked `sent` indicates provider acceptance. An `unknown` outcome requires checking the provider or destination before resending.
+
+### Administrator setup
+
+Public registration creates coordinator accounts. To bootstrap the first administrator, set `ADMIN_EMAIL` and `ADMIN_INITIAL_PASSWORD` before starting the API. Use a freshly generated password.
 
 ```bash
-make e2e          # from the repo root; runs the full disposable stack + tests
+openssl rand -hex 24
 ```
 
-It covers: unauthenticated users trigger no protected queries, invalid login,
-Bearer-only-in-memory token storage, coordinator navigation, the lecturer's
-scoped groups view, URL-hopping to a foreign group (IDOR), student lockdown,
-and logout cache clearing. Requires Docker and a one-time
-`npx playwright install chromium`.
+For the reserved `administrator` login, set `ADMIN_EMAIL` to `administrator@launchpad.internal`. Other administrator email addresses sign in using their email. The initial account is created when the database has no administrator.
 
-### Both
+After the first successful administrator login, remove the bootstrap variables and recreate the API container. Administrator account management is available through the `/api/admin/users` endpoints documented in [openapi.yaml](openapi.yaml).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[React dashboard] --> API[Go API]
+    API <--> DB[(PostgreSQL)]
+    DB -->|River jobs| Worker[Go worker]
+    Worker -->|Results and job state| DB
+    API -->|OAuth and direct operations| Platforms[Slack and Google APIs]
+    Worker --> Platforms
+    Worker --> Mail[Gmail or SMTP]
+```
+
+The API handles accounts, authorization, group management, and job submission. River stores background jobs in PostgreSQL. The worker performs queued operations and persists their outcomes for the dashboard.
+
+| Location | Responsibility |
+| --- | --- |
+| [`backend/cmd`](backend/cmd) | API, worker, and migration entry points |
+| [`backend/internal/core`](backend/internal/core) | Business logic and integration interfaces |
+| [`backend/internal/integrations`](backend/internal/integrations) | Slack, Google, and mail adapters |
+| [`backend/internal/store`](backend/internal/store) | PostgreSQL persistence and generated queries |
+| [`backend/internal/transport`](backend/internal/transport) | HTTP handlers and generated API types |
+| [`backend/migrations`](backend/migrations) | Embedded database migrations |
+| [`frontend/src`](frontend/src) | React UI, translations, session handling, and API client |
+| [`openapi.yaml`](openapi.yaml) | Shared API contract |
+
+The backend uses Go, Echo, pgx, sqlc, and River. The frontend uses React, TypeScript, Vite, Tailwind CSS, and TanStack Query. Integration credentials are encrypted with AES-256-GCM, passwords use bcrypt, and sessions expire and can be revoked.
+
+## Development and verification
+
+Run backend tests against a dedicated development or test PostgreSQL instance. The suites create temporary databases and reset their test tables.
 
 ```bash
-make test
+TEST_DATABASE_URL='postgres://launchpad:launchpad@localhost:5432/postgres?sslmode=disable' make test-backend
 ```
 
-## Project structure
-
-```
-launchpad/
-├── backend/
-│   ├── cmd/
-│   │   ├── api/          # API server (composition root — wires all layers)
-│   │   ├── migrate/      # standalone migration command
-│   │   └── worker/       # River background worker
-│   ├── internal/
-│   │   ├── core/         # pure business logic — no HTTP, no SQL, no SDKs
-│   │   │   ├── groups/       # group CRUD, student ingestion, onboarding
-│   │   │   └── integrations/ # Slack/Google ports, identity linker, events
-│   │   ├── integrations/ # adapters: the ONLY code talking to Slack/Google
-│   │   │   ├── google/       # OAuth flow, token exchange
-│   │   │   └── slack/        # channels, invites, events, HMAC verification
-│   │   ├── store/        # sqlc-generated queries implementing core ports
-│   │   ├── transport/    # echo HTTP handlers (thin: parse → call → map)
-│   │   ├── secrets/      # AES-256-GCM encryption for stored tokens
-│   │   ├── config/       # env configuration, fail-fast
-│   │   └── dbmigrate/    # embedded migration runner
-│   └── migrations/       # SQL migrations (golang-migrate format, embedded)
-├── frontend/
-│   └── src/
-│       ├── components/   # layout (sidebar/header), shared UI, icons
-│       ├── i18n/         # translations: hy (default), en, ru
-│       ├── lib/          # typed API client, TanStack Query hooks, router
-│       └── pages/        # Overview, Groups, Students, Integrations, etc.
-├── docker-compose.yml    # PostgreSQL (always) + API/worker (profile: full)
-├── openapi.yaml          # API contract — both sides generate types from it
-├── Group_Launchpad_PRD.md # Product Requirements Document
-├── SYSTEMPROMPT.md        # Project instructions for the coding agent
-├── .env.example           # Environment variable template (placeholders only)
-└── Makefile              # dev commands: dev-up, api, fe, test, gen, migrate-*
+```bash
+npm --prefix frontend run build
+npm --prefix frontend run lint
 ```
 
-**Architecture rule:** `transport → core ← store/integrations`. Core declares
-interfaces (ports); store and integrations implement them; `cmd/api` wires
-everything. Core never imports HTTP frameworks, SQL drivers, or external SDKs.
+Install Chromium once, then run the browser suite against its disposable stack.
+
+```bash
+cd frontend
+npx playwright install chromium
+cd ..
+make e2e
+```
+
+Browser checks exercise registration, login, role and workspace access, group and roster workflows, Google authorization handoff, and mobile navigation. External services are replaced with fixtures during automated tests.
+
+| Command | Purpose |
+| --- | --- |
+| `make help` | List available development commands |
+| `make migrate-up` | Apply pending migrations |
+| `make migrate-version` | Inspect the migration version |
+| `make gen` | Regenerate OpenAPI and SQL query bindings |
+| `make test` | Run backend race tests and build the frontend |
+| `make full-down` | Stop the Docker application stack |
+
+## Deployment
+
+The production Compose file runs PostgreSQL, the API, and the worker. Copy the production environment template, fill in the deployment values, and run from the repository root.
+
+```bash
+cp deploy/env.production.example deploy/.env.production
+docker compose -f deploy/docker-compose.prod.yml \
+  --env-file deploy/.env.production --profile full up --build -d
+```
+
+Build the frontend and serve `frontend/dist` behind an HTTPS reverse proxy. For a shared frontend and API origin, use a relative API URL.
+
+```bash
+npm --prefix frontend ci
+VITE_API_URL= npm --prefix frontend run build
+```
+
+Route `/api/*`, `/health`, and `/readyz` to the API, and configure the static host to fall back to `index.html`. Set `CORS_ALLOWED_ORIGINS` to the frontend origin and use matching public Slack and Google callback URLs. Preserve the database volume and encryption key across releases.
+
+The repository includes a [production deployment guide in Armenian](deploy/DEPLOY.md).
 
 ## Troubleshooting
 
-### Docker permission denied
+| Symptom | Check |
+| --- | --- |
+| Announcements or audits stay queued | Confirm the worker is running and reads the same environment file as the API. Inspect `docker compose logs --tail 100 worker`. |
+| A connected workspace cannot be used | Check the group's Slack assignment and verify that both services have the original `TOKEN_ENCRYPTION_KEY`. |
+| Google reports a redirect mismatch | Compare `GOOGLE_REDIRECT_URL` with the OAuth client's authorized redirect URI, including scheme, host, port, and path. |
+| Onboarding events are missing | Verify the Events API URL, signing secret, `member_joined_channel` subscription, and the bot's channel membership. |
+| Port 8080 is occupied | Stop the existing API process or container before starting another backend instance. |
+| The API cannot reach PostgreSQL | Start the database and check `DATABASE_URL` against its host, port, database, and credentials. |
+| Docker reports permission denied | Verify access to the Docker daemon for your current user and shell. |
 
-```text
-permission denied while trying to connect to the Docker API
-```
-
-Your user isn't in the `docker` group in this shell. Fix: `sudo usermod -aG docker $USER`, then log out/in. Workaround for the current session: `newgrp docker`.
-
-### Port 8080 already in use
-
-```text
-failed to bind host port 0.0.0.0:8080/tcp: address already in use
-```
-
-Another API instance is running. Stop it first (`Ctrl+C` in the terminal running `make api`, or `docker compose --profile full stop api`). The Makefile's `full-up` target pre-checks this and errors with a clear message.
-
-### Database connection refused
-
-```text
-postgres unreachable after retries
-```
-
-PostgreSQL isn't running. Start it: `make dev-up`. If the volume is corrupt, reset everything: `docker compose down -v` (⚠️ deletes data), then `make dev-up`.
-
-### Missing environment variables
-
-The API fail-fasts on boot with `fatal: config: DATABASE_URL is required`. Integration warnings (`slack integration disabled`, `google oauth disabled`) are non-fatal — the API runs without them, but integration endpoints return `503 NOT_READY`.
-
-### Google OAuth redirect mismatch
-
-The `GOOGLE_REDIRECT_URL` must match the **Authorized redirect URI** in Google Cloud Console byte-for-byte (scheme, host, port, path). For local development:
-`http://localhost:8080/api/integrations/google/callback`
-
-### Slack Events not arriving
-
-1. **Check the tunnel is alive** — quick tunnels (`cloudflared tunnel --url`) die silently after network changes. Restart it.
-2. **Check Socket Mode is OFF** in your Slack App settings — it silently redirects all events to a WebSocket instead of your HTTP endpoint.
-3. **Check the signing secret** — the events listener won't start without it.
-4. **Check the bot is a member** of the channel — Slack only delivers `member_joined_channel` for channels the bot is in.
-
-### Regenerating API types after contract changes
-
-After editing `openapi.yaml`, regenerate types on both sides:
-
-```bash
-make gen
-```
+For a reproducible issue, include the affected workflow, application version or commit, and relevant logs with credentials removed. [Report an issue](https://github.com/g1n9err/group_launchpad/issues)
