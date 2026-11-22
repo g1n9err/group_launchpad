@@ -20,8 +20,9 @@ import (
 // GoogleConnect GET /api/integrations/google/connect — starts the Google
 // consent flow. Two caller shapes:
 //
-//   - Browser NAVIGATION (no session header): classic 302 to Google. The
-//     legacy Basic coordinator dialog covers this path.
+//   - Browser NAVIGATION (no session header): classic 302 to Google. Clients
+//     that use the legacy Basic flow must send that Authorization header;
+//     this API does not trigger a browser-native credential dialog.
 //   - Authenticated fetch with Accept: application/json (the SPA's button):
 //     returns {"url": ...} so the app can navigate with the in-memory
 //     Bearer session — no Basic dialog, no token in URLs.

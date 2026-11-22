@@ -36,7 +36,6 @@ func (a coordinatorAuth) authorize(c echo.Context) error {
 	hash := sha256.Sum256([]byte(password))
 	passwordMatches := subtle.ConstantTimeCompare(hash[:], a.passwordHash[:]) == 1
 	if !ok || username != coordinatorUsername || !passwordMatches {
-		c.Response().Header().Set("WWW-Authenticate", `Basic realm="Group Launchpad coordinator", charset="UTF-8"`)
 		return &core.AppError{Code: core.CodeUnauthorized, Message: "coordinator credentials required"}
 	}
 	if isMutatingMethod(req.Method) && !a.allowedWriteOrigin(c) {

@@ -53,8 +53,8 @@ func TestCoordinatorRoutesRejectUnauthorizedRequests(t *testing.T) {
 					t.Fatal(err)
 				}
 				res.Body.Close()
-				if res.StatusCode != http.StatusUnauthorized || res.Header.Get("WWW-Authenticate") == "" {
-					t.Fatalf("status=%d, want 401 with a Basic authentication challenge", res.StatusCode)
+				if res.StatusCode != http.StatusUnauthorized || res.Header.Get("WWW-Authenticate") != "" {
+					t.Fatalf("status=%d, WWW-Authenticate=%q; want plain 401 without a browser Basic prompt", res.StatusCode, res.Header.Get("WWW-Authenticate"))
 				}
 			}
 		})

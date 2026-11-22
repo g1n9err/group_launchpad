@@ -43,9 +43,10 @@ type GroupMembershipChecker interface {
 	IsGroupMember(ctx context.Context, userID uuid.UUID, normalizedEmail string, groupID uuid.UUID) (bool, error)
 }
 
-// errUnauthorized asks for credentials (401 + WWW-Authenticate for Basic).
+// errUnauthorized returns an API 401 without a WWW-Authenticate challenge.
+// The web app uses account sessions; a Basic challenge makes browsers open a
+// native credential prompt over the normal sign-in page.
 func errUnauthorized(c echo.Context) error {
-	c.Response().Header().Set("WWW-Authenticate", `Basic realm="Group Launchpad", charset="UTF-8"`)
 	return &core.AppError{Code: core.CodeUnauthorized, Message: "credentials required"}
 }
 
